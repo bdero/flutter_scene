@@ -110,12 +110,9 @@ vec2 FixedShadowTap(int i) {
   return vec2(float(i - 14) - 1.0, 1.0);
 }
 
-// Samples one cascade's tile of the shadow atlas strip. `biased_world_pos` is
-// the world-space receiver after normal bias.
-float SampleCascade(int cascade, int count, highp mat4 cascade_matrix,
-                    highp float box, highp vec3 biased_world_pos) {
-  highp vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);
-  highp vec3 proj = light_clip.xyz / light_clip.w;
+// Samples one cascade's tile of the shadow atlas strip. `proj` is the
+// normal-biased receiver projected into the cascade (NDC xy, depth z).
+float SampleCascade(int cascade, int count, highp vec3 proj, highp float box) {
   highp vec2 uv = proj.xy * 0.5 + 0.5;
   // The depth bias is world-space; convert it to this cascade's clip-z (its
   // orthographic depth range is 7 * box: the toward-sun reach + forward margin
@@ -133,12 +130,17 @@ float SampleCascade(int cascade, int count, highp mat4 cascade_matrix,
   // in the generated GLES source even though the choice is uniform.
   float filter_index = frag_info.directional_light_direction.w;
   float fixed_filter = step(0.5, filter_index) * (1.0 - step(1.5, filter_index));
-  highp float noise = fract(
-      52.9829189 *
-      fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  float angle = noise * 6.28318530718 * (1.0 - fixed_filter);
-  float ca = cos(angle);
-  float sa = sin(angle);
+  // The fixed grid does not rotate, so it skips the noise, cosine, and sine.
+  float ca = 1.0;
+  float sa = 0.0;
+  if (fixed_filter < 0.5) {
+    highp float noise = fract(
+        52.9829189 *
+        fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float angle = noise * 6.28318530718;
+    ca = cos(angle);
+    sa = sin(angle);
+  }
 
   // World-space penumbra -> this cascade's UV space, floored at a texel.
   highp float max_radius =
@@ -174,7 +176,29 @@ float SampleCascade(int cascade, int count, highp mat4 cascade_matrix,
   // TODO(flutter_scene): use file-scope const arrays once impellerc/SPIRV-Cross
   // emits valid ES 1.00 array constructors for them.
   float shadow = 0.0;
-  if (filter_index > 2.5) {
+  // Most fragments are fully lit or fully shadowed. Probe the kernel's center
+  // and corners first and run the full kernel only where they disagree (the
+  // penumbra), which cuts the shadow-map reads on texture-rate-bound GPUs.
+  // PCSS keeps its own path, since its blocker search sizes the kernel.
+  bool settled = false;
+  if (filter_index < 1.5 || filter_index > 2.5) {
+    float probe =
+        ShadowTap(vec2(0.0), ca, sa, radius, uv, cascade, inv_count,
+                  receiver_depth) +
+        ShadowTap(vec2(-1.0, -1.0), ca, sa, radius, uv, cascade, inv_count,
+                  receiver_depth) +
+        ShadowTap(vec2(1.0, -1.0), ca, sa, radius, uv, cascade, inv_count,
+                  receiver_depth) +
+        ShadowTap(vec2(-1.0, 1.0), ca, sa, radius, uv, cascade, inv_count,
+                  receiver_depth) +
+        ShadowTap(vec2(1.0, 1.0), ca, sa, radius, uv, cascade, inv_count,
+                  receiver_depth);
+    settled = probe < 0.5 || probe > 4.5;
+    shadow = probe * 0.2;
+  }
+  if (settled) {
+    // The probes agree, so the kernel would too.
+  } else if (filter_index > 2.5) {
     // 4-tap bilinear PCF: 4 taps x 4 texels = 16 samples total (matching the
     // 16-sample budget), producing continuous analog filtering with zero
     // noise rotation or stepped banding.
@@ -246,8 +270,7 @@ float CascadeBlendWeight(highp vec2 uv, highp float margin, highp float band) {
       float take = min(CascadeBlendWeight(uv, margin, band),                 \
                        1.0 - weight);                                        \
       if (take > 0.0) {                                                      \
-        shadow_sum += take * SampleCascade(IDX, count, cascade_matrix, box,  \
-                                           biased_world_pos);                \
+        shadow_sum += take * SampleCascade(IDX, count, proj, box);           \
         weight += take;                                                      \
       }                                                                      \
     }                                                                        \
@@ -377,8 +400,7 @@ float SpotShadowTap(highp vec2 uv, highp float tile, highp float total,
   return receiver <= textureLod(shadow_map, atlas_uv, 0.0).r ? 1.0 : 0.0;
 }
 
-// Number of ring taps around the center for the spot-shadow PCF.
-#define SPOT_PCF_RING 8
+
 
 // Spot-shadow visibility (1 lit .. 0 shadowed) for the shadow-casting spot in
 // row `light_row`, slot `slot`. Its world -> spot-clip matrix rides in the
@@ -407,19 +429,33 @@ float SampleSpotShadow(int light_row, int slot, highp vec3 world_pos,
   // Penumbra radius in tile-UV (resolution-independent). softness 0 = hard.
   highp float radius = frag_info.spot_shadow_params.w * 0.004;
 
-  float lit = SpotShadowTap(uv, tile, total, receiver);
-  // A per-fragment rotation hides the ring pattern as a smooth edge.
+  // A per-fragment rotation hides the ring pattern as a smooth edge. The ring
+  // is eight taps 45 degrees apart, so one cosine and sine place all of them.
   highp float noise = fract(
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   float base = noise * 6.28318530718;
-  for (int i = 0; i < SPOT_PCF_RING; i++) {
-    float a = base + float(i) * (6.28318530718 / float(SPOT_PCF_RING));
-    highp vec2 offset = vec2(cos(a), sin(a)) * radius;
-    lit += SpotShadowTap(uv + offset, tile, total, receiver);
+  highp vec2 a = vec2(cos(base), sin(base)) * radius;
+  highp vec2 b = vec2(a.x - a.y, a.x + a.y) * 0.70710678;
+  // The center and the four axis taps first. Most fragments are fully lit or
+  // fully shadowed, so the diagonal taps only run where these disagree.
+  float lit = SpotShadowTap(uv, tile, total, receiver) +
+              SpotShadowTap(uv + a, tile, total, receiver) +
+              SpotShadowTap(uv - a, tile, total, receiver) +
+              SpotShadowTap(uv + vec2(-a.y, a.x), tile, total, receiver) +
+              SpotShadowTap(uv + vec2(a.y, -a.x), tile, total, receiver);
+  if (lit < 0.5 || lit > 4.5) {
+    return lit * 0.2;
   }
-  return lit / float(SPOT_PCF_RING + 1);
+  lit += SpotShadowTap(uv + b, tile, total, receiver) +
+         SpotShadowTap(uv - b, tile, total, receiver) +
+         SpotShadowTap(uv + vec2(-b.y, b.x), tile, total, receiver) +
+         SpotShadowTap(uv + vec2(b.y, -b.x), tile, total, receiver);
+  return lit / 9.0;
 }
+
+// Number of ring taps around the center for the point-shadow PCF.
+#define POINT_PCF_RING 8
 
 // One shadow comparison tap for a point-light cube face: places the face-local
 // `uv` in quadrant (`qx`, `qy`) of atlas tile `tile` (faces render at half the
@@ -490,11 +526,11 @@ float SamplePointShadow(int light_row, highp float base_tile,
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   float base = noise * 6.28318530718;
-  for (int i = 0; i < SPOT_PCF_RING; i++) {
-    float angle = base + float(i) * (6.28318530718 / float(SPOT_PCF_RING));
+  for (int i = 0; i < POINT_PCF_RING; i++) {
+    float angle = base + float(i) * (6.28318530718 / float(POINT_PCF_RING));
     lit += PointShadowTap(uv + vec2(cos(angle), sin(angle)) * radius, tile, qx,
                           qy, total, half_texel, receiver);
   }
-  return lit / float(SPOT_PCF_RING + 1);
+  return lit / float(POINT_PCF_RING + 1);
 }
 #endif

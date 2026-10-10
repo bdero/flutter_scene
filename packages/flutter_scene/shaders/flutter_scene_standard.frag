@@ -96,7 +96,12 @@ void Surface(inout MaterialInputs material) {
             texture_transforms.occlusion_transform,
             texture_transforms.occlusion_rotation)
       : GetUV0();
-  float occlusion = texture(occlusion_texture, occlusion_uv).r;
+  // A zero strength (also what a material without an occlusion texture
+  // packs) leaves the occlusion at 1, so the read is skipped.
+  float occlusion = 1.0;
+  if (frag_info.occlusion_strength != 0.0) {
+    occlusion = texture(occlusion_texture, occlusion_uv).r;
+  }
   material.occlusion = 1.0 - (1.0 - occlusion) * frag_info.occlusion_strength;
 
   highp vec2 emissive_uv = transformed_uvs
@@ -104,9 +109,14 @@ void Surface(inout MaterialInputs material) {
             texture_transforms.emissive_transform,
             texture_transforms.emissive_rotation)
       : GetUV0();
-  material.emissive = SRGBToLinear(texture(emissive_texture, emissive_uv).rgb) *
-                      frag_info.emissive_factor.rgb *
-                      frag_info.emissive_factor.a;
+  // Most materials emit nothing, so they skip the read and the sRGB decode.
+  material.emissive = vec3(0.0);
+  vec3 emissive_scale = frag_info.emissive_factor.rgb * frag_info.emissive_factor.a;
+  if (dot(abs(emissive_scale), vec3(1.0)) > 0.0) {
+    material.emissive =
+        SRGBToLinear(texture(emissive_texture, emissive_uv).rgb) *
+        emissive_scale;
+  }
 
   PrepareMaterial(material);
 }
