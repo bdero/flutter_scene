@@ -169,7 +169,7 @@ sealed class GizmoPrimitive {
         );
       case 'arrow':
         return GizmoArrow(
-          axis: vector('axis') ?? const [0, 0, 1],
+          axis: vector('axis') ?? const [0, 0, -1],
           axisBind: json['axisBind'] is String
               ? json['axisBind'] as String
               : null,
@@ -216,7 +216,7 @@ sealed class GizmoPrimitive {
         return GizmoWireRect(
           width: scalar('width', 1),
           height: scalar('height', 1),
-          axis: vector('axis') ?? const [0, 0, 1],
+          axis: vector('axis') ?? const [0, 0, -1],
           visibility: visibility,
           color: color,
           xray: xray,
@@ -225,7 +225,7 @@ sealed class GizmoPrimitive {
       case 'wireCircle':
         return GizmoWireCircle(
           radius: scalar('radius', 1),
-          axis: vector('axis') ?? const [0, 0, 1],
+          axis: vector('axis') ?? const [0, 0, -1],
           visibility: visibility,
           color: color,
           xray: xray,
@@ -235,7 +235,7 @@ sealed class GizmoPrimitive {
         return GizmoWireCone(
           angle: scalar('angle', 0.5),
           range: scalar('range', 1),
-          axis: vector('axis') ?? const [0, 0, 1],
+          axis: vector('axis') ?? const [0, 0, -1],
           axisBind: json['axisBind'] is String
               ? json['axisBind'] as String
               : null,
@@ -323,7 +323,7 @@ class GizmoIcon extends GizmoPrimitive {
 /// An arrow from the node origin along a node-local [axis].
 class GizmoArrow extends GizmoPrimitive {
   const GizmoArrow({
-    this.axis = const [0, 0, 1],
+    this.axis = const [0, 0, -1],
     this.axisBind,
     this.length = const GizmoScalar(1),
     super.visibility,
@@ -441,7 +441,7 @@ class GizmoWireRect extends GizmoPrimitive {
   const GizmoWireRect({
     required this.width,
     required this.height,
-    this.axis = const [0, 0, 1],
+    this.axis = const [0, 0, -1],
     super.visibility,
     super.color,
     super.xray,
@@ -470,7 +470,7 @@ class GizmoWireRect extends GizmoPrimitive {
 class GizmoWireCircle extends GizmoPrimitive {
   const GizmoWireCircle({
     required this.radius,
-    this.axis = const [0, 0, 1],
+    this.axis = const [0, 0, -1],
     super.visibility,
     super.color,
     super.xray,
@@ -497,7 +497,7 @@ class GizmoWireCone extends GizmoPrimitive {
   const GizmoWireCone({
     required this.angle,
     required this.range,
-    this.axis = const [0, 0, 1],
+    this.axis = const [0, 0, -1],
     this.axisBind,
     super.visibility,
     super.color,
@@ -589,8 +589,8 @@ class GizmoWireCylinder extends GizmoPrimitive {
   };
 }
 
-/// A perspective view frustum opening along node-local +Z (the engine camera
-/// looks along its node's local +Z).
+/// A perspective view frustum opening along node-local -Z (the engine camera
+/// looks along its node's local -Z).
 class GizmoFrustum extends GizmoPrimitive {
   const GizmoFrustum({
     required this.fovY,

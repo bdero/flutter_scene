@@ -187,20 +187,23 @@ void main() {
       expect(morph.tangentDeltas, isNull);
     });
 
-    test('a native-baking policy negates delta Z like the base vertices', () {
-      final fixture = _syntheticMorphFixture();
-      final packed = packGltfPrimitive(
-        primitive: fixture.primitive,
-        accessors: fixture.accessors,
-        bufferViews: fixture.bufferViews,
-        bufferData: fixture.bufferData,
-        coordinatePolicy: GltfCoordinatePolicy.bakeNative,
-      );
-      final morph = packed.morphTargets!;
-      expect(morph.positionDeltas.sublist(3, 6), [0.5, 0, -0.25]);
-      expect(morph.positionDeltas.sublist(9, 12), [0, 0, -1]);
-      expect(morph.normalDeltas!.sublist(9, 12), [1, 0, 1]);
-    });
+    test(
+      'a native-baking policy preserves right-handed delta Z like the base vertices',
+      () {
+        final fixture = _syntheticMorphFixture();
+        final packed = packGltfPrimitive(
+          primitive: fixture.primitive,
+          accessors: fixture.accessors,
+          bufferViews: fixture.bufferViews,
+          bufferData: fixture.bufferData,
+          coordinatePolicy: GltfCoordinatePolicy.bakeNative,
+        );
+        final morph = packed.morphTargets!;
+        expect(morph.positionDeltas.sublist(3, 6), [0.5, 0, 0.25]);
+        expect(morph.positionDeltas.sublist(9, 12), [0, 0, 1]);
+        expect(morph.normalDeltas!.sublist(9, 12), [1, 0, -1]);
+      },
+    );
 
     test('an unmorphed primitive packs no morph data', () {
       final fixture = _syntheticMorphFixture();

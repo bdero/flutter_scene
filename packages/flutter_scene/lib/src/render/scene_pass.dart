@@ -338,8 +338,8 @@ class ScenePass extends RenderGraphPass {
     }
     final camera = _camera;
     final cameraForward = camera.forward.normalized();
-    final cameraRight = camera.up.cross(cameraForward)..normalize();
-    final cameraUp = cameraForward.cross(cameraRight)..normalize();
+    final cameraRight = cameraForward.cross(camera.up)..normalize();
+    final cameraUp = cameraRight.cross(cameraForward)..normalize();
     final projection = ProjectionParams.of(camera.projection, _dimensions);
     // Froxel clustering for this view (views with uniform light channels);
     // its data texture rides the per-object index sampler slot.

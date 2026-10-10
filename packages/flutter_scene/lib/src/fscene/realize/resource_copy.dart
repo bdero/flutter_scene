@@ -31,9 +31,13 @@ LocalId copyResourceInto(
       :final procedural,
       :final bounds,
       :final topology,
+      :final legacyWinding,
+      :final legacyLeftHanded,
+      :final morphTargets,
     ):
       if (vertices != null) _copyPayload(dest, source, vertices);
       if (indices != null) _copyPayload(dest, source, indices);
+      if (morphTargets != null) _copyPayload(dest, source, morphTargets.deltas);
       dest.addResource(
         GeometryResource(
           resourceId,
@@ -42,6 +46,9 @@ LocalId copyResourceInto(
           procedural: procedural,
           topology: topology,
           bounds: bounds,
+          legacyWinding: legacyWinding || source.formatVersion < 5,
+          legacyLeftHanded: legacyLeftHanded || source.formatVersion < 6,
+          morphTargets: morphTargets,
         ),
       );
     case TextureResource(:final payload, :final asset):
@@ -106,6 +113,7 @@ LocalId copyResourceInto(
           agxWhite: res.agxWhite,
           agxContrast: res.agxContrast,
           environmentRotationY: res.environmentRotationY,
+          environmentMirrorZ: res.environmentMirrorZ,
           radianceCubeSize: res.radianceCubeSize,
           skybox: res.skybox,
           skyEnvironment: res.skyEnvironment,

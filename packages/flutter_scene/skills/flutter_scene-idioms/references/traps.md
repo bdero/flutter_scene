@@ -605,13 +605,13 @@ Still silent.
 
 ---
 
-## 41. Computing a camera or node right vector with `forward.cross(up)` or `+Z` orbit tangents
+## 41. Assuming local `+Z` is forward on cameras, nodes, or lights
 
-**Mistake.** Writing `final right = forward.cross(up).normalized()`, or placing an orbit camera at `target + Vector3(d * sin(azimuth), y, d * cos(azimuth))` and using `Vector3(cos(azimuth), 0, -sin(azimuth))` as its horizontal right vector.
+**Mistake.** Placing a camera at `(0, 0, -5)` expecting `+X` to be on the right of the screen, or aiming a node's local `+Z` axis toward a target when building custom camera or light rigs.
 
-**Symptom.** Horizontal camera strafing (`A`/`D`) and click-drag panning move in the exact opposite horizontal direction from expected, while vertical movement (`W`/`S` and vertical drag) works normally.
+**Symptom.** Cameras placed on the `-Z` side looking along `+Z` mirror world `+X` to the left of the screen, and custom directional/spot lights aimed along local `+Z` shine away from the target.
 
-**Do instead.** `flutter_scene`'s view space is left-handed (`+Z` forward into the screen, `+Y` up, `+X` right), while `package:vector_math`'s `cross()` is right-handed, so `forward.cross(up)` yields `-right` (screen-left). Likewise, when a camera sits on the `+Z` side of the origin looking along `-Z`, world `+X` is on the left of the screen (`right = Vector3(-cos(azimuth), 0, sin(azimuth))`). Read `camera.right`, `camera.horizontalRight`, `camera.horizontalForward`, or `node.right` directly, or compute `up.cross(forward).normalized()`. Prefer `OrbitCameraController`, `FollowCameraController`, or `FlyCameraController` over hand-rolled spherical camera math.
+**Do instead.** `flutter_scene` uses a right-handed world coordinate system (`+X` right, `+Y` up, `+Z` out of the screen toward the viewer, `-Z` forward), matching glTF 2.0 and `package:vector_math`. A default camera sits on the `+Z` side (`(0, 0, 5)`) looking along `-Z`, `node.forward` returns the node's world `-Z` direction, and `node.lookAt(target)` aims local `-Z` at `target`. Read `camera.right`, `camera.horizontalRight`, `camera.horizontalForward`, or `node.right` directly (or compute `forward.cross(up).normalized()`), and prefer `OrbitCameraController`, `FollowCameraController`, or `FlyCameraController` over hand-rolled spherical camera math.
 
 ---
 

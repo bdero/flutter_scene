@@ -180,7 +180,7 @@ void main() {
       expect(floats[3], 0.0);
       expect(floats[4], closeTo(3.0, 1e-6));
       expect(floats[8], closeTo(0.0, 1e-6));
-      expect(floats[10], closeTo(1.0, 1e-6));
+      expect(floats[10], closeTo(-1.0, 1e-6));
     });
 
     test('a lone directional light packs nothing', () {
@@ -250,7 +250,7 @@ void main() {
       final component = DirectionalLightComponent(DirectionalLight());
       node.addComponent(component);
 
-      expect(component.worldDirection.x, closeTo(1, 1e-6));
+      expect(component.worldDirection.x, closeTo(-1, 1e-6));
       expect(component.worldDirection.y, closeTo(0, 1e-6));
       expect(component.worldDirection.z, closeTo(0, 1e-6));
     });

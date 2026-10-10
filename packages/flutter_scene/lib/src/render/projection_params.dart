@@ -184,5 +184,5 @@ Vector3 orthographicForward(Matrix4 viewProjection) {
   final s = viewProjection.storage;
   final xRow = Vector3(s[0], s[4], s[8]);
   final yRow = Vector3(s[1], s[5], s[9]);
-  return xRow.cross(yRow)..normalize();
+  return yRow.cross(xRow)..normalize();
 }

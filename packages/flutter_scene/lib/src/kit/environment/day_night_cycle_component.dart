@@ -143,19 +143,19 @@ class DayNightCycleComponent extends Component {
     final eye = sunDir * 100.0;
     final target = vm.Vector3.zero();
 
-    // In flutter_scene, DirectionalLightComponent travels along local +Z
+    // In flutter_scene, DirectionalLightComponent travels along local -Z
     final forward = (target - eye).normalized();
     var up = vm.Vector3(0, 1, 0);
     if (up.cross(forward).length2 < 1e-6) {
-      up = vm.Vector3(0, 0, 1);
+      up = vm.Vector3(0, 0, -1);
     }
-    final right = up.cross(forward).normalized();
-    final actualUp = forward.cross(right).normalized();
+    final right = forward.cross(up).normalized();
+    final actualUp = right.cross(forward).normalized();
 
     final worldMat = vm.Matrix4.columns(
       vm.Vector4(right.x, right.y, right.z, 0.0),
       vm.Vector4(actualUp.x, actualUp.y, actualUp.z, 0.0),
-      vm.Vector4(forward.x, forward.y, forward.z, 0.0),
+      vm.Vector4(-forward.x, -forward.y, -forward.z, 0.0),
       vm.Vector4(eye.x, eye.y, eye.z, 1.0),
     );
 

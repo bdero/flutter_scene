@@ -161,7 +161,7 @@ class _ObjectMaskEncoder {
     _renderPass.setColorBlendEnable(false);
     _renderPass.setDepthCompareOperation(_raster.nearerOrEqual);
     _renderPass.setCullMode(gpu.CullMode.backFace);
-    _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+    _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
 
   final gpu.RenderPass _renderPass;
@@ -320,12 +320,12 @@ class _ObjectMaskEncoder {
         transientInstancePackingScratch.releaseSingleBatch();
         if (packed.ccwCount > 0) {
           bindInstanceData(_renderPass, packed.ccw, slot: dataSlot);
-          _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+          _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
           geometry.draw(_renderPass, instanceCount: packed.ccwCount);
         }
         if (packed.cwCount > 0) {
           bindInstanceData(_renderPass, packed.cw, slot: dataSlot);
-          _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+          _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
           geometry.draw(_renderPass, instanceCount: packed.cwCount);
         }
         return;
@@ -337,8 +337,8 @@ class _ObjectMaskEncoder {
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
             flip
-                ? gpu.WindingOrder.counterClockwise
-                : gpu.WindingOrder.clockwise,
+                ? gpu.WindingOrder.clockwise
+                : gpu.WindingOrder.counterClockwise,
           );
           geometry.draw(_renderPass);
         }
@@ -353,12 +353,12 @@ class _ObjectMaskEncoder {
       );
       if (packed.ccwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.ccw);
-        _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+        _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
         geometry.draw(_renderPass, instanceCount: packed.ccwCount);
       }
       if (packed.cwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.cw);
-        _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+        _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
         geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }
       return;
@@ -378,8 +378,8 @@ class _ObjectMaskEncoder {
     }
     _renderPass.setWindingOrder(
       item.windingFlipped
-          ? gpu.WindingOrder.counterClockwise
-          : gpu.WindingOrder.clockwise,
+          ? gpu.WindingOrder.clockwise
+          : gpu.WindingOrder.counterClockwise,
     );
     geometry.draw(_renderPass);
   }

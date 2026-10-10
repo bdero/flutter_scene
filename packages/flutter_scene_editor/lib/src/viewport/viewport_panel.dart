@@ -818,7 +818,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final screenAngle = angleOf(modal.pointer) - angleOf(modal.startPointer);
     final axis = _modalRotationAxis(modal);
     // Make the object follow the mouse regardless of which way the axis faces.
-    return axis.dot(_camera.forwardVector) >= 0 ? -screenAngle : screenAngle;
+    return axis.dot(_camera.forwardVector) >= 0 ? screenAngle : -screenAngle;
   }
 
   vm.Vector3 _modalRotationAxis(_ModalTransform modal) => modal.axis == null

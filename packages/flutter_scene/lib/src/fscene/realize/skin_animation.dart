@@ -55,7 +55,12 @@ Skin buildSkin(
     // A null joint renders as identity, matching Node.clone's skin handling.
     skin.joints.add(node);
   }
-  final matrices = _matrices(document.payload(spec.inverseBindMatrices));
+  final isLegacyLeftHanded =
+      spec.legacyLeftHanded || document.formatVersion < 6;
+  final matrices = _matrices(
+    document.payload(spec.inverseBindMatrices),
+    legacyLeftHanded: isLegacyLeftHanded,
+  );
   for (var i = 0; i < spec.joints.length; i++) {
     skin.inverseBindMatrices.add(
       i < matrices.length ? matrices[i] : Matrix4.identity(),
@@ -72,6 +77,8 @@ engine.Animation? buildAnimation(
   AnimationSpec spec,
   Map<LocalId, Node> nodes,
 ) {
+  final isLegacyLeftHanded =
+      spec.legacyLeftHanded || document.formatVersion < 6;
   final channels = <engine.AnimationChannel>[];
   for (final channel in spec.channels) {
     final times = _floats(document.payload(channel.timeline)).toList();
@@ -85,13 +92,13 @@ engine.Animation? buildAnimation(
         property = engine.AnimationProperty.translation;
         resolver = engine.PropertyResolver.makeTranslationTimeline(
           times,
-          _vec3List(values),
+          _vec3List(values, negateZ: isLegacyLeftHanded),
         );
       case AnimationProperty.rotation:
         property = engine.AnimationProperty.rotation;
         resolver = engine.PropertyResolver.makeRotationTimeline(
           times,
-          _quaternionList(values),
+          _quaternionList(values, reflectZ: isLegacyLeftHanded),
         );
       case AnimationProperty.scale:
         property = engine.AnimationProperty.scale;
@@ -122,15 +129,31 @@ engine.Animation? buildAnimation(
   return engine.Animation(name: spec.name, channels: channels);
 }
 
-List<Matrix4> _matrices(PayloadSpec? payload) {
+List<Matrix4> _matrices(PayloadSpec? payload, {bool legacyLeftHanded = false}) {
   final floats = _floats(payload);
   final count = floats.length ~/ 16;
   return [
     for (var i = 0; i < count; i++)
-      Matrix4.fromFloat32List(
-        Float32List.fromList(floats.sublist(i * 16, i * 16 + 16)),
+      _buildMatrix4(
+        floats.sublist(i * 16, i * 16 + 16),
+        legacyLeftHanded: legacyLeftHanded,
       ),
   ];
+}
+
+Matrix4 _buildMatrix4(Float32List slice, {required bool legacyLeftHanded}) {
+  final copy = Float32List.fromList(slice);
+  if (legacyLeftHanded) {
+    for (var col = 0; col < 4; col++) {
+      for (var row = 0; row < 4; row++) {
+        if ((row == 2) != (col == 2)) {
+          final idx = col * 4 + row;
+          copy[idx] = -copy[idx];
+        }
+      }
+    }
+  }
+  return Matrix4.fromFloat32List(copy);
 }
 
 // Reads a payload's bytes as native-endian float32s, matching how the emitter
@@ -148,11 +171,17 @@ Float32List _floats(PayloadSpec? payload) {
   return aligned.buffer.asFloat32List(0, aligned.lengthInBytes ~/ 4);
 }
 
-List<Vector3> _vec3List(Float32List v) => [
-  for (var i = 0; i + 3 <= v.length; i += 3) Vector3(v[i], v[i + 1], v[i + 2]),
+List<Vector3> _vec3List(Float32List v, {bool negateZ = false}) => [
+  for (var i = 0; i + 3 <= v.length; i += 3)
+    Vector3(v[i], v[i + 1], negateZ ? -v[i + 2] : v[i + 2]),
 ];
 
-List<Quaternion> _quaternionList(Float32List v) => [
+List<Quaternion> _quaternionList(Float32List v, {bool reflectZ = false}) => [
   for (var i = 0; i + 4 <= v.length; i += 4)
-    Quaternion(v[i], v[i + 1], v[i + 2], v[i + 3]),
+    Quaternion(
+      reflectZ ? -v[i] : v[i],
+      reflectZ ? -v[i + 1] : v[i + 1],
+      v[i + 2],
+      v[i + 3],
+    ),
 ];
