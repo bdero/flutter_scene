@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
+import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
@@ -140,13 +141,13 @@ base class Node implements SceneGraph {
   int layers = kRenderLayerDefault;
 
   /// Where this node's meshes draw within their pass, lowest first. Draws
-  /// sort by it before anything else: opaque ones before their state and
-  /// depth sort, translucent ones before their back-to-front sort. Use it to
-  /// pin the order of overlapping translucent surfaces that depth sorting
-  /// gets wrong (a thing seen through glass, or parts of one object). The
-  /// default 0 leaves ordering to the renderer. Not inherited by children.
-  // TODO(render-order-fscene): carry it in the .fscene document so authored
-  // scenes and the editor can set it.
+  /// sort by [Material.renderOrder] first and by this next, ahead of
+  /// everything else: opaque ones before their state and depth sort,
+  /// translucent ones before their back-to-front sort. Use it to pin the
+  /// order of overlapping translucent surfaces that depth sorting gets wrong
+  /// (a thing seen through glass, or parts of one object). The default 0
+  /// leaves ordering to the renderer. Not inherited by children; to order a
+  /// whole class of surfaces at once, set [Material.renderOrder] instead.
   double renderOrder = 0.0;
 
   // TODO(fscene): serialize this mask (NodeSpec field + json + diff).

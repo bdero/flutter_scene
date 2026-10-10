@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `NodeSpec.renderOrder` carries a node's render order, delta-serialized, reported by `diffScene` (`NodeChange.renderOrder`), and overridable on prefab instances through the `renderOrder` path. An instance at the default order takes its prefab root's.
+- Prefab expansion keeps member nodes' `shadowCastingMode`.
+
 ## 0.4.1
 
 - `TriMeshShape` documents that a triangle collides from its front (counter-clockwise) face only.

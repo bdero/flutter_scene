@@ -2133,7 +2133,12 @@ base class SceneEncoder {
     final froxelLighting = _lighting.froxels != null;
     final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
     _opaqueRecords.sort((a, b) {
-      final byOrder = a.item.renderOrder.compareTo(b.item.renderOrder);
+      final byOrder = _compareRenderOrder(
+        a.material,
+        a.item,
+        b.material,
+        b.item,
+      );
       if (byOrder != 0) return byOrder;
       final byPipeline = a.pipelineKey.compareTo(b.pipelineKey);
       if (byPipeline != 0) return byPipeline;
@@ -2449,9 +2454,22 @@ base class SceneEncoder {
     );
   }
 
+  // Material render order, then node render order, the leading sort keys of
+  // every scene pass.
+  static int _compareRenderOrder(
+    Material materialA,
+    RenderItem itemA,
+    Material materialB,
+    RenderItem itemB,
+  ) {
+    final byMaterial = materialA.renderOrder.compareTo(materialB.renderOrder);
+    if (byMaterial != 0) return byMaterial;
+    return itemA.renderOrder.compareTo(itemB.renderOrder);
+  }
+
   // Render order first, then farthest first.
   static int _backToFront(_TranslucentRecord a, _TranslucentRecord b) {
-    final byOrder = a.item.renderOrder.compareTo(b.item.renderOrder);
+    final byOrder = _compareRenderOrder(a.material, a.item, b.material, b.item);
     return byOrder != 0 ? byOrder : b.depth.compareTo(a.depth);
   }
 

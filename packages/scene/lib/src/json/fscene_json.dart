@@ -851,6 +851,7 @@ Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
     if (n.instance != null) 'instance': _encodeInstance(n.instance!, idKey),
     if (!n.visible) 'visible': false,
     if (n.shadowCastingMode != 'on') 'shadowCasting': n.shadowCastingMode,
+    if (n.renderOrder != 0) 'renderOrder': n.renderOrder,
     ...n.unknown,
   };
 }
@@ -1165,6 +1166,7 @@ const Set<String> _nodeKeys = {
   'instance',
   'visible',
   'shadowCasting',
+  'renderOrder',
 };
 
 NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
@@ -1187,6 +1189,7 @@ NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
       : null,
   visible: json['visible'] as bool? ?? true,
   shadowCastingMode: json['shadowCasting'] as String? ?? 'on',
+  renderOrder: (json['renderOrder'] as num? ?? 0).toDouble(),
 );
 
 TransformSpec _decodeTransform(Map<String, dynamic> json) {

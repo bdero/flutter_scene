@@ -22,6 +22,7 @@ export 'src/change.dart'
         StringChange,
         BoolChange,
         IntChange,
+        DoubleChange,
         TransformChange,
         LocalIdChange,
         PrefabInstanceChange,

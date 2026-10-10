@@ -42,6 +42,12 @@ class IntChange extends ChangeValue {
   final int value;
 }
 
+/// A floating-point value (for example a render order).
+class DoubleChange extends ChangeValue {
+  const DoubleChange(this.value);
+  final double value;
+}
+
 /// A node transform.
 class TransformChange extends ChangeValue {
   const TransformChange(this.value);
@@ -142,6 +148,9 @@ enum ChangeSlot {
 
   /// A node's shadow casting mode.
   shadowCastingMode('shadowCastingMode'),
+
+  /// A node's render order.
+  renderOrder('renderOrder'),
 
   /// A node's local transform.
   transform('transform'),
@@ -282,6 +291,8 @@ class Transaction {
       case ChangeSlot.shadowCastingMode:
         mutator.node(targetId)?.shadowCastingMode =
             (value as StringChange).value;
+      case ChangeSlot.renderOrder:
+        mutator.node(targetId)?.renderOrder = (value as DoubleChange).value;
       case ChangeSlot.transform:
         mutator.node(targetId)?.transform = (value as TransformChange).value;
       case ChangeSlot.skin:

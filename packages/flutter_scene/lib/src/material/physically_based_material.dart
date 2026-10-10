@@ -1577,6 +1577,7 @@ class PhysicallyBasedMaterial extends Material {
         ..doubleSided = doubleSided
         ..depthBias = depthBias
         ..depthLayer = depthLayer
+        ..renderOrder = renderOrder
         ..lodFade = lodFade
         ..lightListOffset = lightListOffset
         ..lightListCount = lightListCount

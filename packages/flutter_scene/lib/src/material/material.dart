@@ -313,6 +313,19 @@ abstract class Material {
 
   int _depthLayer = 0;
 
+  /// Where draws with this material go within their pass, lowest first. It
+  /// sorts ahead of `Node.renderOrder`, so it picks a bucket for a whole
+  /// class of surfaces and the node order sorts within it.
+  ///
+  /// Use it to pin which translucent layer blends over which where depth
+  /// sorting cannot tell (lane paint, then shadow decals, then markers, all
+  /// lying on one road). The order spans the whole pass, so a layer drawn
+  /// after glass also draws over the glass in front of it; give surfaces that
+  /// sit behind everything else negative orders so the rest keeps the
+  /// default 0. Pair it with [depthLayer] for surfaces that share a plane.
+  /// Shadow maps ignore it. Defaults to 0.
+  double renderOrder = 0.0;
+
   /// A rank in `0..2` from this material's creation order, which the
   /// automatic coplanar tie-break (`Scene.coplanarTieBreak`) turns into a
   /// small depth offset. Consecutively created materials always differ.

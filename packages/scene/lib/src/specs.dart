@@ -273,6 +273,7 @@ class NodeSpec {
     this.instance,
     this.visible = true,
     this.shadowCastingMode = 'on',
+    this.renderOrder = 0.0,
     this.unknown = const {},
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
@@ -315,6 +316,10 @@ class NodeSpec {
   /// `doubleSided`, or `shadowsOnly`. Names match the renderer's
   /// `ShadowCastingMode`; an unknown name realizes as `on`.
   String shadowCastingMode;
+
+  /// Where this node's meshes draw within their pass, lowest first (the
+  /// renderer's `Node.renderOrder`). Defaults to 0.
+  double renderOrder;
 }
 
 /// An axis-aligned bounding box in a resource's local space.

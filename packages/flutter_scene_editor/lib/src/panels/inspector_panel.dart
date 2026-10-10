@@ -114,6 +114,9 @@ class _NodeInspector extends StatelessWidget {
     final uniformShadowCasting = nodes.every(
       (n) => n.shadowCastingMode == node.shadowCastingMode,
     );
+    final uniformRenderOrder = nodes.every(
+      (n) => n.renderOrder == node.renderOrder,
+    );
     // Whether every node's material ref matches, so the shared material can
     // be edited inline for the whole selection.
     bool uniformRef(String type, String key) {
@@ -180,6 +183,19 @@ class _NodeInspector extends StatelessWidget {
               onChanged: (v) {
                 for (final n in nodes) {
                   controller.setNodeShadowCastingRouted(n.id, v);
+                }
+              },
+            ),
+          // Where the node's meshes draw within their pass, lowest first.
+          if (sharedTypes.contains('mesh'))
+            _DoubleRow(
+              label: 'Render order',
+              value: node.renderOrder,
+              mixed: !uniformRenderOrder,
+              onSubmit: (v) {
+                if (!v.isFinite) return;
+                for (final n in nodes) {
+                  controller.setNodeRenderOrderRouted(n.id, v);
                 }
               },
             ),

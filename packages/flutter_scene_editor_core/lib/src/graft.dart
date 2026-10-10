@@ -265,6 +265,7 @@ NodeSpec _copyNode(NodeSpec n, _Remap remap) => NodeSpec(
   instance: n.instance == null ? null : _copyInstance(n.instance!, remap),
   visible: n.visible,
   shadowCastingMode: n.shadowCastingMode,
+  renderOrder: n.renderOrder,
   unknown: n.unknown,
 );
 

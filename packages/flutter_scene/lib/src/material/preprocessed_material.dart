@@ -63,6 +63,8 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     setFragmentShader(fragmentShader);
     _declaredDepthLayer = _parseDepthLayer(metadata['depth_layer']);
     depthLayer = _declaredDepthLayer;
+    _declaredRenderOrder = _parseRenderOrder(metadata['render_order']);
+    renderOrder = _declaredRenderOrder;
   }
 
   // The `.fmat`'s `depth_layer:`, reapplied on reload only when it changes so
@@ -76,6 +78,17 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
   static int _parseDepthLayer(Object? value) =>
       value is num ? value.toInt() : 0;
+
+  // The `.fmat`'s `render_order:`, reapplied on reload like the depth layer.
+  double _declaredRenderOrder = 0;
+
+  /// The `render_order:` this material's `.fmat` declares, the [renderOrder]
+  /// it starts with.
+  @internal
+  double get declaredRenderOrder => _declaredRenderOrder;
+
+  static double _parseRenderOrder(Object? value) =>
+      value is num ? value.toDouble() : 0;
 
   /// Parses the sidecar's `engine_inputs` list into requested render inputs.
   static Set<RenderInput> _parseSceneInputs(Object? value) {
@@ -436,6 +449,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     if (declaredDepthLayer != _declaredDepthLayer) {
       _declaredDepthLayer = declaredDepthLayer;
       depthLayer = declaredDepthLayer;
+    }
+    final declaredRenderOrder = _parseRenderOrder(metadata['render_order']);
+    if (declaredRenderOrder != _declaredRenderOrder) {
+      _declaredRenderOrder = declaredRenderOrder;
+      renderOrder = declaredRenderOrder;
     }
     markMaterialSceneInputsChanged();
     setFragmentShader(fragmentShader);

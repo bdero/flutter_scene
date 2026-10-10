@@ -243,8 +243,10 @@ void _expandInstance(
       // Merge the prefab root into the instance node. The instance transform
       // places the prefab in the host, outside the prefab root's own local
       // transform. Keep the instance name and layers. An unnamed instance
-      // inherits the prefab root's name.
+      // inherits the prefab root's name, and one at the default render order
+      // inherits the root's, which orders the meshes the root contributes.
       if (instance.name.isEmpty) instance.name = node.name;
+      if (instance.renderOrder == 0) instance.renderOrder = node.renderOrder;
       final rootTransform = node.transform.toMatrix4();
       if (!rootTransform.isIdentity()) {
         instance.transform = MatrixTransform(
@@ -392,9 +394,10 @@ void _applyDelta(
 /// is not found the call is a no-op (a warning is printed via [debugPrint]).
 ///
 /// The grammar for [PropertyOverride.path] is the same as the override grammar
-/// used during composition: `name`, `layers`, `visible`, `transform.matrix`,
-/// `transform.trs.t`, `transform.trs.r`, `transform.trs.s`, and
-/// `components.<type>.<prop>`, including nested map/list segments.
+/// used during composition: `name`, `layers`, `visible`, `shadowCasting`,
+/// `renderOrder`, `transform.matrix`, `transform.trs.t`, `transform.trs.r`,
+/// `transform.trs.s`, and `components.<type>.<prop>`, including nested
+/// map/list segments.
 /// {@category Composition}
 void applyPrefabOverride(SceneDocument document, PropertyOverride override) {
   final node = document.node(override.target);
@@ -425,6 +428,9 @@ enum PrefabOverrideAspect {
   /// `shadowCasting`.
   shadowCasting,
 
+  /// `renderOrder`.
+  renderOrder,
+
   /// `transform.matrix` or `transform.trs.<field>`.
   transform,
 
@@ -447,6 +453,8 @@ PrefabOverrideAspect prefabOverrideAspect(String path) {
       return PrefabOverrideAspect.layers;
     case 'shadowCasting':
       return PrefabOverrideAspect.shadowCasting;
+    case 'renderOrder':
+      return PrefabOverrideAspect.renderOrder;
   }
   final parts = path.split('.');
   if (parts.length >= 2 && parts[0] == 'transform') {
@@ -476,6 +484,17 @@ void _setProperty(NodeSpec node, String path, PropertyValue value) {
     if (parts[0] == 'shadowCasting' && value is StringValue) {
       node.shadowCastingMode = value.value;
       return;
+    }
+    if (parts[0] == 'renderOrder') {
+      switch (value) {
+        case DoubleValue(:final value):
+          node.renderOrder = value;
+          return;
+        case IntValue(:final value):
+          node.renderOrder = value.toDouble();
+          return;
+        default:
+      }
     }
   }
   if (parts.length >= 2 && parts[0] == 'transform') {
@@ -592,6 +611,8 @@ NodeSpec _remapNode(
   skin: node.skin == null ? null : remap(node.skin!),
   instance: keepInstance ? node.instance : null,
   visible: node.visible,
+  shadowCastingMode: node.shadowCastingMode,
+  renderOrder: node.renderOrder,
 );
 
 ComponentSpec _remapComponent(

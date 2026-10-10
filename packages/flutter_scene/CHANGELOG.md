@@ -3,6 +3,12 @@
 * Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
 * Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
 * A billboard batch on a scaled node is no longer culled while still on screen.
+* `Material.renderOrder` (`.fmat` `render_order:`) sorts a material's draws ahead of `Node.renderOrder`, so a whole class of translucent overlays (road paint, shadow decals, markers) is ordered in one place.
+* `.fscene` documents carry `Node.renderOrder` and `Material.renderOrder`, and the editor sets a node's order from the inspector and the `setNodeRenderOrder` command.
+* `.fscene` documents keep an `UnlitMaterial`'s `alphaMode`, so a translucent unlit material no longer reloads opaque.
+* Physical materials realized from a `.fscene` keep their `depthBias` and `depthLayer`.
+* Nodes added by a `.fscene` hot reload keep their shadow casting mode.
+* Update `flutter_scene-idioms` skill (v17) with render order and stacked translucent overlays.
 
 ## 0.24.3
 

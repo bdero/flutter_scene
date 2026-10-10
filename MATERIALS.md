@@ -121,6 +121,7 @@ into one bundle; each becomes an entry keyed by its `name`.
 | `effects_depth` | boolean | `false` | For `blending: alpha` surfaces, join the post-effect depth (depth of field, custom passes that read depth) where `Surface()` alpha is at least one half, without writing depth in the color pass. For soft cutouts such as fins that must blur with what they are attached to. |
 | `depth_test` | `less_equal`, `always` | `less_equal` | The depth test used in the translucent pass, so it needs `blending: alpha` or `additive`. `always` draws regardless of the opaque depth, for a projection volume whose own faces are not the surface being shaded (see Decals). |
 | `depth_layer` | whole number, `-8` to `8` | `0` | Which surface wins where this material's geometry and another's share a plane: a higher layer draws over a lower one at any distance, so an overlay that lies on a surface (a sign, road paint, a decal quad) gets `1`. `Material.depthLayer` overrides it per instance. |
+| `render_order` | number | `0` | Where this material's draws go within their pass, lowest first, ahead of `Node.renderOrder` and the depth sort. Pins which translucent layer blends over which (lane paint, then shadow decals, then markers). The order spans the whole pass, so give surfaces that sit behind everything else negative orders. `Material.renderOrder` overrides it per instance. |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
 | `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Surface materials, `lit` or `unlit` (`planar_reflection` is lit only). |
 | `scene_color_reach` | number | unbounded | How far past its own surface the shader samples, in local units. Lets readers whose screen rects are disjoint share one scene-color capture. Requires `engine_inputs`. |
@@ -730,6 +731,13 @@ The material is `blending: alpha` with the mark's coverage in `base_color.a`.
 This is the whole technique, and it needs no engine support. It is correct on
 flat ground and wrong on anything curved or stepped, where the quad floats over
 or sinks into the receiver.
+
+Decals stacked on one another (a shadow on a lane line) need both settings. A
+higher `depthLayer` wins the depth test, but blended surfaces write no depth,
+so which one blends over the other is draw order, and coplanar quads give the
+depth sort nothing to go on. Order them with `Material.renderOrder`
+(`render_order:`), using negative values so they draw before default-order
+glass that may stand in front of them.
 
 ## Projected box decals, for any receiver
 

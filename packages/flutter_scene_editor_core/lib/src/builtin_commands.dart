@@ -319,6 +319,38 @@ final setNodeShadowCasting = CommandEntry(
   },
 );
 
+final setNodeRenderOrder = CommandEntry(
+  name: 'setNodeRenderOrder',
+  doc:
+      'Set where a node\'s meshes draw within their pass, lowest first. '
+      'Sorts after the material\'s render order and before depth, so it '
+      'pins which overlapping translucent surface blends over which.',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(name: 'order', type: ParamType.number, label: 'Render order'),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final order = requireDouble(params, 'order');
+    if (!order.isFinite) {
+      throw CommandException('Render order must be a finite number.');
+    }
+    return Transaction(
+      name: 'Set render order',
+      records: [
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.renderOrder,
+          oldValue: DoubleChange(node.renderOrder),
+          newValue: DoubleChange(order),
+        ),
+      ],
+    );
+  },
+);
+
 final setNodeLayers = CommandEntry(
   name: 'setNodeLayers',
   doc: 'Set a node\'s render-layer bitmask.',
@@ -3644,6 +3676,7 @@ final List<CommandEntry> builtinCommands = [
   setNodeName,
   setNodeVisible,
   setNodeShadowCasting,
+  setNodeRenderOrder,
   setNodeLayers,
   setNodeTransform,
   createNode,
