@@ -331,6 +331,7 @@ class ResourceRealizer {
             agxWhite: resource.agxWhite,
             agxContrast: resource.agxContrast,
             environmentRotationY: resource.environmentRotationY,
+            environmentMirrorZ: resource.environmentMirrorZ,
             radianceCubeSize: resource.radianceCubeSize,
             skybox: resource.skybox,
             skyEnvironment: resource.skyEnvironment,

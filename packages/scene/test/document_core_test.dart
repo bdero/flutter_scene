@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
 import 'package:test/test.dart';
@@ -64,6 +66,7 @@ void main() {
       final nodeId = alloc.mint();
       final skinId = alloc.mint();
       final animId = alloc.mint();
+      final instanceId = alloc.mint();
       final v5Json =
           '''
 {
@@ -123,11 +126,47 @@ void main() {
               }
             }
           }
+        },
+        {
+          "type": "physicsWorld",
+          "properties": {
+            "gravity": {"v3": [0, -9.8, 1]}
+          }
         }
       ]
+    },
+    "n:${instanceId.toToken()}": {
+      "name": "Lamp",
+      "transform": {
+        "trs": {
+          "t": [0, 0, 2],
+          "r": [0, 0, 0, 1],
+          "s": [1, 1, 1]
+        }
+      },
+      "instance": {
+        "source": "prefabs/lamp.fscene",
+        "overrides": [
+          {
+            "target": "n:${nodeId.toToken()}",
+            "path": "components.spotLight.direction",
+            "value": {"v3": [0, -1, 0.5]}
+          },
+          {
+            "target": "n:${nodeId.toToken()}",
+            "path": "components.particleEmitter.modules.0.acceleration",
+            "value": {"v3": [1, 2, 3]}
+          },
+          {
+            "target": "n:${nodeId.toToken()}",
+            "path": "components.spotLight.intensity",
+            "value": {"d": 4.0}
+          }
+        ]
+      }
     }
   },
-  "roots": ["n:${nodeId.toToken()}"],
+  "roots": ["n:${nodeId.toToken()}", "n:${instanceId.toToken()}"],
   "skins": {
     "skin:${skinId.toToken()}": {
       "joints": ["n:${nodeId.toToken()}"],
@@ -161,11 +200,14 @@ void main() {
       final doc = readFscene(v5Json);
       expect(doc.formatVersion, 6);
 
+      // The environment mirrors as a whole, so a procedural sky keeps its
+      // authored sun direction and the mirror flag carries the reflection.
       final env = doc.resources[envId]! as EnvironmentResource;
+      expect(env.environmentMirrorZ, isTrue);
       final sky = env.skybox!.source as PhysicalSkySpec;
       expect(sky.sunDirection.x, closeTo(0.2, 1e-6));
       expect(sky.sunDirection.y, closeTo(0.8, 1e-6));
-      expect(sky.sunDirection.z, closeTo(-0.5, 1e-6));
+      expect(sky.sunDirection.z, closeTo(0.5, 1e-6));
 
       final geom = doc.resources[geomId]! as GeometryResource;
       expect(geom.legacyLeftHanded, isTrue);
@@ -194,7 +236,29 @@ void main() {
           (node.components[1].properties['shape']! as MapValue).values;
       expect((colliderShape['legacyLeftHanded']! as BoolValue).value, isTrue);
 
-      expect(doc.editor!.camera!.target.storage, [1.0, 2.0, -3.0]);
+      final gravity =
+          (node.components[2].properties['gravity']! as Vec3Value).value;
+      expect(gravity.x, closeTo(0.0, 1e-6));
+      expect(gravity.y, closeTo(-9.8, 1e-6));
+      expect(gravity.z, closeTo(-1.0, 1e-6));
+
+      // Prefab overrides of component vector properties reflect by the same
+      // table as inline components; scalars pass through untouched.
+      final overrides = doc.nodes[instanceId]!.instance!.overrides;
+      expect(overrides, hasLength(3));
+      expect((overrides[0].value as Vec3Value).value.storage, [
+        0.0,
+        -1.0,
+        -0.5,
+      ]);
+      expect((overrides[1].value as Vec3Value).value.storage, [1.0, 2.0, -3.0]);
+      expect((overrides[2].value as DoubleValue).value, 4.0);
+
+      // The editor orbit eye sits at target + (sin a, ., cos a) * r, so the
+      // reflected view is azimuth pi - a.
+      final camera = doc.editor!.camera!;
+      expect(camera.target.storage, [1.0, 2.0, -3.0]);
+      expect(camera.azimuth, closeTo(math.pi - 0.5, 1e-9));
     },
   );
 }

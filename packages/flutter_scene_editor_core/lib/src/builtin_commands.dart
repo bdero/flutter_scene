@@ -1552,6 +1552,7 @@ EnvironmentResource _copyEnvironmentResource(EnvironmentResource r) =>
       agxWhite: r.agxWhite,
       agxContrast: r.agxContrast,
       environmentRotationY: r.environmentRotationY,
+      environmentMirrorZ: r.environmentMirrorZ,
       radianceCubeSize: r.radianceCubeSize,
       skybox: r.skybox,
       skyEnvironment: r.skyEnvironment == null
@@ -1652,6 +1653,9 @@ void _applyLookProperties(_LookView look, Map<String, PropertyValue> props) {
         props['environmentRotationY'],
         r.environmentRotationY,
       );
+    }
+    if (props['environmentMirrorZ'] case BoolValue(:final value)) {
+      r.environmentMirrorZ = value;
     }
     if (_applyEnvironmentEffects(r.effects, props)) {
       r.overridesEffects = true;

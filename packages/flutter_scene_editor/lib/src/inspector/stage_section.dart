@@ -323,6 +323,13 @@ class EnvironmentControls extends StatelessWidget {
           onPreview: (_) {},
           onCommit: (v) => _set({'environmentRotationY': v * math.pi / 180}),
         ),
+        InspectorSwitch(
+          label: 'Mirror',
+          description: 'Reverse the environment longitude (sample at -Z).',
+          value: env.environmentMirrorZ,
+          onChanged: (v) => _set({'environmentMirrorZ': v}),
+          padding: const EdgeInsets.symmetric(vertical: 5),
+        ),
         LabeledControlRow(
           label: 'Reflection resolution',
           control: DropdownButton<int>(

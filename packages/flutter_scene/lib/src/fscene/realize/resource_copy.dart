@@ -113,6 +113,7 @@ LocalId copyResourceInto(
           agxWhite: res.agxWhite,
           agxContrast: res.agxContrast,
           environmentRotationY: res.environmentRotationY,
+          environmentMirrorZ: res.environmentMirrorZ,
           radianceCubeSize: res.radianceCubeSize,
           skybox: res.skybox,
           skyEnvironment: res.skyEnvironment,
