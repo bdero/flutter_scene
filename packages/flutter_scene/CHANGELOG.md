@@ -1,5 +1,12 @@
-## 0.24.4
+## 0.25.0
 
+* World space is right-handed (`+X` right, `+Y` up, `+Z` toward the viewer, `-Z` forward), matching glTF and `vector_math`. A camera on `+Z` looking at the origin now puts world `+X` on the right of the screen, and `Camera.right` and `Camera.horizontalRight` follow `forward.cross(up)`.
+* Cameras, `Node.forward`, `Node.lookAt`, directional, spot, and rect area lights, and audio listeners aim along local `-Z`. The default camera sits at `(0, 0, 5)`.
+* glTF imports with no coordinate conversion: no mirrored root node, no baked Z reflection, no index swap. Imported models face `+Z` and keep their authored node transforms.
+* `OrbitCameraController`, `FollowCameraController`, and `FlyCameraController` use standard spherical coordinates, with azimuth 0 on the `+Z` side.
+* `.fscene` format 6. Documents from formats 2 through 5 migrate on load, reflecting transforms, bounds, light, physics, particle, and prefab-override vectors across Z, converting geometry, skin, animation, and collider payloads, mirroring environments through `environmentMirrorZ`, and remapping the editor camera azimuth. Older engines refuse format 6 documents.
+* `Scene.environmentTransform` may carry a mirror as well as a rotation; a document's `environmentMirrorZ` (also a switch in the editor's stage inspector) sets one.
+* Code scenes written for 0.24 render as their horizontal mirror until authored Z coordinates are negated (quaternions negate X and Y); `lookAt`-aimed nodes need no change.
 * Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
 * Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
 * A billboard batch on a scaled node is no longer culled while still on screen.

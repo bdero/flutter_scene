@@ -131,7 +131,6 @@ void main() {
                   accessors: doc.accessors,
                   bufferViews: doc.bufferViews,
                   bufferData: container.binaryChunk,
-                  coordinatePolicy: GltfCoordinatePolicy.bakeNative,
                   includeSkinning: includeSkinning,
                 ),
               );

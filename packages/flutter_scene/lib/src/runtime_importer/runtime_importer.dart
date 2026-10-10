@@ -158,7 +158,6 @@ List<List<_PackedPrimitiveVariants?>> _packPrimitivesIsolate(
       accessors: doc.accessors,
       bufferViews: doc.bufferViews,
       bufferData: input.bufferData,
-      coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       includeSkinning: includeSkinning,
     );
     final carriesSkinning =
@@ -241,7 +240,6 @@ Future<Node> _buildScene(
         bufferViews: doc.bufferViews,
         bufferData: bufferData,
         engineNodes: engineNodes,
-        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       ),
   ];
   for (int i = 0; i < doc.nodes.length; i++) {
@@ -289,7 +287,6 @@ Future<Node> _buildScene(
         bufferViews: doc.bufferViews,
         bufferData: bufferData,
         engineNodes: engineNodes,
-        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       ),
     );
   }
@@ -316,22 +313,17 @@ void _populateNode({
   required List<MaterialsVariantBinding> variantBindings,
 }) {
   engineNode.name = resolveGltfNodeName(gltfNode.name, index);
-  const coordinatePolicy = GltfCoordinatePolicy.runtimeBoundary;
   final matrix = gltfNode.matrix;
   if (matrix != null) {
-    engineNode.localTransform = coordinatePolicy.convertTransform(matrix);
+    engineNode.localTransform = matrix.clone();
   } else {
     // Keep the authored TRS. Recovering it from the composed matrix puts
     // a mirrored bone's negative scale on the wrong axis, which breaks
     // animation blending.
     engineNode.setLocalTransformTrs(
       DecomposedTransform(
-        translation: coordinatePolicy.convertPosition(
-          gltfNode.translation ?? Vector3.zero(),
-        ),
-        rotation: coordinatePolicy.convertRotation(
-          gltfNode.rotation ?? Quaternion.identity(),
-        ),
+        translation: (gltfNode.translation ?? Vector3.zero()).clone(),
+        rotation: (gltfNode.rotation ?? Quaternion.identity()).clone(),
         scale: gltfNode.scale?.clone() ?? Vector3(1.0, 1.0, 1.0),
       ),
     );

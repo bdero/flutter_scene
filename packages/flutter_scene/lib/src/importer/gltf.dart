@@ -7,7 +7,7 @@
 library;
 
 export 'src/gltf/accessor.dart';
-export 'src/gltf/coordinate_policy.dart';
+export 'src/gltf/keyframe_values.dart';
 export 'src/gltf/extensions.dart';
 export 'src/gltf/glb.dart';
 export 'src/gltf/meshopt_decoder.dart';

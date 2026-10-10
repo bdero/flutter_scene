@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- `.fscene` format version 6 stores right-handed coordinates (`-Z` forward). Versions 2 through 5 migrate on read: node transforms, bounds, light, joint, particle, physics, and character-controller vectors, prefab overrides of those properties, and the editor camera azimuth reflect across Z.
+- `GeometryResource`, `SkinSpec`, `AnimationSpec`, and convex-hull and triangle-mesh collider shapes carry `legacyLeftHanded` after migration so the realizer reflects their payloads.
+- `EnvironmentResource.environmentMirrorZ` mirrors the environment across the XY plane before `environmentRotationY`. Migrated documents set it so image and procedural skies keep their place relative to the reflected content.
+- `currentFsceneVersion` is 6; older readers refuse format 6 documents.
+
 ## 0.4.1
 
 - `TriMeshShape` documents that a triangle collides from its front (counter-clockwise) face only.

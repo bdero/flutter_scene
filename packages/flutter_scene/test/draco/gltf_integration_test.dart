@@ -32,14 +32,12 @@ void _comparePacked(String name) {
         accessors: compressedDoc.accessors,
         bufferViews: compressedDoc.bufferViews,
         bufferData: compressedBin,
-        coordinatePolicy: GltfCoordinatePolicy.bakeNative,
       );
       final reference = packGltfPrimitive(
         primitive: decodedDoc.meshes[m].primitives[p],
         accessors: decodedDoc.accessors,
         bufferViews: decodedDoc.bufferViews,
         bufferData: decodedBin,
-        coordinatePolicy: GltfCoordinatePolicy.bakeNative,
       );
       expect(packed.vertexCount, reference.vertexCount);
       expect(packed.isSkinned, reference.isSkinned);
@@ -174,7 +172,6 @@ void main() {
         accessors: accessors,
         bufferViews: views,
         bufferData: data,
-        coordinatePolicy: GltfCoordinatePolicy.bakeNative,
       );
     }
 
