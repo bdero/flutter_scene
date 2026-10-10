@@ -18,7 +18,6 @@ flutter_scene is a realtime 3D engine for Flutter, built on Flutter GPU. It has 
 - **Not `Node.fromAsset(...)`, not `loadModel(...)`.** Load a preprocessed model with **`loadScene('assets/x.glb')`** (returns `Future<Node>`), or a runtime glTF with `Node.fromGlbAsset` / `Node.fromGlbBytes`.
 - **Not a hand-rolled `CustomPainter` + `Ticker`.** Display a scene with the **`SceneView`** widget; it drives the per-frame loop for you.
 - **Not `node.position.set(x, y, z)`.** See transforms below.
-- **Not `forward.cross(up)` for a camera or node right vector.** View space is left-handed (`+Z` forward into the screen, `+Y` up, `+X` right), while `vector_math`'s `cross` is right-handed, so `forward.cross(up)` points **screen-left** and horizontally inverts `A`/`D` strafing and drag panning. Read `camera.right`, `camera.horizontalRight`, or `node.right`, or compute `up.cross(forward).normalized()`.
 - **Not `.model` files or `buildModels`.** The offline format is `.fsceneb`, produced by the `flutter_scene:init` build hook; you load it by source path with `loadScene`.
 - **Not the removed `Environment` class.** Environment lighting is `EnvironmentMap` on `Scene.environment`.
 
@@ -67,7 +66,7 @@ class _CubeViewState extends State<CubeView> {
   @override
   Widget build(BuildContext context) {
     if (!ready) return const SizedBox.expand();
-    return SceneView(scene, camera: PerspectiveCamera(position: vm.Vector3(2, 2, -4)));
+    return SceneView(scene, camera: PerspectiveCamera(position: vm.Vector3(2, 2, 4)));
   }
 }
 ```
@@ -89,15 +88,15 @@ The two interoperate. A mostly-declarative scene can drop to an imperative node 
 
 ## The API shape (where it diverges from what you expect)
 
-**Transforms.** `Node` has `position`, `rotation` (a `Quaternion`), and `scale`, but they are whole-value get/set, not the mutable spelling other engines use. Assign the whole vector (`node.position = vm.Vector3(0, 1, 0)` or `node.position += ...`). The getters return copies, so `node.position.x = 5` does nothing and throws in debug. For a raw matrix edit use `node.localTransform = matrix` or `node.mutateLocalTransform((m) => m.translateByVector3(...))`; a bare in-place edit of `node.localTransform` never moves the node, because the cache is not told. `node.forward`, `node.right`, and `node.up` return the node's unit world-space basis axes (`+Z`, `+X`, `+Y`), and `node.lookAt(target)` or `node.lookAtFrom(eye, target)` aims local `+Z` at `target`.
+**Transforms.** `Node` has `position`, `rotation` (a `Quaternion`), and `scale`, but they are whole-value get/set, not the mutable spelling other engines use. Assign the whole vector (`node.position = vm.Vector3(0, 1, 0)` or `node.position += ...`). The getters return copies, so `node.position.x = 5` does nothing and throws in debug. For a raw matrix edit use `node.localTransform = matrix` or `node.mutateLocalTransform((m) => m.translateByVector3(...))`; a bare in-place edit of `node.localTransform` never moves the node, because the cache is not told. `node.forward`, `node.right`, and `node.up` return the node's unit world-space basis axes (`-Z`, `+X`, `+Y`), and `node.lookAt(target)` or `node.lookAtFrom(eye, target)` aims local `-Z` at `target`.
 
 **Geometry.** Ten built-in primitives (`CuboidGeometry`, `SphereGeometry`, `IcosphereGeometry`, `CylinderGeometry` with separate top/bottom radii so cones are free, `CapsuleGeometry`, `TorusGeometry`, `PlaneGeometry`, `DiscGeometry`, `RingGeometry`, `WedgeGeometry`), plus swept geometry (`ExtrudeGeometry`, `TubeGeometry`, `RibbonGeometry`), lines (`PolylineGeometry`), and `GeometryBuilder`/`MeshData` for custom meshes. Do not hand-pack a `ByteData` vertex buffer before checking these.
 
 **Materials.** `PhysicallyBasedMaterial` (base color, metallic, roughness, normal, emissive, plus clearcoat/sheen/transmission/etc.), `UnlitMaterial`, `ShaderMaterial` for custom shaders. Texture slots take a `TextureSource` (from `loadTexture(path)`), not a raw `gpu.Texture`.
 
-**Camera and coordinate basis.** `PerspectiveCamera(position: ..., target: ...)`, or `OrthographicCamera(position: ..., target: ..., projection: OrthographicProjection(size: OrthographicSize.height(12)))` for isometric, top-down, and pixel-art views. Every depth effect works under both. Prefer attaching `OrbitCameraController`, `FollowCameraController`, or `FlyCameraController` to a camera node (driven with the `CameraControls` widget) over hand-rolling spherical camera math. When driving a camera yourself, remember that view space is **left-handed (`+Z` forward into the screen, `+Y` up, `+X` right)**.
-- Default camera placement sits on the `-Z` side (`(0, 0, -5)`) looking along `+Z` at the origin, where world `+X` points screen-right. If you instead place an eye on the `+Z` side (`eye = target + vm.Vector3(d * sin(a), y, d * cos(a))`) looking back along `-Z`, world `+X` points **screen-left** (`right = vm.Vector3(-cos(a), 0, sin(a))`), not `(cos(a), 0, -sin(a))`.
-- Never write `forward.cross(up)` for a right vector; `vector_math`'s right-handed cross product makes `forward.cross(up)` point **screen-left**. Read `camera.right` (or `camera.horizontalRight` and `camera.horizontalForward` for `XZ` ground-plane strafing and panning) or compute `up.cross(forward).normalized()`.
+**Camera and coordinate basis.** `PerspectiveCamera(position: ..., target: ...)`, or `OrthographicCamera(position: ..., target: ..., projection: OrthographicProjection(size: OrthographicSize.height(12)))` for isometric, top-down, and pixel-art views. Every depth effect works under both. Prefer attaching `OrbitCameraController`, `FollowCameraController`, or `FlyCameraController` to a camera node (driven with the `CameraControls` widget) over hand-rolling spherical camera math. World space is **right-handed (`+X` right, `+Y` up, `+Z` out of the screen toward the viewer, `-Z` forward)**.
+- Default camera placement sits on the `+Z` side (`(0, 0, 5)`) looking along `-Z` at the origin, where world `+X` points screen-right.
+- Read `camera.right`, `camera.horizontalRight`, `camera.horizontalForward`, or `node.right` (or compute `forward.cross(up).normalized()`) for camera-relative movement and panning.
 
 ## What you are probably underestimating (it is all here)
 
@@ -107,7 +106,6 @@ Low-end and GLES-class GPUs (Raspberry Pi, web, integrated Linux) get a budget, 
 
 ## Traps that fail silently (wrong pixels, no error)
 
-- **Horizontal camera and movement inversion (`forward.cross(up)` and `+Z` orbit tangents).** Because view space has `+Z` into the screen and `vector_math.cross` is right-handed, `forward.cross(up)` yields `-right` (screen-left), and an orbit camera placed at `target + (d * sin(a), y, d * cos(a))` has screen-right `(-cos(a), 0, sin(a))`, not `(cos(a), 0, -sin(a))`. Use `camera.right`, `camera.horizontalRight`, `camera.horizontalForward`, or `up.cross(forward).normalized()`.
 - **Custom `ShaderMaterial` output is linear HDR premultiplied by alpha.** No tone mapping or gamma in your shader; the `ResolvePass` applies exposure, tone mapping, and the display transform. Linearize sRGB texture samples yourself. See `MATERIALS.md`.
 - **Never hand-roll a per-triangle winding flip to fix glTF orientation.** The importers handle the coordinate conversion; a manual flip leaves normals and IBL wrong.
 - **Do not emit a vertex buffer at the wrong stride.** Unskinned is 72 bytes/vertex, skinned is 104; the attribute order is fixed. Use `GeometryBuilder`, do not guess the layout.

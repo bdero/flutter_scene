@@ -81,10 +81,10 @@ class FollowCameraController extends CameraController {
   double get pitch => _pitch;
 
   /// Unit horizontal direction the camera looks along (away from it).
-  Vector3 get forward => Vector3(math.sin(_yaw), 0.0, math.cos(_yaw));
+  Vector3 get forward => Vector3(-math.sin(_yaw), 0.0, -math.cos(_yaw));
 
   /// Unit horizontal direction to the camera's right.
-  Vector3 get right => Vector3(0.0, 1.0, 0.0).cross(forward)..normalize();
+  Vector3 get right => forward.cross(Vector3(0.0, 1.0, 0.0))..normalize();
 
   /// Rotates the orbit by [deltaYaw] and [deltaPitch] (radians); pitch clamps.
   void orbitBy(double deltaYaw, double deltaPitch) {
@@ -132,7 +132,7 @@ class FollowCameraController extends CameraController {
   Vector3 _desiredPosition(Vector3 lookAt) {
     final horizontal = math.cos(_pitch) * distance;
     return lookAt +
-        Vector3(-math.sin(_yaw), 0.0, -math.cos(_yaw)) * horizontal +
+        Vector3(math.sin(_yaw), 0.0, math.cos(_yaw)) * horizontal +
         Vector3(0.0, math.sin(_pitch) * distance, 0.0);
   }
 }

@@ -253,13 +253,7 @@ Future<Node> _buildScene(
 
   // Pick the default scene (or the first one, or empty).
   final sceneIndex = doc.scene ?? (doc.scenes.isNotEmpty ? 0 : null);
-  // Keep source data untouched and convert once at the imported boundary.
-  // Packed geometry carries its source winding so the renderer can combine
-  // it with this mirror without rewriting indices or vertex data.
-  final root = Node(
-    name: 'root',
-    localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
-  )..isImportRoot = true;
+  final root = Node(name: 'root')..isImportRoot = true;
   if (doc.materialsVariants.isNotEmpty) {
     root.addComponent(
       MaterialsVariantsComponent.internal(

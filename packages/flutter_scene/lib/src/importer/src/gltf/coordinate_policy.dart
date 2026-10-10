@@ -28,7 +28,11 @@ enum GltfCoordinatePolicy {
 
 extension GltfCoordinateConversion on GltfCoordinatePolicy {
   /// Whether vertex and document data are converted during import.
-  bool get bakesNative => this == GltfCoordinatePolicy.bakeNative;
+  ///
+  /// Native scene coordinates match glTF 2.0's right-handed (+X right, +Y up,
+  /// +Z out of the screen, -Z forward, CCW front faces) convention, so both
+  /// policies keep glTF coordinates unchanged.
+  bool get bakesNative => false;
 
   /// Whether packed source triangles use the opposite native winding.
   bool get sourceWindingFlipped => false;

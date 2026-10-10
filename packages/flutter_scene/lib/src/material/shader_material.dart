@@ -146,7 +146,7 @@ class ShaderMaterial extends Material {
     gpu.Shader? depthVertexShader,
     this.useEnvironment = false,
     this.cullingMode = gpu.CullMode.backFace,
-    this.windingOrder = gpu.WindingOrder.clockwise,
+    this.windingOrder = gpu.WindingOrder.counterClockwise,
     this.isOpaqueOverride = true,
     Set<RenderInput> sceneInputs = const {},
     List<ShaderInstanceAttribute> instanceAttributes = const [],
@@ -197,9 +197,8 @@ class ShaderMaterial extends Material {
   /// [gpu.CullMode.backFace] to match the standard materials.
   gpu.CullMode cullingMode;
 
-  /// Triangle winding order. Defaults to [gpu.WindingOrder.clockwise] to
-  /// project model-space Counter-Clockwise (CCW) front faces on the Y-down
-  /// rasterizer.
+  /// Triangle winding order. Defaults to [gpu.WindingOrder.counterClockwise] to
+  /// project right-handed model-space Counter-Clockwise (CCW) front faces.
   gpu.WindingOrder windingOrder;
 
   /// Whether the fragment shader defines `FLUTTER_SCENE_DEBUG_VIEWS`,

@@ -8,7 +8,7 @@ import 'package:flutter_scene/src/node.dart';
 ///
 /// The camera's view (eye position and orientation) comes from the owning
 /// node's world transform: the node's translation is the eye, its local
-/// `+Z` axis is the look direction, and its local `+Y` axis is up. The
+/// `-Z` axis is the look direction, and its local `+Y` axis is up. The
 /// [projection] (the lens) is configured on the component. Move or rotate
 /// the node to move or aim the camera.
 ///
@@ -101,11 +101,8 @@ class CameraComponent extends Component {
   }
 }
 
-/// A [Camera] whose view comes from a [node]'s world transform: the `+Z`
+/// A [Camera] whose view comes from a [node]'s world transform: the `-Z`
 /// axis is the look direction, `+Y` is up, and the translation is the eye.
-/// This is the inverse of the eye/target/up convention [PerspectiveCamera]
-/// builds, so a node placed at `inverse(camera.getViewMatrix())` yields
-/// the same view.
 ///
 /// The transform is read at render time, so the camera tracks the node
 /// live. Usually obtained from [CameraComponent.toCamera].
@@ -136,10 +133,14 @@ class NodeCamera extends Camera {
 
   @override
   Matrix4 getViewMatrix() {
-    // The view matrix is the inverse of the camera's world transform.
-    // copyInverse(arg) writes inverse(arg) into the receiver.
+    // The view matrix is the inverse of the camera's world transform with
+    // row 2 negated so +Z in view space points along the camera's local -Z
+    // forward axis (z_view > 0 in front of the eye), matching _matrix4LookAt.
     final view = Matrix4.identity();
     view.copyInverse(_worldTransform);
+    for (int c = 0; c < 4; c++) {
+      view.setEntry(2, c, -view.entry(2, c));
+    }
     return view;
   }
 }

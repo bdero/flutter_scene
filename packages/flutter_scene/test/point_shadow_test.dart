@@ -27,15 +27,15 @@ PointLightComponent _point({required bool castsShadow, Vector3? at}) {
   final a = Vector3(v.x.abs(), v.y.abs(), v.z.abs());
   if (a.x >= a.y && a.x >= a.z) {
     return v.x >= 0
-        ? (0, Vector3(-v.z, v.y, v.x))
-        : (1, Vector3(v.z, v.y, -v.x));
+        ? (0, Vector3(v.z, v.y, v.x))
+        : (1, Vector3(-v.z, v.y, -v.x));
   }
   if (a.y >= a.z) {
     return v.y >= 0
-        ? (2, Vector3(-v.x, v.z, v.y))
-        : (3, Vector3(v.x, v.z, -v.y));
+        ? (2, Vector3(v.x, v.z, v.y))
+        : (3, Vector3(-v.x, v.z, -v.y));
   }
-  return v.z >= 0 ? (4, Vector3(v.x, v.y, v.z)) : (5, Vector3(-v.x, v.y, -v.z));
+  return v.z >= 0 ? (4, Vector3(-v.x, v.y, v.z)) : (5, Vector3(v.x, v.y, -v.z));
 }
 
 void main() {

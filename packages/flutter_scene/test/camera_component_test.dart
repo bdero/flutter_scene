@@ -20,9 +20,13 @@ void main() {
         fovFar: 500.0,
       );
 
-      // Place a camera node where the reference camera sits: the node's
-      // world transform is the inverse of the reference view matrix.
-      final world = Matrix4.identity()..copyInverse(reference.getViewMatrix());
+      // Place a camera node where the reference camera sits using
+      // Node.lookAtTransform (local -Z aimed at target).
+      final world = Node.lookAtTransform(
+        reference.position,
+        reference.target,
+        up: reference.up,
+      );
       final node = Node(localTransform: world);
       final component = CameraComponent(projection: reference.projection);
       node.addComponent(component);

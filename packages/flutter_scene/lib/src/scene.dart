@@ -3613,8 +3613,8 @@ base class Scene implements SceneGraph {
       // for it.
       final wantAo = ambientOcclusion.enabled || wantContactShadows;
       final cameraForward = camera.forward;
-      final cameraRight = camera.up.cross(cameraForward)..normalize();
-      final cameraUp = cameraForward.cross(cameraRight)..normalize();
+      final cameraRight = cameraForward.cross(camera.up)..normalize();
+      final cameraUp = cameraRight.cross(cameraForward)..normalize();
       if (wantDepthPrepass) {
         // Ambient occlusion evaluates its chain (depth prepass, occlusion,
         // blur) at one resolution so depth is sampled 1:1 (a half-resolution
@@ -3957,8 +3957,8 @@ base class Scene implements SceneGraph {
       final prevViewProj =
           taaState!.previousViewTransform ?? unjitteredViewProj;
       final cameraForward = camera.forward;
-      final cameraRight = camera.up.cross(cameraForward)..normalize();
-      final cameraUp = cameraForward.cross(cameraRight)..normalize();
+      final cameraRight = cameraForward.cross(camera.up)..normalize();
+      final cameraUp = cameraRight.cross(cameraForward)..normalize();
       final viewToWorld = Matrix4.identity();
       viewToWorld.setColumns(
         Vector4(cameraRight.x, cameraRight.y, cameraRight.z, 0.0),

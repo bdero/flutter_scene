@@ -6,7 +6,7 @@ import 'package:scene/src/specs.dart';
 /// The `.fscene` format version this build reads and writes. Newer documents
 /// are refused; older ones migrate on read.
 /// {@category Serialization}
-const int currentFsceneVersion = 5;
+const int currentFsceneVersion = 6;
 
 /// One `.fsceneb` container chunk this build does not recognize, preserved
 /// verbatim so a rewrite carries it through.
