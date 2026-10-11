@@ -106,6 +106,7 @@ class ScenePass extends RenderGraphPass {
     bool bindSceneDepth = false,
     double time = 0.0,
     List<Plane> cullingPlanes = const [],
+    Frustum? cullingFrustum,
     bool includeOffscreen = false,
     bool suppressPlanarReflections = false,
     Matrix4? cameraTransform,
@@ -114,6 +115,7 @@ class ScenePass extends RenderGraphPass {
     bool primaryView = false,
   }) : _debugView = debugView,
        _primaryView = primaryView,
+       _cullingFrustum = cullingFrustum,
        _captureOpaqueColor = captureOpaqueColor,
        _displayReferredLayer = displayReferredLayer,
        _displayReferredFormat = displayReferredFormat,
@@ -201,6 +203,9 @@ class ScenePass extends RenderGraphPass {
   final bool _suppressPlanarReflections;
   final double _time;
   final List<Plane> _cullingPlanes;
+  // Replaces the camera's frustum for culling when set (a view group's
+  // combined frustum).
+  final Frustum? _cullingFrustum;
   final bool _includeOffscreen;
 
   static const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
@@ -450,6 +455,7 @@ class ScenePass extends RenderGraphPass {
       displayReferredCameraTransform: _displayReferredCameraTransform,
       debugView: _debugView,
       primaryView: _primaryView,
+      cullingFrustum: _cullingFrustum,
     );
     final cullWatch = profileRendering ? (Stopwatch()..start()) : null;
     if (_includeOffscreen) {

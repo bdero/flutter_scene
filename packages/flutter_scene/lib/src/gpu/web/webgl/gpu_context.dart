@@ -21,6 +21,10 @@ final class WebGlContext extends GpuContext {
       stencil: false,
       preserveDrawingBuffer: true,
     );
+    // Lets a WebXR session bind this context's framebuffers without a later
+    // makeXRCompatible() call, which can lose the context. Ignored by
+    // browsers without WebXR.
+    (attrs as JSObject).setProperty('xrCompatible'.toJS, true.toJS);
     final gl =
         _canvas.getContext('webgl2', attrs) as web.WebGL2RenderingContext?;
     if (gl == null) {

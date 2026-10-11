@@ -21,6 +21,7 @@ import 'package:web/web.dart' as web;
 
 import '../../generated_assets/generated_asset_fetch_web.dart';
 import '../shared/encoded_image_types.dart';
+import '../shared/external_target.dart';
 import '../shared/gpu_capabilities.dart';
 import '../shared/gpu_pass_cache.dart';
 import '../shared/gpu_sample_types.dart';

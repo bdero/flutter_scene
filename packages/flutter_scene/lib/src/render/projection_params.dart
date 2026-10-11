@@ -65,6 +65,22 @@ class ProjectionParams {
           near: projection.near,
           far: projection.far.isFinite ? projection.far : kInfiniteFarDepth,
         );
+      case OffAxisProjection():
+        final width = projection.tanRight - projection.tanLeft;
+        final height = projection.tanUp - projection.tanDown;
+        return ProjectionParams(
+          scaleX: width * 0.5,
+          scaleY: height * 0.5,
+          offsetX: width == 0.0
+              ? 0.0
+              : -(projection.tanRight + projection.tanLeft) / width,
+          offsetY: height == 0.0
+              ? 0.0
+              : -(projection.tanUp + projection.tanDown) / height,
+          orthographic: false,
+          near: projection.near,
+          far: projection.far.isFinite ? projection.far : kInfiniteFarDepth,
+        );
       case OrthographicProjection():
         final extent = projection.visibleSize(viewportSize);
         final halfWidth = extent.x * 0.5;
