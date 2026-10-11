@@ -133,6 +133,8 @@ final class JsWebXrSession implements WebXrBackendSession {
   _onSelect;
 
   late final JSFunction _endListener = ((web.Event _) {
+    _presentation?.dispose();
+    _presentation = null;
     _onEnd?.call();
   }).toJS;
   late final JSFunction _changeListener = ((web.Event _) {
@@ -160,6 +162,7 @@ final class JsWebXrSession implements WebXrBackendSession {
 
   WebXrFrameCallback? _frameCallback;
   JSFunction? _frameListener;
+  _PresentationCanvas? _presentation;
 
   JSFunction _selectListener(WebXrSelectKind kind, WebXrSelectPhase phase) =>
       ((web.XRInputSourceEvent event) {
@@ -208,26 +211,38 @@ final class JsWebXrSession implements WebXrBackendSession {
 
   @override
   WebXrBackendLayer createBaseLayer() {
-    // The scene resolves finished color into the layer and keeps depth in its
-    // own transient, so the layer needs no depth attachment.
-    // TODO(xr-depth): write the layer's depth (ignoreDepthValues false, a
-    // depth copy pass) so the compositor can reproject.
-    final layer = XRWebGLLayer(
-      _session,
-      _gl,
-      XRWebGLLayerInit(
-        antialias: false,
-        depth: false,
-        stencil: false,
-        alpha: true,
-        ignoreDepthValues: true,
-      ),
-    );
+    var layer = _createWebGlLayer(_gl);
+    _PresentationCanvas? presentation;
+    if (layer.framebuffer == null) {
+      // The layer draws to its context's canvas. The shim renders to an
+      // offscreen canvas nobody shows, so the layer gets a visible canvas of
+      // its own and each frame is copied into it. Inline sessions and the
+      // emulated runtime take this path; an immersive layer on a headset has a
+      // framebuffer.
+      presentation = _presentation ??= _PresentationCanvas();
+      layer = _createWebGlLayer(presentation.gl);
+    }
     final state = XRRenderStateInit();
     state['baseLayer'] = layer;
     _session.updateRenderState(state);
-    return _JsBaseLayer(layer);
+    return _JsBaseLayer(layer, presentation);
   }
+
+  // The scene resolves finished color into the layer and keeps depth in its
+  // own transient, so the layer needs no depth attachment.
+  // TODO(xr-depth): write the layer's depth (ignoreDepthValues false, a depth
+  // copy pass) so the compositor can reproject.
+  XRWebGLLayer _createWebGlLayer(web.WebGL2RenderingContext gl) => XRWebGLLayer(
+    _session,
+    gl,
+    XRWebGLLayerInit(
+      antialias: false,
+      depth: false,
+      stencil: false,
+      alpha: true,
+      ignoreDepthValues: true,
+    ),
+  );
 
   @override
   WebXrBackendLayer createProjectionLayer() {
@@ -263,6 +278,8 @@ final class JsWebXrSession implements WebXrBackendSession {
     } catch (_) {
       // Already ended.
     }
+    _presentation?.dispose();
+    _presentation = null;
   }
 
   @override
@@ -347,9 +364,28 @@ final class _JsHitTestSource implements WebXrBackendHitTestSource {
 }
 
 final class _JsBaseLayer implements WebXrBackendLayer {
-  _JsBaseLayer(this.layer);
+  _JsBaseLayer(this.layer, this.presentation);
 
   final XRWebGLLayer layer;
+
+  /// The canvas the layer draws to when it has no framebuffer.
+  final _PresentationCanvas? presentation;
+
+  @override
+  bool get presents => presentation != null;
+
+  @override
+  void present(Object image) {
+    final canvas = presentation;
+    if (canvas == null) {
+      throw StateError('The layer draws to a framebuffer; nothing to present.');
+    }
+    canvas.present(
+      image as web.ImageBitmap,
+      layer.framebufferWidth,
+      layer.framebufferHeight,
+    );
+  }
 
   @override
   WebXrViewTarget viewTarget(WebXrBackendView view) {
@@ -376,6 +412,13 @@ final class _JsProjectionLayer implements WebXrBackendLayer {
 
   final XRWebGLBinding binding;
   final XRProjectionLayer layer;
+
+  @override
+  bool get presents => false;
+
+  @override
+  void present(Object image) =>
+      throw StateError('A projection layer hands out textures to render into.');
 
   @override
   WebXrViewTarget viewTarget(WebXrBackendView view) {
@@ -461,18 +504,21 @@ final class _JsInputSource implements WebXrBackendInputSource {
   bool readGamepad(XrGamepadState out) {
     final pad = source.gamepad;
     if (pad == null) return false;
-    final buttons = pad.buttons.toDart;
-    final axes = pad.axes.toDart;
+    // The xr-standard layout reserves slots a controller may lack (the
+    // touchpad's axes and button); some runtimes fill those with null rather
+    // than zero.
+    final buttons = (pad.buttons as JSArray<web.GamepadButton?>).toDart;
+    final axes = (pad.axes as JSArray<JSNumber?>).toDart;
     out.resize(buttonCount: buttons.length, axisCount: axes.length);
     out.mapping = pad.mapping;
     for (var i = 0; i < buttons.length; i++) {
       final button = buttons[i];
-      out.buttonValues[i] = button.value;
-      out.buttonPressed[i] = button.pressed;
-      out.buttonTouched[i] = button.touched;
+      out.buttonValues[i] = button?.value ?? 0.0;
+      out.buttonPressed[i] = button?.pressed ?? false;
+      out.buttonTouched[i] = button?.touched ?? false;
     }
     for (var i = 0; i < axes.length; i++) {
-      out.axes[i] = axes[i].toDartDouble;
+      out.axes[i] = axes[i]?.toDartDouble ?? 0.0;
     }
     return true;
   }
@@ -719,5 +765,126 @@ final class _JsFrame implements WebXrBackendFrame {
     final intensity = estimate.primaryLightIntensity;
     out.primaryLightIntensity.setValues(intensity.x, intensity.y, intensity.z);
     return true;
+  }
+}
+
+/// A visible canvas with its own WebGL2 context, for a layer whose
+/// `framebuffer` is null. Each frame's `ImageBitmap` is uploaded to a texture
+/// and blitted into the default framebuffer, flipped from the bitmap's
+/// top-down rows into GL's bottom-up window.
+// TODO(xr-inline-canvas): let the app host the canvas (a container element
+// in the session request) instead of covering the window.
+final class _PresentationCanvas {
+  _PresentationCanvas() : canvas = web.HTMLCanvasElement() {
+    final style = canvas.style;
+    style.position = 'fixed';
+    style.left = '0';
+    style.top = '0';
+    style.width = '100%';
+    style.height = '100%';
+    style.zIndex = '2147483000';
+    final ratio = web.window.devicePixelRatio;
+    canvas.width = (web.window.innerWidth * ratio).round().clamp(1, 16384);
+    canvas.height = (web.window.innerHeight * ratio).round().clamp(1, 16384);
+    web.document.body!.append(canvas);
+    final attrs = web.WebGLContextAttributes(
+      alpha: true,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: false,
+      xrCompatible: true,
+    );
+    final context =
+        canvas.getContext('webgl2', attrs) as web.WebGL2RenderingContext?;
+    if (context == null) {
+      canvas.remove();
+      throw StateError('WebGL2 is not available for the WebXR layer canvas.');
+    }
+    gl = context;
+    _texture = gl.createTexture();
+    _framebuffer = gl.createFramebuffer();
+    if (_texture == null || _framebuffer == null) {
+      dispose();
+      throw StateError('Failed to allocate the WebXR layer copy resources.');
+    }
+    gl.bindTexture(web.WebGL2RenderingContext.TEXTURE_2D, _texture);
+    gl.texParameteri(
+      web.WebGL2RenderingContext.TEXTURE_2D,
+      web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
+      web.WebGL2RenderingContext.LINEAR,
+    );
+    gl.texParameteri(
+      web.WebGL2RenderingContext.TEXTURE_2D,
+      web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
+      web.WebGL2RenderingContext.LINEAR,
+    );
+    gl.bindFramebuffer(
+      web.WebGL2RenderingContext.READ_FRAMEBUFFER,
+      _framebuffer,
+    );
+    gl.framebufferTexture2D(
+      web.WebGL2RenderingContext.READ_FRAMEBUFFER,
+      web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
+      web.WebGL2RenderingContext.TEXTURE_2D,
+      _texture,
+      0,
+    );
+  }
+
+  final web.HTMLCanvasElement canvas;
+  late final web.WebGL2RenderingContext gl;
+  web.WebGLTexture? _texture;
+  web.WebGLFramebuffer? _framebuffer;
+
+  /// Copies [image] over the whole default framebuffer, which the layer
+  /// reports as [width] by [height] pixels. Closes [image].
+  void present(web.ImageBitmap image, int width, int height) {
+    final texture = _texture;
+    if (texture == null) {
+      image.close();
+      return;
+    }
+    gl.bindTexture(web.WebGL2RenderingContext.TEXTURE_2D, texture);
+    gl.texImage2D(
+      web.WebGL2RenderingContext.TEXTURE_2D,
+      0,
+      web.WebGL2RenderingContext.RGBA,
+      web.WebGL2RenderingContext.RGBA.toJS,
+      web.WebGL2RenderingContext.UNSIGNED_BYTE.toJS,
+      image,
+    );
+    gl.bindFramebuffer(
+      web.WebGL2RenderingContext.READ_FRAMEBUFFER,
+      _framebuffer,
+    );
+    gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
+    gl.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
+    gl.blitFramebuffer(
+      0,
+      image.height,
+      image.width,
+      0,
+      0,
+      0,
+      width,
+      height,
+      web.WebGL2RenderingContext.COLOR_BUFFER_BIT,
+      image.width == width && image.height == height
+          ? web.WebGL2RenderingContext.NEAREST
+          : web.WebGL2RenderingContext.LINEAR,
+    );
+    image.close();
+  }
+
+  void dispose() {
+    final texture = _texture;
+    final framebuffer = _framebuffer;
+    _texture = null;
+    _framebuffer = null;
+    if (texture != null) gl.deleteTexture(texture);
+    if (framebuffer != null) gl.deleteFramebuffer(framebuffer);
+    canvas.remove();
   }
 }
