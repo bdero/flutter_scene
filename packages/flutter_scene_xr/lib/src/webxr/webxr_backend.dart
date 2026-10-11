@@ -189,6 +189,15 @@ class WebXrViewTarget {
 abstract interface class WebXrBackendLayer {
   /// Where [view] renders this frame.
   WebXrViewTarget viewTarget(WebXrBackendView view);
+
+  /// Whether the layer draws to a surface the renderer cannot wrap (a canvas,
+  /// as inline sessions and the emulated runtime hand out). The session then
+  /// renders into a texture it owns and passes its image to [present].
+  bool get presents;
+
+  /// Copies [image], the platform image of the frame's color target (an
+  /// `ImageBitmap` on the web), onto the layer's surface.
+  void present(Object image);
 }
 
 /// An `XRView`.

@@ -5,3 +5,4 @@
 * `XrSceneLoop`, which ticks and renders a `Scene` through a rig for every session frame.
 * `XrInputSource`, which publishes controllers and hands as gamepad devices into `flutter_scene_input` and points a `ScenePointer` along each target ray.
 * A WebXR runtime behind a `dart.library.js_interop` conditional import, with immersive VR and AR, DOM overlay, hit test, anchors, planes, hands, CPU depth and light estimation.
+* A layer without a framebuffer (an inline session, an emulated runtime) draws through a canvas the runtime owns: the frame renders into a texture the session allocates and is copied onto the canvas each frame.
