@@ -16,7 +16,30 @@ class GpuHost {
     // Impeller has a compute HAL, but flutter_gpu exposes no Dart surface for
     // it yet. Tracked upstream as flutter/flutter#188474.
     compute: false,
+    // Flutter GPU allocates every texture itself; wrapping a swapchain image
+    // a runtime owns is proposed as flutter/flutter#192059.
+    externalColorTargets: false,
   );
+
+  /// The platform graphics context behind this backend, for a runtime that
+  /// must bind it (a WebXR layer takes the WebGL context). Flutter GPU keeps
+  /// Impeller's device private, so there is none here.
+  Object? get nativeGraphicsContext => null;
+
+  /// Not supported on this backend; see [GpuCapabilities.externalColorTargets].
+  Texture wrapExternalColorTarget(
+    Object handle, {
+    required int width,
+    required int height,
+    required ExternalTargetHandleKind kind,
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  }) {
+    throw UnsupportedError(
+      'Flutter GPU cannot render into a texture it did not allocate yet '
+      '(flutter/flutter#192059). Render into a flutter_scene texture and copy '
+      'it, or check GpuCapabilities.externalColorTargets first.',
+    );
+  }
 
   /// Hands [texture] to Flutter as a `ui.Image`, without a copy.
   ui.Image textureToImage(Texture texture) => texture.asImage();
