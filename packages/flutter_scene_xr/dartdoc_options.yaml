@@ -1,0 +1,15 @@
+dartdoc:
+  categories:
+    "Sessions":
+      markdown: doc/categories/sessions.md
+    "Rig":
+      markdown: doc/categories/rig.md
+    "Input":
+      markdown: doc/categories/input.md
+    "Features":
+      markdown: doc/categories/features.md
+  categoryOrder:
+    - "Sessions"
+    - "Rig"
+    - "Input"
+    - "Features"
