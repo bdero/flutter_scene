@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' hide RenderView;
 import 'package:flutter/services.dart';
+import 'package:flutter_scene/gpu.dart' as gpu show ExternalTargetHandleKind;
 import 'package:flutter_scene/noise.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
@@ -28,6 +29,7 @@ import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart'
     show StandardKtx2Upload;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:smoke_render/emulated_xr_smoke.dart';
 import 'package:smoke_render/smoke_scenes.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -44,6 +46,10 @@ const _androidManifestChannel = MethodChannel(
 /// paying for the whole matrix. Pass `--dart-define=SMOKE_ONLY=<id>` or
 /// several ids separated by commas.
 const _onlyScene = String.fromEnvironment('SMOKE_ONLY');
+
+/// Whether this web build renders through the WebGPU backend, which the
+/// WebXR runtime cannot draw with.
+const _webGpuBackend = bool.fromEnvironment('flutter_scene.webgpu');
 final Set<String> _onlyScenes = _onlyScene.isEmpty
     ? const {}
     : _onlyScene.split(',').toSet();
@@ -403,6 +409,108 @@ void main() {
       await markPassed(smoke.id);
     });
   }
+
+  // The WebXR runtime against the emulated device: a session's frames must
+  // render the same pixels as the pair placed by hand from the same head
+  // pose, and so must the same pair rendered into a raw framebuffer on the
+  // backend's context, the target shape a headset's layer hands out.
+  testWidgets('the emulated WebXR session renders like the flat pair', (
+    tester,
+  ) async {
+    // The session draws through the WebGL2 context only.
+    if (!kIsWeb || _webGpuBackend) return;
+    await Scene.preload(smaa: true);
+    final session = await emulatedXrSession();
+    final scene = buildEmulatedXrScene();
+    final frame = await renderEmulatedFrames(scene, session);
+    final target = frame.target!;
+    final width = target.width, height = target.height;
+    final layer = emulatedLayerSize();
+    expect((width, height), (layer.width, layer.height));
+    expect(frame.views, hasLength(2));
+    expect(frame.views[0].viewport, const Rect.fromLTWH(0, 0, 0.5, 1));
+    expect(frame.views[1].viewport, const Rect.fromLTWH(0.5, 0, 0.5, 1));
+    // The reference places its eyes from the same head, so the session must
+    // report the head where the emulator was told to put it.
+    final viewer = frame.viewerPose!;
+    expect(
+      viewer.position.absoluteError(kEmulatedHeadPosition),
+      lessThan(1e-3),
+      reason: 'viewer at ${viewer.position}',
+    );
+    expect(
+      viewer.orientation.absoluteError(kEmulatedHeadOrientation),
+      lessThan(1e-3),
+      reason: 'viewer facing ${viewer.orientation}',
+    );
+    final emulated = await _rgbaBytes(target.color.asImage());
+
+    final flat = ExternalRenderTarget.allocate(width: width, height: height);
+    renderFlatPair(scene, flat);
+    final reference = await _rgbaBytes(flat.color.asImage());
+
+    final raw = createBackendFramebuffer(width, height);
+    final Uint8List framebuffer;
+    try {
+      renderFlatPair(
+        scene,
+        ExternalRenderTarget.platform(
+          raw.framebuffer,
+          width: width,
+          height: height,
+          kind: gpu.ExternalTargetHandleKind.framebuffer,
+        ),
+      );
+      framebuffer = readBackendFramebuffer(raw.framebuffer, width, height);
+    } finally {
+      deleteBackendFramebuffer(raw);
+    }
+    await session.end();
+
+    final half = width ~/ 2;
+    final sessionDiff = _meanAbsDiff(emulated, reference);
+    final framebufferDiff = _meanAbsDiff(framebuffer, reference);
+    final eyeDiff = _meanAbsDiff(
+      _columns(emulated, width, height, 0, half),
+      _columns(emulated, width, height, half, half),
+    );
+    final leftCoverage = _coverage(_columns(emulated, width, height, 0, half));
+    final rightCoverage = _coverage(
+      _columns(emulated, width, height, half, half),
+    );
+    // Where each buffer drew, top and bottom halves, so a flipped or
+    // misplaced copy reads off the log.
+    String rows(Uint8List rgba) {
+      final half = rgba.length ~/ 2;
+      final top = _coverage(Uint8List.sublistView(rgba, 0, half));
+      final bottom = _coverage(Uint8List.sublistView(rgba, half));
+      return '${top.toStringAsFixed(2)}/${bottom.toStringAsFixed(2)}';
+    }
+
+    // ignore: avoid_print
+    print(
+      'SMOKE webxr_emulated: ${width}x$height sessionDiff='
+      '${sessionDiff.toStringAsFixed(3)} framebufferDiff='
+      '${framebufferDiff.toStringAsFixed(3)} eyeDiff='
+      '${eyeDiff.toStringAsFixed(3)} coverage='
+      '${leftCoverage.toStringAsFixed(3)}/${rightCoverage.toStringAsFixed(3)} '
+      'topBottom session=${rows(emulated)} flat=${rows(reference)} '
+      'framebuffer=${rows(framebuffer)}',
+    );
+    expect(leftCoverage, greaterThan(0.3), reason: 'left eye drew little');
+    expect(rightCoverage, greaterThan(0.3), reason: 'right eye drew little');
+    expect(eyeDiff, greaterThan(0.25), reason: 'the eyes show no parallax');
+    expect(
+      sessionDiff,
+      lessThan(0.5),
+      reason: 'the session frame differs from the flat pair',
+    );
+    expect(
+      framebufferDiff,
+      lessThan(0.5),
+      reason: 'the raw framebuffer differs from the flat pair',
+    );
+  });
 
   // The stereo pair in a plain texture against the other ways to render it:
   // the same group onto a canvas, every view with its own shadow atlas, a
