@@ -611,7 +611,7 @@ Still silent.
 
 **Symptom.** Cameras placed on the `-Z` side looking along `+Z` mirror world `+X` to the left of the screen, and custom directional/spot lights aimed along local `+Z` shine away from the target.
 
-**Do instead.** `flutter_scene` uses a right-handed world coordinate system (`+X` right, `+Y` up, `+Z` out of the screen toward the viewer, `-Z` forward), matching glTF 2.0 and `package:vector_math`. A default camera sits on the `+Z` side (`(0, 0, 5)`) looking along `-Z`, `node.forward` returns the node's world `-Z` direction, and `node.lookAt(target)` aims local `-Z` at `target`. Read `camera.right`, `camera.horizontalRight`, `camera.horizontalForward`, or `node.right` directly (or compute `forward.cross(up).normalized()`), and prefer `OrbitCameraController`, `FollowCameraController`, or `FlyCameraController` over hand-rolled spherical camera math.
+**Do instead.** `flutter_scene` uses a right-handed world coordinate system (`+X` right, `+Y` up, `+Z` out of the screen toward the viewer, `-Z` forward), matching glTF 2.0 and `package:vector_math`. A default camera sits on the `+Z` side (`(0, 0, 5)`) looking along `-Z`, `node.forward` returns the node's world `-Z` direction, and `node.lookAt(target)` aims local `-Z` at `target` (`modelFront: true` aims local `+Z`, the glTF front, for turning an imported character toward something). Read `camera.right`, `camera.horizontalRight`, `camera.horizontalForward`, or `node.right` directly (or compute `forward.cross(up).normalized()`), and prefer `OrbitCameraController`, `FollowCameraController`, or `FlyCameraController` over hand-rolled spherical camera math.
 
 ---
 

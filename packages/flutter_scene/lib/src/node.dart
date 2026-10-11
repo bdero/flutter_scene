@@ -551,22 +551,34 @@ base class Node implements SceneGraph {
   /// world space, keeping [up] as the reference up (defaults to `+Y`). Only
   /// the node's rotation changes; its world position and scale are preserved.
   ///
-  /// `-Z` is the engine's forward convention: cameras look down it,
-  /// directional and spot lights aim down it, and imported models face `+Z`
-  /// toward a camera at `+Z` looking down `-Z`, so this aims any of them. [up]
-  /// must not be parallel to the direction from the node to [target]; for a
-  /// straight-down or straight-up view pass `Vector3(0, 0, -1)` or
-  /// `Vector3(0, 0, 1)` instead of `Vector3(0, 1, 0)`.
+  /// `-Z` is the engine's forward convention: cameras look down it and
+  /// directional and spot lights aim down it. Imported models face `+Z` (the
+  /// glTF front, toward a camera at `+Z` looking down `-Z`), so pass
+  /// [modelFront] to aim that side at [target] instead, turning a character to
+  /// face it. [up] must not be parallel to the direction from the node to
+  /// [target]; for a straight-down or straight-up view pass `Vector3(0, 0, -1)`
+  /// or `Vector3(0, 0, 1)` instead of `Vector3(0, 1, 0)`.
   /// {@category Scene graph}
-  void lookAt(Vector3 target, {Vector3? up}) =>
-      lookAtFrom(globalTransform.getTranslation(), target, up: up);
+  void lookAt(Vector3 target, {Vector3? up, bool modelFront = false}) =>
+      lookAtFrom(
+        globalTransform.getTranslation(),
+        target,
+        up: up,
+        modelFront: modelFront,
+      );
 
   /// Places the node at [eye] and orients its forward axis (local `-Z`) at
   /// [target] in world space. The imperative camera one-liner, positioning and
   /// aiming in a single call; the node's world scale is preserved. See
-  /// [lookAt] for the forward-axis convention and the [up] constraint.
+  /// [lookAt] for the forward-axis convention, [modelFront], and the [up]
+  /// constraint.
   /// {@category Scene graph}
-  void lookAtFrom(Vector3 eye, Vector3 target, {Vector3? up}) {
+  void lookAtFrom(
+    Vector3 eye,
+    Vector3 target, {
+    Vector3? up,
+    bool modelFront = false,
+  }) {
     final world = globalTransform.storage;
     final scale = Vector3(
       Vector3(world[0], world[1], world[2]).length,
@@ -578,6 +590,7 @@ base class Node implements SceneGraph {
       target,
       up ?? Vector3(0.0, 1.0, 0.0),
       scale,
+      modelFront: modelFront,
     );
   }
 
@@ -586,26 +599,34 @@ base class Node implements SceneGraph {
   ///
   /// The static counterpart to [lookAt], for the construction and declarative
   /// paths: pass it to `Node(localTransform: ...)` or a declarative node's
-  /// `transform:`. See [lookAt] for the forward-axis convention and the [up]
-  /// constraint.
+  /// `transform:`. See [lookAt] for the forward-axis convention, [modelFront],
+  /// and the [up] constraint.
   /// {@category Scene graph}
-  static Matrix4 lookAtTransform(Vector3 eye, Vector3 target, {Vector3? up}) =>
-      _lookAtMatrix(
-        eye,
-        target,
-        up ?? Vector3(0.0, 1.0, 0.0),
-        Vector3(1.0, 1.0, 1.0),
-      );
+  static Matrix4 lookAtTransform(
+    Vector3 eye,
+    Vector3 target, {
+    Vector3? up,
+    bool modelFront = false,
+  }) => _lookAtMatrix(
+    eye,
+    target,
+    up ?? Vector3(0.0, 1.0, 0.0),
+    Vector3(1.0, 1.0, 1.0),
+    modelFront: modelFront,
+  );
 
-  // Builds the world transform whose `-Z` faces [target] from [eye] with the
-  // given per-axis [scale]. A CameraComponent on the node renders the same view
-  // a PerspectiveCamera(position: eye, target: target) would.
+  // Builds the world transform whose `-Z` (or `+Z` with [modelFront]) faces
+  // [target] from [eye] with the given per-axis [scale]. A CameraComponent on
+  // the node renders the same view a PerspectiveCamera(position: eye, target:
+  // target) would. The modelFront basis is the same rotation turned half a turn
+  // about its own Y, so it stays proper (no mirror) and keeps [up] upright.
   static Matrix4 _lookAtMatrix(
     Vector3 eye,
     Vector3 target,
     Vector3 up,
-    Vector3 scale,
-  ) {
+    Vector3 scale, {
+    bool modelFront = false,
+  }) {
     final viewDirection = target - eye;
     assert(
       viewDirection.length2 > 1e-12,
@@ -621,18 +642,19 @@ base class Node implements SceneGraph {
     final forward = viewDirection.normalized();
     final right = forward.cross(up).normalized();
     final trueUp = right.cross(forward).normalized();
+    final facing = modelFront ? -1.0 : 1.0;
     return Matrix4(
-      right.x * scale.x,
-      right.y * scale.x,
-      right.z * scale.x,
+      right.x * facing * scale.x,
+      right.y * facing * scale.x,
+      right.z * facing * scale.x,
       0.0, //
       trueUp.x * scale.y,
       trueUp.y * scale.y,
       trueUp.z * scale.y,
       0.0, //
-      -forward.x * scale.z,
-      -forward.y * scale.z,
-      -forward.z * scale.z,
+      -forward.x * facing * scale.z,
+      -forward.y * facing * scale.z,
+      -forward.z * facing * scale.z,
       0.0, //
       eye.x,
       eye.y,
