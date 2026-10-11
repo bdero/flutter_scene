@@ -26,6 +26,10 @@ class GpuHost {
   /// Impeller's device private, so there is none here.
   Object? get nativeGraphicsContext => null;
 
+  /// Not available on this backend; Impeller has no platform image object to
+  /// hand to another context.
+  Object? textureToPlatformImage(Texture texture) => null;
+
   /// Not supported on this backend; see [GpuCapabilities.externalColorTargets].
   Texture wrapExternalColorTarget(
     Object handle, {

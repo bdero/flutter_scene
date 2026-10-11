@@ -24,6 +24,8 @@ class GpuHost {
 
   Object? get nativeGraphicsContext => null;
 
+  Object? textureToPlatformImage(Texture texture) => null;
+
   Texture wrapExternalColorTarget(
     Object handle, {
     required int width,

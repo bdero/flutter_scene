@@ -255,6 +255,11 @@ abstract base class GpuHost {
   /// `WebGL2RenderingContext` on WebGL2), for a runtime that must bind it.
   Object? get nativeGraphicsContext;
 
+  /// A snapshot of [texture] as a platform image another graphics context can
+  /// consume (an `ImageBitmap` on the web), or null where the backend has no
+  /// such object.
+  Object? textureToPlatformImage(Texture texture);
+
   /// Wraps a platform color target this backend can draw into but did not
   /// allocate. See [GpuCapabilities.externalColorTargets].
   Texture wrapExternalColorTarget(

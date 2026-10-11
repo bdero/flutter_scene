@@ -41,3 +41,13 @@ gpu.Texture wrapExternalColorTarget(
   kind: kind,
   format: format,
 );
+
+/// A snapshot of [texture] as a platform image another graphics context can
+/// draw, or null where the backend has none.
+///
+/// On the web this is an `ImageBitmap` (a `JSObject`), upright, taken through
+/// the same path a scene's output takes to the screen; a second WebGL context
+/// uploads it with `texImage2D`. On Flutter GPU it is null.
+/// {@category Rendering}
+Object? textureToPlatformImage(gpu.Texture texture) =>
+    gpu.gpuHost.textureToPlatformImage(texture);

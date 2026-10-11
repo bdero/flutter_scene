@@ -25,6 +25,12 @@ final class WebGlHost extends GpuHost {
   @override
   Object? get nativeGraphicsContext => webGlContext.gl;
 
+  /// Blits [texture] onto the shim's canvas and transfers it out as an
+  /// `ImageBitmap`, upright, the same path `textureToImage` takes.
+  @override
+  Object? textureToPlatformImage(Texture texture) =>
+      webGlContext.snapshotTextureBitmap(texture);
+
   /// Wraps [handle], a `WebGLFramebuffer` or `WebGLTexture` created on this
   /// backend's own context (see [nativeGraphicsContext]).
   @override

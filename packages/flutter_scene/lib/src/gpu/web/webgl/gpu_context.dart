@@ -358,6 +358,10 @@ final class WebGlContext extends GpuContext {
       0,
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
+    // The blit runs outside any pass and GL keeps the last pass's scissor and
+    // color mask, so a region copy (one eye of a shared target) would clip it.
+    _gl.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
+    _gl.colorMask(true, true, true, true);
     // Flip vertically during the blit (dst Y runs height -> 0). WebGL2
     // rasterizes into FBO textures bottom-up, so the swapchain texture is
     // stored bottom-up; this flip presents it upright on the canvas. (The
@@ -387,6 +391,14 @@ final class WebGlContext extends GpuContext {
   /// are both synchronous on CanvasKit and Skwasm, so this works inside a
   /// synchronous paint callback - which is what flutter_scene's
   /// `Texture.asImage()` -> `canvas.drawImageRect` path needs.
+  /// Blit [texture] onto the OffscreenCanvas and transfer the result out as
+  /// an `ImageBitmap`, for a consumer outside Flutter (another WebGL context
+  /// that presents it). Synchronous, like [snapshotTextureSync].
+  web.ImageBitmap snapshotTextureBitmap(Texture texture) {
+    _blitTextureToCanvas(texture);
+    return _canvas.transferToImageBitmap();
+  }
+
   ui.Image snapshotTextureSync(Texture texture) {
     _blitTextureToCanvas(texture);
     final bitmap = _canvas.transferToImageBitmap();
