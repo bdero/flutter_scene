@@ -37,6 +37,11 @@ final class _WebGpuHost extends GpuHost {
     'The WebGPU backend cannot draw into external color targets yet.',
   );
 
+  // Only the WebGL2 path hands frames to another context. See the note on
+  // nativeGraphicsContext.
+  @override
+  Object? textureToPlatformImage(Texture texture) => null;
+
   @override
   ui.Image textureToImage(Texture texture) => texture.asImage();
 
