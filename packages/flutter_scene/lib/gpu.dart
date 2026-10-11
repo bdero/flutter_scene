@@ -23,6 +23,7 @@ export 'src/gpu/external_targets.dart'
     show
         externalColorTargetsSupported,
         nativeGraphicsContext,
+        textureToPlatformImage,
         wrapExternalColorTarget;
 
 export 'src/gpu/gpu.dart'
