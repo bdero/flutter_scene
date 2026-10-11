@@ -25,6 +25,16 @@ class GpuHost {
   void releaseTexture(Texture texture) => _stub();
 
   void releaseBuffer(DeviceBuffer buffer) => _stub();
+
+  Object? get nativeGraphicsContext => null;
+
+  Texture wrapExternalColorTarget(
+    Object handle, {
+    required int width,
+    required int height,
+    required ExternalTargetHandleKind kind,
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  }) => _stub();
 }
 
 /// The active backend's host integration.

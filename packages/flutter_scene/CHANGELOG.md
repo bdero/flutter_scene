@@ -1,5 +1,11 @@
 ## 0.24.4
 
+* `OffAxisProjection` is a lens with four separate frustum edges (`fromAngles`, `fromMatrix`), the shape a headset gives for each eye.
+* `RenderViewGroup` and `Scene.renderViewGroups` render views together, culling once and fitting the shadow cascades once, so both eyes of a stereo pair shade identically.
+* `RenderView.cullingFrustum` overrides the frustum a view culls against.
+* `Scene.renderViewsToTargets` renders views into caller-owned textures (`ExternalRenderTarget`) from any frame loop and returns a `FrameCompletion`. On the web, `wrapExternalColorTarget` wraps a WebGL framebuffer or texture from `nativeGraphicsContext`.
+* `WidgetHost` keeps a scene's `WidgetComponent`s live when it renders without a `SceneView`.
+* Two views with temporal anti-aliasing no longer share one history and reproject each other's frames.
 * A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
 * BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * `SceneView.errorBuilder` shows a failed engine resource load (such as a shader bundle a web build could not fetch) with a `retry` callback, instead of leaving the view on its loading widget.
