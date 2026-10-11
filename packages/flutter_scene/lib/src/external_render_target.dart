@@ -32,6 +32,19 @@ class ExternalRenderTarget {
   /// Wraps [color], a texture the caller created with render-target usage.
   ExternalRenderTarget.texture(this.color);
 
+  /// Allocates a color target of [width] by [height] pixels this package's
+  /// backend owns, for a caller that has nowhere else to render (an emulated
+  /// XR layer without a framebuffer, a capture). It is shader-readable, so
+  /// `color.asImage()` draws it onto a canvas afterwards.
+  ExternalRenderTarget.allocate({required int width, required int height})
+    : color = gpu.gpuContext.createTexture(
+        gpu.StorageMode.devicePrivate,
+        width,
+        height,
+        enableRenderTargetUsage: true,
+        enableShaderReadUsage: true,
+      );
+
   /// Wraps a platform object the active backend can draw into, through
   /// `wrapExternalColorTarget` (see that function for what each backend
   /// accepts). Throws [UnsupportedError] where the backend cannot.
