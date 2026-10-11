@@ -1,6 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter_scene/gpu.dart' as gpu show ExternalTargetHandleKind;
+import 'package:flutter_scene/gpu.dart'
+    as gpu
+    show ExternalTargetHandleKind, textureToPlatformImage;
 import 'package:flutter_scene/scene.dart' show ExternalRenderTarget;
 import 'package:vector_math/vector_math.dart' show Matrix4, Ray, Vector3;
 
@@ -119,9 +121,11 @@ final class WebXrSession implements XrSession {
     referenceSpaceType: XrReferenceSpaceType.local,
   );
 
-  // The layer's framebuffer, wrapped once and replaced when it changes.
+  // The layer's framebuffer, wrapped once and replaced when it changes. For a
+  // layer that presents, a texture the session owns at the layer's size.
   ExternalRenderTarget? _sharedTarget;
   Object? _sharedHandle;
+  bool _presenting = false;
   final List<ExternalRenderTarget?> _viewTargets = [];
   final List<Object?> _viewHandles = [];
 
@@ -263,9 +267,27 @@ final class WebXrSession implements XrSession {
     try {
       _buildFrame(timeMilliseconds, frame);
       _frames.add(_frame);
+      _presentFrame();
+    } catch (error) {
+      // Runtime data the frame cannot be built from fails the same way every
+      // frame and would starve listeners silently (the next frame is already
+      // scheduled); end the session so they hear about it once.
+      unawaited(_abort(XrSessionEndReason.runtimeError, error));
+      rethrow;
     } finally {
       _currentFrame = null;
     }
+  }
+
+  // Hands the frame's color to a layer that draws to a canvas. Listeners
+  // render synchronously inside the frame callback, so the texture is final
+  // here.
+  void _presentFrame() {
+    if (!_presenting || _frameViews.isEmpty) return;
+    final target = _sharedTarget;
+    if (target == null) return;
+    final image = gpu.textureToPlatformImage(target.color);
+    if (image != null) _layer.present(image);
   }
 
   void _buildFrame(double timeMilliseconds, WebXrBackendFrame frame) {
@@ -326,14 +348,31 @@ final class WebXrSession implements XrSession {
   ExternalRenderTarget? _wrapTarget(int index, WebXrViewTarget target) {
     final handle = target.handle;
     if (handle == null) {
-      // TODO(xr-inline): an inline session draws to the canvas's default
-      // framebuffer, which the shim cannot wrap; such frames carry no target
-      // and are skipped by the loop.
+      if (!_layer.presents) {
+        // A canvas the backend cannot present either; the frame carries no
+        // target and the loop skips it.
+        _sharedTarget = null;
+        _presenting = false;
+        return null;
+      }
+      final shared = _sharedTarget;
+      if (shared == null ||
+          !_presenting ||
+          shared.width != target.width ||
+          shared.height != target.height) {
+        _sharedTarget = ExternalRenderTarget.allocate(
+          width: target.width,
+          height: target.height,
+        );
+        _sharedHandle = null;
+        _presenting = true;
+      }
       return null;
     }
     if (target.kind == gpu.ExternalTargetHandleKind.framebuffer) {
       final shared = _sharedTarget;
       if (shared == null ||
+          _presenting ||
           _sharedHandle != handle ||
           shared.width != target.width ||
           shared.height != target.height) {
@@ -344,6 +383,7 @@ final class WebXrSession implements XrSession {
           kind: target.kind,
         );
         _sharedHandle = handle;
+        _presenting = false;
       }
       return null;
     }
