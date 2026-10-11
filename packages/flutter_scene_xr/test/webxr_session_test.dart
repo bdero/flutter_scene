@@ -157,6 +157,12 @@ final class _FakeSession implements WebXrBackendSession {
 // inline-session shape; the viewport math is what this checks.
 final class _FakeLayer implements WebXrBackendLayer {
   @override
+  bool get presents => false;
+
+  @override
+  void present(Object image) => throw UnsupportedError('fake layer');
+
+  @override
   WebXrViewTarget viewTarget(WebXrBackendView view) {
     final left = view.eye == XrEye.left;
     return WebXrViewTarget(
@@ -234,14 +240,19 @@ final class _FakeInputSource implements WebXrBackendInputSource {
 }
 
 final class _FakeFrame implements WebXrBackendFrame {
-  _FakeFrame({this.viewer, this.sources = const []});
+  _FakeFrame({this.viewer, this.sources = const [], this.unreadable = false});
 
   final _FakeViewerPose? viewer;
   final List<_FakeInputSource> sources;
 
+  /// Whether reading the frame throws, as malformed runtime data does.
+  final bool unreadable;
+
   @override
-  WebXrBackendViewerPose? viewerPose(WebXrBackendSpace referenceSpace) =>
-      viewer;
+  WebXrBackendViewerPose? viewerPose(WebXrBackendSpace referenceSpace) {
+    if (unreadable) throw StateError('frame data unreadable');
+    return viewer;
+  }
 
   @override
   bool readPose(
@@ -537,6 +548,21 @@ void main() {
       expect(await session.ended, XrSessionEndReason.ended);
       expect(session.isEnded, isTrue);
     });
+
+    test(
+      'a frame that cannot be built ends the session with an error',
+      () async {
+        var delivered = 0;
+        session.frames.listen((_) => delivered++);
+        expect(
+          () => backend.session!.tick(0, _FakeFrame(unreadable: true)),
+          throwsStateError,
+        );
+        expect(await session.ended, XrSessionEndReason.runtimeError);
+        expect(session.isEnded, isTrue);
+        expect(delivered, 0);
+      },
+    );
 
     test('losing the context ends the session with an error', () async {
       backend.session!.loseContext();

@@ -32,3 +32,9 @@ The `XR` page of the example app (`examples/flutter_app`) shows a small lit scen
 - Chrome on Android with ARCore: the same build offers Enter AR; the Flutter UI stays usable over the camera through the DOM overlay.
 
 Immersive sessions need a user gesture to start and a secure context, so a `flutter run` dev server works on `localhost` and anything else needs HTTPS.
+
+## Testing
+
+The runtime is tested against an emulated headset, the Immersive Web Emulation Runtime (vendored under `third_party/iwer/`, MIT), installed over `navigator.xr` from a script. `flutter test --platform chrome` (add `--wasm` for dart2wasm) runs the browser tests in `test/`, which drive the real js_interop runtime through emulated sessions: frames, viewports, projections, poses, controllers, hands, AR features and session end. `flutter test` on the VM runs the contract and fake-backend tests. The rendering path is covered by the `webxr_emulated_*` scenes of `examples/smoke_render` on its web lane, which render through an emulated session and compare the frame to the same pair placed by hand.
+
+A headset remains a manual check; nothing here replaces one.
