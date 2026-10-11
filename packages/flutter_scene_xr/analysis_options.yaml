@@ -1,0 +1,9 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+  errors:
+    asset_does_not_exist: ignore
+    asset_directory_does_not_exist: ignore
+    invalid_dependency: ignore

@@ -70,6 +70,7 @@ import 'example_raw_shader.dart';
 import 'example_toon.dart';
 import 'example_toon_fmat.dart';
 import 'example_vertex_curve.dart';
+import 'example_xr.dart';
 
 void main() {
   runApp(const MyApp());
@@ -376,6 +377,7 @@ class _MyAppState extends State<MyApp> {
       'fscene (prefab)': (context) => const ExampleFscenePrefab(),
       'fscene (stream)': (context) => const ExampleFsceneStream(),
       'Split Screen': (context) => const ExampleSplitScreen(),
+      'XR': (context) => const ExampleXr(),
       'Depth Precision': (context) => const ExampleDepthPrecision(),
       'Stress Tests': (context) => const ExampleStressTests(),
     };
