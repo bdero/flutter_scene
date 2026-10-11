@@ -137,6 +137,52 @@ void main() {
       );
       expect((node.up - _column(world, 1).normalized()).length, lessThan(1e-5));
     });
+
+    test('modelFront aims local +Z at the target with a proper rotation', () {
+      final node = Node()..position = Vector3(2.0, 0.0, 5.0);
+      final target = Vector3(-1.0, 0.0, -4.0);
+      node.lookAt(target, modelFront: true);
+
+      final world = node.globalTransform;
+      final want = (target - node.position).normalized();
+      final front = _column(world, 2).normalized();
+      expect((front - want).length, lessThan(1e-5));
+      // No mirror: the basis is a rotation, and the asset's right-hand side
+      // (local -X, as glTF defines it) sits to the right of its facing.
+      expect(world.determinant(), closeTo(1.0, 1e-5));
+      final rightHand = -_column(world, 0).normalized();
+      final wantRight = want.cross(Vector3(0.0, 1.0, 0.0)).normalized();
+      expect((rightHand - wantRight).length, lessThan(1e-5));
+      expect((node.up - Vector3(0.0, 1.0, 0.0)).length, lessThan(1e-5));
+      // The engine's forward axis now points away from the target.
+      expect((node.forward + want).length, lessThan(1e-5));
+    });
+
+    test(
+      'modelFront agrees across lookAt, lookAtFrom, and lookAtTransform',
+      () {
+        final eye = Vector3(1.0, 2.0, 3.0);
+        final target = Vector3(-2.0, 0.5, -1.0);
+        final viaLookAt = Node()..position = eye;
+        viaLookAt.lookAt(target, modelFront: true);
+        final viaFrom = Node()..lookAtFrom(eye, target, modelFront: true);
+        final viaTransform = Node.lookAtTransform(
+          eye,
+          target,
+          modelFront: true,
+        );
+        for (var i = 0; i < 16; i++) {
+          expect(
+            viaFrom.globalTransform.storage[i],
+            closeTo(viaLookAt.globalTransform.storage[i], 1e-5),
+          );
+          expect(
+            viaTransform.storage[i],
+            closeTo(viaFrom.globalTransform.storage[i], 1e-5),
+          );
+        }
+      },
+    );
   });
 
   group('Camera and Node basis getters', () {
