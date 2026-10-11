@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_scene/gpu.dart' as gpu show ExternalTargetHandleKind;
 import 'package:flutter_scene/noise.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
@@ -19,6 +20,7 @@ import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart'
     show StandardKtx2Upload;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:smoke_render/emulated_xr_smoke.dart';
 import 'package:smoke_render/smoke_scenes.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -31,9 +33,13 @@ const _androidManifestChannel = MethodChannel(
   'dev.bdero.smoke_render/android_manifest',
 );
 
-/// Restricts the run to one scene, for iterating on it locally without
-/// paying for the whole matrix. Pass `--dart-define=SMOKE_ONLY=<id>`.
+/// Restricts the run to some scenes, for iterating on them locally without
+/// paying for the whole matrix. Pass `--dart-define=SMOKE_ONLY=<id>` or
+/// several ids separated by commas.
 const _onlyScene = String.fromEnvironment('SMOKE_ONLY');
+final Set<String> _onlyScenes = _onlyScene.isEmpty
+    ? const {}
+    : _onlyScene.split(',').toSet();
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -66,7 +72,7 @@ void main() {
   }
 
   for (final smoke in kSmokeScenes) {
-    if (_onlyScene.isNotEmpty && smoke.id != _onlyScene) continue;
+    if (_onlyScenes.isNotEmpty && !_onlyScenes.contains(smoke.id)) continue;
     testWidgets('${smoke.id} renders a sane frame', (tester) async {
       if (await alreadyPassed(smoke.id)) {
         // ignore: avoid_print
@@ -358,6 +364,107 @@ void main() {
       await markPassed(smoke.id);
     });
   }
+
+  // The WebXR runtime against the emulated device: a session's frames must
+  // render the same pixels as the pair placed by hand from the same head
+  // pose, and so must the same pair rendered into a raw framebuffer on the
+  // backend's context, the target shape a headset's layer hands out.
+  testWidgets('the emulated WebXR session renders like the flat pair', (
+    tester,
+  ) async {
+    if (!kIsWeb) return;
+    await Scene.preload(smaa: true);
+    final session = await emulatedXrSession();
+    final scene = buildEmulatedXrScene();
+    final frame = await renderEmulatedFrames(scene, session);
+    final target = frame.target!;
+    final width = target.width, height = target.height;
+    final layer = emulatedLayerSize();
+    expect((width, height), (layer.width, layer.height));
+    expect(frame.views, hasLength(2));
+    expect(frame.views[0].viewport, const Rect.fromLTWH(0, 0, 0.5, 1));
+    expect(frame.views[1].viewport, const Rect.fromLTWH(0.5, 0, 0.5, 1));
+    // The reference places its eyes from the same head, so the session must
+    // report the head where the emulator was told to put it.
+    final viewer = frame.viewerPose!;
+    expect(
+      viewer.position.absoluteError(kEmulatedHeadPosition),
+      lessThan(1e-3),
+      reason: 'viewer at ${viewer.position}',
+    );
+    expect(
+      viewer.orientation.absoluteError(kEmulatedHeadOrientation),
+      lessThan(1e-3),
+      reason: 'viewer facing ${viewer.orientation}',
+    );
+    final emulated = await _rgbaBytes(target.color.asImage());
+
+    final flat = ExternalRenderTarget.allocate(width: width, height: height);
+    renderFlatPair(scene, flat);
+    final reference = await _rgbaBytes(flat.color.asImage());
+
+    final raw = createBackendFramebuffer(width, height);
+    final Uint8List framebuffer;
+    try {
+      renderFlatPair(
+        scene,
+        ExternalRenderTarget.platform(
+          raw.framebuffer,
+          width: width,
+          height: height,
+          kind: gpu.ExternalTargetHandleKind.framebuffer,
+        ),
+      );
+      framebuffer = readBackendFramebuffer(raw.framebuffer, width, height);
+    } finally {
+      deleteBackendFramebuffer(raw);
+    }
+    await session.end();
+
+    final half = width ~/ 2;
+    final sessionDiff = _meanAbsDiff(emulated, reference);
+    final framebufferDiff = _meanAbsDiff(framebuffer, reference);
+    final eyeDiff = _meanAbsDiff(
+      _columns(emulated, width, height, 0, half),
+      _columns(emulated, width, height, half, half),
+    );
+    final leftCoverage = _coverage(_columns(emulated, width, height, 0, half));
+    final rightCoverage = _coverage(
+      _columns(emulated, width, height, half, half),
+    );
+    // Where each buffer drew, top and bottom halves, so a flipped or
+    // misplaced copy reads off the log.
+    String rows(Uint8List rgba) {
+      final half = rgba.length ~/ 2;
+      final top = _coverage(Uint8List.sublistView(rgba, 0, half));
+      final bottom = _coverage(Uint8List.sublistView(rgba, half));
+      return '${top.toStringAsFixed(2)}/${bottom.toStringAsFixed(2)}';
+    }
+
+    // ignore: avoid_print
+    print(
+      'SMOKE webxr_emulated: ${width}x$height sessionDiff='
+      '${sessionDiff.toStringAsFixed(3)} framebufferDiff='
+      '${framebufferDiff.toStringAsFixed(3)} eyeDiff='
+      '${eyeDiff.toStringAsFixed(3)} coverage='
+      '${leftCoverage.toStringAsFixed(3)}/${rightCoverage.toStringAsFixed(3)} '
+      'topBottom session=${rows(emulated)} flat=${rows(reference)} '
+      'framebuffer=${rows(framebuffer)}',
+    );
+    expect(leftCoverage, greaterThan(0.3), reason: 'left eye drew little');
+    expect(rightCoverage, greaterThan(0.3), reason: 'right eye drew little');
+    expect(eyeDiff, greaterThan(0.25), reason: 'the eyes show no parallax');
+    expect(
+      sessionDiff,
+      lessThan(0.5),
+      reason: 'the session frame differs from the flat pair',
+    );
+    expect(
+      framebufferDiff,
+      lessThan(0.5),
+      reason: 'the raw framebuffer differs from the flat pair',
+    );
+  });
 
   testWidgets('ETC1S block uploads sample like their decoded pixels', (
     tester,
@@ -981,6 +1088,44 @@ _frameStats(ByteData rgba, int w, int h) {
     foregroundMeanLuma: fgCount == 0 ? 0.0 : fgLumaSum / fgCount,
     distinctColors: colors.length,
   );
+}
+
+Future<Uint8List> _rgbaBytes(ui.Image image) async {
+  final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+  return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+}
+
+/// Mean absolute channel difference between two RGBA buffers, in 0..255.
+double _meanAbsDiff(Uint8List a, Uint8List b) {
+  expect(a.length, b.length, reason: 'pixel buffers differ in size');
+  var sum = 0;
+  for (var i = 0; i < a.length; i++) {
+    sum += (a[i] - b[i]).abs();
+  }
+  return sum / a.length;
+}
+
+/// The columns [x0, x0 + count) of a [width] by [height] RGBA buffer.
+Uint8List _columns(Uint8List rgba, int width, int height, int x0, int count) {
+  final out = Uint8List(count * height * 4);
+  for (var y = 0; y < height; y++) {
+    out.setRange(
+      y * count * 4,
+      (y + 1) * count * 4,
+      rgba,
+      (y * width + x0) * 4,
+    );
+  }
+  return out;
+}
+
+/// The fraction of pixels with any coverage.
+double _coverage(Uint8List rgba) {
+  var covered = 0;
+  for (var i = 3; i < rgba.length; i += 4) {
+    if (rgba[i] != 0) covered++;
+  }
+  return covered / (rgba.length ~/ 4);
 }
 
 /// The color pass's counters for the frame [scene] last rendered, or null

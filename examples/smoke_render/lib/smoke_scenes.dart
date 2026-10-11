@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/gpu.dart' as gpu;
@@ -21,6 +22,8 @@ import 'package:flutter_scene/src/texture/half_float.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
+import 'package:flutter_scene_xr/flutter_scene_xr.dart' show XrFrame;
+import 'package:smoke_render/emulated_xr_smoke.dart';
 import 'package:smoke_render/synthetic_morph_glb.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -970,7 +973,69 @@ void _paintThroughExternalTarget(
   );
 }
 
+// The frame the emulated session last rendered, drawn by webxr_emulated_pair.
+XrFrame? _emulatedFrame;
+
+// The stereo scene, rendered through the shared emulated session as soon as
+// it is built. The paint shows the frame once it exists.
+({Scene scene, Camera camera}) _emulatedXrScene() {
+  final built = _stereoScene();
+  _emulatedFrame = null;
+  emulatedXrSession()
+      .then((session) => renderEmulatedFrames(built.scene, session))
+      .then((frame) => _emulatedFrame = frame);
+  return built;
+}
+
+/// The stereo scene on its own, for the emulated-session comparison test.
+Scene buildEmulatedXrScene() => _stereoScene().scene;
+
+// The pair the flat reference renders into, kept across paints.
+ExternalRenderTarget? _flatPairTarget;
+
+void _drawTarget(Canvas canvas, Size size, ExternalRenderTarget target) {
+  canvas.drawImageRect(
+    target.color.asImage(),
+    Rect.fromLTWH(0, 0, target.width.toDouble(), target.height.toDouble()),
+    Offset.zero & size,
+    Paint()..filterQuality = FilterQuality.medium,
+  );
+}
+
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
+  if (kIsWeb) ...[
+    // The stereo scene through an emulated WebXR session: the real runtime,
+    // its layer and the presentation path, with the frame's color target
+    // drawn onto the canvas. Must match webxr_emulated_flat.
+    SmokeScene(
+      'webxr_emulated_pair',
+      _emulatedXrScene,
+      preload: emulatedXrSession,
+      paint: (scene, head, canvas, size) {
+        final target = _emulatedFrame?.target;
+        if (target != null) _drawTarget(canvas, size, target);
+      },
+    ),
+    // The same eyes placed by hand through a rig, no session involved.
+    SmokeScene(
+      'webxr_emulated_flat',
+      _stereoScene,
+      paint: (scene, head, canvas, size) {
+        final layer = emulatedLayerSize();
+        var target = _flatPairTarget;
+        if (target == null ||
+            target.width != layer.width ||
+            target.height != layer.height) {
+          target = _flatPairTarget = ExternalRenderTarget.allocate(
+            width: layer.width,
+            height: layer.height,
+          );
+        }
+        renderFlatPair(scene, target);
+        _drawTarget(canvas, size, target);
+      },
+    ),
+  ],
   // Two off-axis eyes drawn side by side in one view group, so the frame
   // culls against one combined frustum and fits the cascades once. Each half
   // must look like that eye drawn alone (stereo_left_half is the left one).
