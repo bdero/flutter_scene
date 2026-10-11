@@ -73,8 +73,10 @@ class VelocityPass extends RenderGraphPass {
     required Vector2 previousJitterNdc,
     int layerMask = kRenderLayerAll,
     List<Plane> cullingPlanes = const [],
+    Frustum? cullingFrustum,
     bool skinnedMotion = true,
   }) : _camera = camera,
+       _cullingFrustum = cullingFrustum,
        _renderScene = renderScene,
        _dimensions = dimensions,
        _currentViewProjection = currentViewProjection,
@@ -88,6 +90,7 @@ class VelocityPass extends RenderGraphPass {
   // The view's camera, for its culling frustum and depth raster. Null draws
   // with the standard mapping and culls against [_currentViewProjection].
   final Camera? _camera;
+  final Frustum? _cullingFrustum;
   final RenderScene _renderScene;
   final ui.Size _dimensions;
   final Matrix4 _currentViewProjection;
@@ -178,9 +181,11 @@ class VelocityPass extends RenderGraphPass {
     final skinnedModelInfo = Float32List(40);
     final unskinnedModelInfo = Float32List(40);
 
-    final frustum = camera == null
-        ? cullingFrustum(_currentViewProjection)
-        : cullingFrustumOf(camera, _dimensions);
+    final frustum =
+        _cullingFrustum ??
+        (camera == null
+            ? cullingFrustum(_currentViewProjection)
+            : cullingFrustumOf(camera, _dimensions));
 
     void submitItem(RenderItem item) {
       if (!item.drawsColor) return;

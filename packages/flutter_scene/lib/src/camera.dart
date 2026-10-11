@@ -71,6 +71,171 @@ class PerspectiveProjection extends CameraProjection {
       _matrix4Perspective(fovRadiansY, aspectRatio, near, far, jitter: jitter);
 }
 
+/// A pinhole projection whose four frustum edges are given separately, so the
+/// view axis need not sit in the middle of the image.
+///
+/// A headset lens, a window in a wall seen from one side, a camera whose
+/// intrinsics put the principal point off centre, and each half of a stereo
+/// pair all have this shape; [PerspectiveProjection] is the symmetric case.
+///
+/// The edges are tangents of the half-angles from the view axis, signed along
+/// the view's right and up axes, so [tanLeft] and [tanDown] are negative for a
+/// frustum that contains its own axis. OpenXR's `XrFovf` carries the same four
+/// values as angles ([OffAxisProjection.fromAngles]); WebXR and ARKit hand
+/// over the finished matrix ([OffAxisProjection.fromMatrix]).
+///
+/// The aspect ratio a view renders at is ignored. The tangents already fix
+/// the frustum's shape, and a viewport that does not match them stretches the
+/// image, which is what a frustum stated by a runtime wants.
+/// {@category Scene graph}
+class OffAxisProjection extends CameraProjection {
+  /// Creates a projection from four signed edge tangents and a clip range.
+  OffAxisProjection({
+    required this.tanLeft,
+    required this.tanRight,
+    required this.tanDown,
+    required this.tanUp,
+    this.near = 0.1,
+    this.far = 1000.0,
+  });
+
+  /// From half-angles in radians measured from the view axis, [left] and
+  /// [down] negative, the way OpenXR's `XrFovf` states them.
+  factory OffAxisProjection.fromAngles({
+    required double left,
+    required double right,
+    required double down,
+    required double up,
+    double near = 0.1,
+    double far = 1000.0,
+  }) => OffAxisProjection(
+    tanLeft: tan(left),
+    tanRight: tan(right),
+    tanDown: tan(down),
+    tanUp: tan(up),
+    near: near,
+    far: far,
+  );
+
+  /// The frustum a [PerspectiveProjection] of [fovRadiansY] rendered at
+  /// [aspectRatio] has, for a symmetric view through this class.
+  factory OffAxisProjection.symmetric({
+    double fovRadiansY = 45 * degrees2Radians,
+    double aspectRatio = 1.0,
+    double near = 0.1,
+    double far = 1000.0,
+  }) {
+    final up = tan(fovRadiansY * 0.5);
+    final right = up * aspectRatio;
+    return OffAxisProjection(
+      tanLeft: -right,
+      tanRight: right,
+      tanDown: -up,
+      tanUp: up,
+      near: near,
+      far: far,
+    );
+  }
+
+  /// Reads the edges and clip planes back out of a perspective [matrix].
+  ///
+  /// Accepts the engine's own convention (clip `w` is the view depth, depth
+  /// `0..1`) and OpenGL's (clip `w` is `-z`, depth `-1..1`, what WebXR's
+  /// `XRView.projectionMatrix` and ARKit's `projectionMatrix` produce), told
+  /// apart by the sign of the `w` row. A matrix with an infinite far plane
+  /// decodes `far` as [double.infinity]. [near] and [far] replace the decoded
+  /// planes when given, for a matrix whose depth mapping is not one of those
+  /// two. Jitter or any other skew in the matrix is not recovered.
+  factory OffAxisProjection.fromMatrix(
+    Matrix4 matrix, {
+    double? near,
+    double? far,
+  }) {
+    final m00 = matrix.entry(0, 0);
+    final m11 = matrix.entry(1, 1);
+    final m20 = matrix.entry(0, 2);
+    final m21 = matrix.entry(1, 2);
+    final m22 = matrix.entry(2, 2);
+    final m32 = matrix.entry(2, 3);
+    final w = matrix.entry(3, 2);
+    if (m00 == 0.0 || m11 == 0.0 || w == 0.0) {
+      throw ArgumentError(
+        'OffAxisProjection.fromMatrix needs a perspective matrix (nonzero '
+        'x and y scales and a w row that reads view depth).',
+      );
+    }
+    final double tanLeft, tanRight, tanDown, tanUp, decodedNear, decodedFar;
+    if (w < 0.0) {
+      // OpenGL: x_ndc = m00 * (x / -z) - m20, depth -1 at near and 1 at far.
+      tanRight = (1.0 + m20) / m00;
+      tanLeft = (m20 - 1.0) / m00;
+      tanUp = (1.0 + m21) / m11;
+      tanDown = (m21 - 1.0) / m11;
+      decodedNear = m32 / (m22 - 1.0);
+      decodedFar = m22 == -1.0 ? double.infinity : m32 / (m22 + 1.0);
+    } else {
+      // Engine: x_ndc = m00 * (x / z) + m20, depth 0 at near and 1 at far.
+      tanRight = (1.0 - m20) / m00;
+      tanLeft = (-1.0 - m20) / m00;
+      tanUp = (1.0 - m21) / m11;
+      tanDown = (-1.0 - m21) / m11;
+      decodedNear = m22 == 0.0 ? 0.0 : -m32 / m22;
+      decodedFar = m22 == 1.0 ? double.infinity : m32 / (1.0 - m22);
+    }
+    return OffAxisProjection(
+      tanLeft: tanLeft,
+      tanRight: tanRight,
+      tanDown: tanDown,
+      tanUp: tanUp,
+      near: near ?? decodedNear,
+      far: far ?? decodedFar,
+    );
+  }
+
+  /// Tangent of the angle from the view axis to the left edge, negative when
+  /// the edge is left of the axis.
+  double tanLeft;
+
+  /// Tangent of the angle from the view axis to the right edge.
+  double tanRight;
+
+  /// Tangent of the angle from the view axis to the bottom edge, negative when
+  /// the edge is below the axis.
+  double tanDown;
+
+  /// Tangent of the angle from the view axis to the top edge.
+  double tanUp;
+
+  /// Distance to the near clipping plane. See [PerspectiveProjection.near] for
+  /// how it trades against depth precision.
+  double near;
+
+  /// Distance to the far clipping plane, or [double.infinity].
+  double far;
+
+  /// The vertical angle of a symmetric lens covering the same height, for
+  /// anything that sizes against the frame (level-of-detail selection).
+  double get fovRadiansY => 2.0 * atan((tanUp - tanDown) * 0.5);
+
+  /// The horizontal angle of a symmetric lens covering the same width.
+  double get fovRadiansX => 2.0 * atan((tanRight - tanLeft) * 0.5);
+
+  /// The frustum's width over its height, which a viewport should match.
+  double get aspectRatio => (tanRight - tanLeft) / (tanUp - tanDown);
+
+  @override
+  Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter}) =>
+      _matrix4OffAxis(
+        tanLeft,
+        tanRight,
+        tanDown,
+        tanUp,
+        near,
+        far,
+        jitter: jitter,
+      );
+}
+
 /// A view onto a scene: a world-space eye [position] and orientation paired
 /// with a lens [projection], used by [Scene.render] to map the scene into
 /// clip space.
@@ -453,6 +618,13 @@ class OrthographicProjection extends CameraProjection {
   }
 }
 
+/// The view matrix of an eye at [position] looking at [target] with [up],
+/// in the engine's convention (view depth positive in front of the eye), the
+/// one [PerspectiveCamera] and [OrthographicCamera] build from.
+@internal
+Matrix4 lookAtViewMatrix(Vector3 position, Vector3 target, Vector3 up) =>
+    _matrix4LookAt(position, target, up);
+
 Matrix4 _matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
   final Vector3 viewDirection = target - position;
   assert(
@@ -516,18 +688,9 @@ Matrix4 _matrix4Perspective(
   double width = height * aspectRatio;
   final jx = jitter?.x ?? 0.0;
   final jy = jitter?.y ?? 0.0;
-  // Clip z is `depthScale * z + depthOffset` over w = z. An infinite far plane
-  // is the limit of the finite terms.
-  final infinite = zFar == double.infinity;
-  final double depthScale;
-  final double depthOffset;
-  if (reversed) {
-    depthScale = infinite ? 0.0 : -zNear / (zFar - zNear);
-    depthOffset = infinite ? zNear : (zFar * zNear) / (zFar - zNear);
-  } else {
-    depthScale = infinite ? 1.0 : zFar / (zFar - zNear);
-    depthOffset = infinite ? -zNear : -(zFar * zNear) / (zFar - zNear);
-  }
+  final depth = _perspectiveDepthTerms(zNear, zFar, reversed: reversed);
+  final depthScale = depth.scale;
+  final depthOffset = depth.offset;
 
   return Matrix4(
     1.0 / width,
@@ -545,6 +708,71 @@ Matrix4 _matrix4Perspective(
     0.0,
     0.0,
     depthOffset,
+    0.0,
+  );
+}
+
+// Clip z is `scale * z + offset` over `w = z` for a pinhole projection, with
+// an infinite far plane as the limit of the finite terms.
+({double scale, double offset}) _perspectiveDepthTerms(
+  double zNear,
+  double zFar, {
+  required bool reversed,
+}) {
+  final infinite = zFar == double.infinity;
+  if (reversed) {
+    return (
+      scale: infinite ? 0.0 : -zNear / (zFar - zNear),
+      offset: infinite ? zNear : (zFar * zNear) / (zFar - zNear),
+    );
+  }
+  return (
+    scale: infinite ? 1.0 : zFar / (zFar - zNear),
+    offset: infinite ? -zNear : -(zFar * zNear) / (zFar - zNear),
+  );
+}
+
+Matrix4 _matrix4OffAxis(
+  double tanLeft,
+  double tanRight,
+  double tanDown,
+  double tanUp,
+  double zNear,
+  double zFar, {
+  Vector2? jitter,
+  bool reversed = false,
+}) {
+  assert(
+    tanRight > tanLeft && tanUp > tanDown,
+    'The off-axis frustum is degenerate (tanLeft $tanLeft, tanRight $tanRight, '
+    'tanDown $tanDown, tanUp $tanUp). Each right or up edge must lie past its '
+    'left or down edge.',
+  );
+  assert(
+    zNear > 0 && zFar > zNear,
+    'The camera frustum is degenerate (near $zNear, far $zFar). near must be '
+    'greater than 0 and far must be greater than near, or the depth mapping '
+    'collapses and the scene renders empty or Z-fights.',
+  );
+  final width = tanRight - tanLeft;
+  final height = tanUp - tanDown;
+  final depth = _perspectiveDepthTerms(zNear, zFar, reversed: reversed);
+  return Matrix4(
+    2.0 / width,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    2.0 / height,
+    0.0,
+    0.0,
+    -(tanRight + tanLeft) / width + (jitter?.x ?? 0.0),
+    -(tanUp + tanDown) / height + (jitter?.y ?? 0.0),
+    depth.scale,
+    1.0,
+    0.0,
+    0.0,
+    depth.offset,
     0.0,
   );
 }
@@ -615,6 +843,19 @@ Matrix4? buildRasterProjectionMatrix(
       _aspectOf(viewportSize),
       near != null && near > perspective.near ? near : perspective.near,
       perspective.far,
+      jitter: jitter,
+      reversed: reversed,
+    );
+  }
+  if (projection.runtimeType == OffAxisProjection) {
+    final offAxis = projection as OffAxisProjection;
+    return _matrix4OffAxis(
+      offAxis.tanLeft,
+      offAxis.tanRight,
+      offAxis.tanDown,
+      offAxis.tanUp,
+      near != null && near > offAxis.near ? near : offAxis.near,
+      offAxis.far,
       jitter: jitter,
       reversed: reversed,
     );

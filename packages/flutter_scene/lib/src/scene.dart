@@ -18,6 +18,9 @@ import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/near_fit.dart';
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
+import 'package:flutter_scene/src/render/region_copy.dart';
+import 'package:flutter_scene/src/render/view_group.dart';
+import 'package:flutter_scene/src/external_render_target.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart'
@@ -187,6 +190,23 @@ enum AntiAliasingMode {
   /// Selects [msaa] when the backend supports it and [fxaa] otherwise.
   auto,
 }
+
+// The frame's view-independent lighting inputs (see _prepareFrameLighting).
+typedef _FrameLighting = ({
+  DirectionalLightComponent? lightComponent,
+  PunctualLighting punctualLighting,
+  SpotShadowFrame? spotShadowFrame,
+  PointShadowFrame? pointShadowFrame,
+});
+
+// What one render group shares among its views this frame.
+typedef _GroupShared = ({
+  Frustum? cullingFrustum,
+  List<ShadowCascade>? cascades,
+});
+
+// A pinhole projection's clip range and widest half-angle tangents.
+typedef _PinholeClip = ({double near, double far, double tanX, double tanY});
 
 /// Represents a 3D scene, which is a collection of nodes that can be rendered onto the screen.
 ///
@@ -790,8 +810,8 @@ base class Scene implements SceneGraph {
     }
     _disposed = true;
     surface.dispose();
-    _taaState?.dispose();
-    _taaState = null;
+    _externalSurface.dispose();
+    _disposeTaaStates();
     _irradianceField.dispose();
     _punctualLightBuffer.releaseTextures();
     _autoExposureState = null;
@@ -815,7 +835,7 @@ base class Scene implements SceneGraph {
   /// The history holders that keep textures across frames, by name.
   @visibleForTesting
   Set<String> get debugHeldHistoryTargets => {
-    if (_taaState != null) 'taa',
+    if (_liveTaaStates.isNotEmpty) 'taa',
     if (_irradianceField.layout != null) 'irradiance',
     if (_autoExposureState != null) 'autoExposure',
     if (_directionalShadowCache != null) 'shadowCache',
@@ -1790,8 +1810,33 @@ base class Scene implements SceneGraph {
 
   // TODO(taa-multiview): track TAA history and jitter per view rather than
   // per scene so multiview configurations do not share history.
-  TaaHistoryState? _taaState;
-  int _taaFrameIndex = 0;
+  // Temporal anti-aliasing history, one per view (see _taaStateFor). Two
+  // views sharing one would reproject each other's frames.
+  final Map<int, TaaHistoryState> _screenTaaStates = {};
+  final Expando<TaaHistoryState> _offscreenTaaStates = Expando('taa');
+  final List<TaaHistoryState> _liveTaaStates = [];
+
+  TaaHistoryState _taaStateFor(RenderView view, int viewIndex) {
+    if (viewIndex >= 0) {
+      return _screenTaaStates.putIfAbsent(viewIndex, _newTaaState);
+    }
+    final Object key = view.target ?? view.camera;
+    return _offscreenTaaStates[key] ??= _newTaaState();
+  }
+
+  TaaHistoryState _newTaaState() {
+    final state = TaaHistoryState();
+    _liveTaaStates.add(state);
+    return state;
+  }
+
+  void _disposeTaaStates() {
+    for (final state in _liveTaaStates) {
+      state.dispose();
+    }
+    _liveTaaStates.clear();
+    _screenTaaStates.clear();
+  }
 
   /// Distance fog. Off by default; set [Fog.enabled] and a [Fog.mode] to turn it
   /// on. Applied per-fragment by every material in linear HDR before tone
@@ -2143,8 +2188,28 @@ base class Scene implements SceneGraph {
     ui.Canvas canvas, {
     ui.Rect? region,
     double? pixelRatio,
+  }) => renderViewGroups(
+    [
+      for (final view in views) RenderViewGroup([view]),
+    ],
+    canvas,
+    region: region,
+    pixelRatio: pixelRatio,
+  );
+
+  /// Renders [groups] of views onto [canvas], each group sharing the work
+  /// that does not depend on which of its views looks (see
+  /// [RenderViewGroup]).
+  ///
+  /// Otherwise [renderViews], which is this with one group per view.
+  void renderViewGroups(
+    List<RenderViewGroup> groups,
+    ui.Canvas canvas, {
+    ui.Rect? region,
+    double? pixelRatio,
   }) {
-    _checkNotDisposed('renderViews');
+    _checkNotDisposed('renderViewGroups');
+    final views = <RenderView>[for (final group in groups) ...group.views];
     renderScene.recordRenderedViews(views);
     if (!isReadyToRender) {
       debugPrint('Flutter Scene is not ready to render. Skipping frame.');
@@ -2179,6 +2244,120 @@ base class Scene implements SceneGraph {
         ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ??
         1.0;
 
+    final environmentMap = _resolveFrameEnvironment();
+
+    final transientsBuffer = _beginFrameTransients();
+
+    // A frame whose screen views will re-present their previous images skips
+    // the texture views too. Rendering them anyway keeps the GPU a frame
+    // behind, so the screen views would pace indefinitely.
+    final pacingFrame =
+        maxGpuFramesInFlight > 0 &&
+        _hasPresentedFrame &&
+        _pendingGraphCapture == null &&
+        views.any((view) => view.target == null) &&
+        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight;
+    // When every screen view can re-present, the frame holds before any
+    // per-frame upload: on Vulkan each texture upload is a synchronous submit
+    // that waits for the GPU backlog, which pacing exists to avoid.
+    final holdFrame = pacingFrame && _canPresentHeldFrame(views, drawArea, dpr);
+
+    _tickFrame();
+
+    // A material waiting on the physical shaders would draw with the wrong
+    // one, and one waiting on its interface check would draw a pairing that
+    // may crash, so hold the previous frame until they land. After the tick,
+    // which can give a material a feature that needs them.
+    if (_awaitingPhysicalResources || _awaitingStageInterfaces) {
+      _repaintWhenLoaded(physicalMaterialResourcesLoad);
+      _repaintWhenLoaded(stageInterfacesLoad);
+      _presentHeldFrame(views, canvas, drawArea);
+      renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
+      rendererSubmissions.endFrame();
+      return;
+    }
+
+    if (holdFrame) {
+      for (final view in views) {
+        if (view.target == null) _pacedFrameCount++;
+      }
+      _holdPace();
+      _presentHeldFrame(views, canvas, drawArea);
+      renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
+      rendererSubmissions.endFrame();
+      return;
+    }
+
+    final lighting = _prepareFrameLighting(
+      views,
+      environmentMap: environmentMap,
+      transientsBuffer: transientsBuffer,
+      pacingFrame: pacingFrame,
+    );
+    final (
+      :lightComponent,
+      :punctualLighting,
+      :spotShadowFrame,
+      :pointShadowFrame,
+    ) = lighting;
+    final shared = _prepareGroupShared(
+      groups,
+      lighting,
+      (view) => _viewDrawArea(drawArea, view.viewport).size,
+    );
+
+    final planarCaptureView = _renderTextureViews(
+      views,
+      environmentMap: environmentMap,
+      transientsBuffer: transientsBuffer,
+      lighting: lighting,
+      pacingFrame: pacingFrame,
+    );
+
+    // Composite lower-order screen views first.
+    final screenViews = [
+      for (final view in views)
+        if (view.target == null) view,
+    ];
+    final ordered = screenViews.length == 1
+        ? screenViews
+        : (screenViews..sort((a, b) => a.order.compareTo(b.order)));
+
+    for (var i = 0; i < ordered.length; i++) {
+      final view = ordered[i];
+      final viewArea = _viewDrawArea(drawArea, view.viewport);
+      if (viewArea.isEmpty) {
+        continue;
+      }
+      _renderViewToCanvas(
+        view: view,
+        canvas: canvas,
+        drawArea: viewArea,
+        dpr: dpr,
+        viewIndex: i,
+        environmentMap: environmentMap,
+        transientsBuffer: transientsBuffer,
+        lightComponent: lightComponent,
+        punctualLighting: punctualLighting,
+        spotShadowFrame: spotShadowFrame,
+        pointShadowFrame: pointShadowFrame,
+        capturePlanarReflections: identical(view, planarCaptureView),
+        groupShared: shared[view],
+      );
+    }
+
+    _endFrame();
+
+    assert(() {
+      _reportBlankFrame(ordered, regionEmpty: false, noViews: false);
+      _maybeReportCoplanarOverlaps();
+      return true;
+    }());
+  }
+
+  // The environment this frame lights with, after the sky re-bake, the sun
+  // aim, the web context warm-up, and the lazy default environment.
+  EnvironmentMap _resolveFrameEnvironment() {
     // Re-bake the sky-driven environment when its refresh policy says one is
     // due. The bake submits its own passes, so like the lazy default-prefilter
     // below it must run before this frame's render graph is built.
@@ -2225,8 +2404,12 @@ base class Scene implements SceneGraph {
     // render passes. Doing this in the constructor instead would break the
     // OpenGL ES backend, which sets up its context lazily on the raster
     // thread only after the first frame.
-    final environmentMap = environment ?? Material.getDefaultEnvironmentMap();
+    return environment ?? Material.getDefaultEnvironmentMap();
+  }
 
+  // Advances the per-frame transient arenas and the submission tracker, and
+  // returns the writer every view's passes emplace uniforms into.
+  TransientWriter _beginFrameTransients() {
     // Advance the per-frame transient arenas (uniform blocks and
     // instance-rate vertex data): recycle blocks whose GPU work completed
     // and reset the frame stats. Shared by every view this frame.
@@ -2241,22 +2424,11 @@ base class Scene implements SceneGraph {
           ? scheduler.currentSystemFrameTimeStamp
           : null,
     );
-    final TransientWriter transientsBuffer = uniformTransients;
+    return uniformTransients;
+  }
 
-    // A frame whose screen views will re-present their previous images skips
-    // the texture views too. Rendering them anyway keeps the GPU a frame
-    // behind, so the screen views would pace indefinitely.
-    final pacingFrame =
-        maxGpuFramesInFlight > 0 &&
-        _hasPresentedFrame &&
-        _pendingGraphCapture == null &&
-        views.any((view) => view.target == null) &&
-        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight;
-    // When every screen view can re-present, the frame holds before any
-    // per-frame upload: on Vulkan each texture upload is a synchronous submit
-    // that waits for the GPU backlog, which pacing exists to avoid.
-    final holdFrame = pacingFrame && _canPresentHeldFrame(views, drawArea, dpr);
-
+  // Ticks the scene once for this frame unless update() already did.
+  void _tickFrame() {
     // Advance the scene once per frame (not once per view): tick components
     // and animations and refresh the flat render list before the passes
     // iterate it. Skipped when update() already ran the tick this frame.
@@ -2266,31 +2438,18 @@ base class Scene implements SceneGraph {
       _tick((nowMillis - lastMillis) / 1000.0);
     }
     _tickedThisFrame = false;
+  }
 
-    // A material waiting on the physical shaders would draw with the wrong
-    // one, and one waiting on its interface check would draw a pairing that
-    // may crash, so hold the previous frame until they land. After the tick,
-    // which can give a material a feature that needs them.
-    if (_awaitingPhysicalResources || _awaitingStageInterfaces) {
-      _repaintWhenLoaded(physicalMaterialResourcesLoad);
-      _repaintWhenLoaded(stageInterfacesLoad);
-      _presentHeldFrame(views, canvas, drawArea);
-      renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
-      rendererSubmissions.endFrame();
-      return;
-    }
-
-    if (holdFrame) {
-      for (final view in views) {
-        if (view.target == null) _pacedFrameCount++;
-      }
-      _holdPace();
-      _presentHeldFrame(views, canvas, drawArea);
-      renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
-      rendererSubmissions.endFrame();
-      return;
-    }
-
+  // The frame's view-independent lighting work: joint uploads, the spatial
+  // structure, the visible lights, the shadow-casting spots and points, the
+  // shared shadow atlas anchor, the punctual light buffer, and pending
+  // reflection-probe captures. Once per frame, before any view renders.
+  _FrameLighting _prepareFrameLighting(
+    List<RenderView> views, {
+    required EnvironmentMap environmentMap,
+    required TransientWriter transientsBuffer,
+    required bool pacingFrame,
+  }) {
     // The frame draws from here on, so the joint matrices the tick computed
     // (here or in update()) upload now, not on frames held above.
     renderScene.flushJointUploads();
@@ -2418,7 +2577,30 @@ base class Scene implements SceneGraph {
         ),
       );
     }
+    return (
+      lightComponent: lightComponent,
+      punctualLighting: punctualLighting,
+      spotShadowFrame: spotShadowFrame,
+      pointShadowFrame: pointShadowFrame,
+    );
+  }
 
+  // Renders the render-texture views (this scene's and the call's) before the
+  // on-screen or external views that composite them, and picks the view whose
+  // camera drives this frame's planar reflection captures.
+  RenderView? _renderTextureViews(
+    List<RenderView> views, {
+    required EnvironmentMap environmentMap,
+    required TransientWriter transientsBuffer,
+    required _FrameLighting lighting,
+    required bool pacingFrame,
+  }) {
+    final (
+      :lightComponent,
+      :punctualLighting,
+      :spotShadowFrame,
+      :pointShadowFrame,
+    ) = lighting;
     // Texture-target views render first so screen views (and the HUD)
     // composite this frame's captures, the simple form of the
     // produce-before-consume rule.
@@ -2474,52 +2656,226 @@ base class Scene implements SceneGraph {
       }
       target.markUpdated(now);
     }
+    return planarCaptureView;
+  }
 
-    // Composite lower-order screen views first.
-    final screenViews = [
-      for (final view in views)
-        if (view.target == null) view,
-    ];
-    final ordered = screenViews.length == 1
-        ? screenViews
-        : (screenViews..sort((a, b) => a.order.compareTo(b.order)));
-
-    for (var i = 0; i < ordered.length; i++) {
-      final view = ordered[i];
-      final viewArea = _viewDrawArea(drawArea, view.viewport);
-      if (viewArea.isEmpty) {
-        continue;
-      }
-      _renderViewToCanvas(
-        view: view,
-        canvas: canvas,
-        drawArea: viewArea,
-        dpr: dpr,
-        viewIndex: i,
-        environmentMap: environmentMap,
-        transientsBuffer: transientsBuffer,
-        lightComponent: lightComponent,
-        punctualLighting: punctualLighting,
-        spotShadowFrame: spotShadowFrame,
-        pointShadowFrame: pointShadowFrame,
-        capturePlanarReflections: identical(view, planarCaptureView),
-      );
-    }
-
+  // Closes the frame's bookkeeping after the last view has rendered.
+  void _endFrame() {
     _sharedShadowAtlas = null;
     _sharedShadowAnchor = null;
     renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
     rendererSubmissions.endFrame();
-
     // A frame has now been submitted; the next one runs on a warm context (see
-    // the rebuild near the environment resolution above).
+    // the rebuild in _resolveFrameEnvironment).
     _hasPresentedFrame = true;
+  }
 
-    assert(() {
-      _reportBlankFrame(ordered, regionEmpty: false, noViews: false);
-      _maybeReportCoplanarOverlaps();
-      return true;
-    }());
+  /// Renders [groups] of views into the targets their views own, for a frame
+  /// loop that is not Flutter's (an XR session handing out swapchain images,
+  /// a headless capture).
+  ///
+  /// Every view must carry a [RenderView.externalTarget]; its
+  /// [RenderView.viewport] selects the region of that target it fills. The
+  /// scene's own render-texture views ([views]) render first, as in
+  /// [renderViewGroups]. Nothing here touches a canvas, Flutter's frame
+  /// scheduler, or GPU pacing, so it may be called from any callback; the
+  /// runtime owns the cadence. [pixelRatio] is the view's logical size per
+  /// target pixel, which only size-dependent projections and picking read.
+  ///
+  /// Returns at once. The result says whether the frame drew and completes
+  /// when its GPU work has finished, which is when a runtime may release the
+  /// targets. A frame whose shaders are still loading is skipped and the
+  /// targets keep their previous contents.
+  FrameCompletion renderViewsToTargets(
+    List<RenderViewGroup> groups, {
+    double pixelRatio = 1.0,
+  }) {
+    _checkNotDisposed('renderViewsToTargets');
+    final views = <RenderView>[for (final group in groups) ...group.views];
+    for (final view in views) {
+      if (view.externalTarget == null) {
+        throw ArgumentError(
+          'renderViewsToTargets needs an externalTarget on every view; use '
+          'renderViews or renderViewGroups for views drawn to a canvas.',
+        );
+      }
+    }
+    renderScene.recordRenderedViews(views);
+    if (!isReadyToRender) {
+      debugPrint('Flutter Scene is not ready to render. Skipping frame.');
+      return FrameCompletion.skipped();
+    }
+    if (views.isEmpty) {
+      return FrameCompletion.skipped();
+    }
+
+    renderStats.beginFrame();
+    beginDrawFailureFrame();
+    _applyEnvironmentVolumes(views.first.camera);
+    final environmentMap = _resolveFrameEnvironment();
+    final transientsBuffer = _beginFrameTransients();
+    _tickFrame();
+
+    if (_awaitingPhysicalResources || _awaitingStageInterfaces) {
+      _repaintWhenLoaded(physicalMaterialResourcesLoad);
+      _repaintWhenLoaded(stageInterfacesLoad);
+      renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
+      rendererSubmissions.endFrame();
+      return FrameCompletion.skipped();
+    }
+
+    final lighting = _prepareFrameLighting(
+      views,
+      environmentMap: environmentMap,
+      transientsBuffer: transientsBuffer,
+      pacingFrame: false,
+    );
+    final shared = _prepareGroupShared(
+      groups,
+      lighting,
+      (view) => _externalPixelRect(view).size / pixelRatio,
+    );
+    final planarCaptureView = _renderTextureViews(
+      views,
+      environmentMap: environmentMap,
+      transientsBuffer: transientsBuffer,
+      lighting: lighting,
+      pacingFrame: false,
+    );
+
+    for (var i = 0; i < views.length; i++) {
+      final view = views[i];
+      _renderViewToExternal(
+        view: view,
+        viewIndex: i,
+        pixelRatio: pixelRatio,
+        environmentMap: environmentMap,
+        transientsBuffer: transientsBuffer,
+        lighting: lighting,
+        capturePlanarReflections: identical(view, planarCaptureView),
+        groupShared: shared[view],
+      );
+    }
+
+    _endFrame();
+    return FrameCompletion.afterSubmissions();
+  }
+
+  // The pixel rectangle of [view]'s external target that the view fills.
+  ui.Rect _externalPixelRect(RenderView view) {
+    final target = view.externalTarget!;
+    final whole = ui.Rect.fromLTWH(
+      0,
+      0,
+      target.width.toDouble(),
+      target.height.toDouble(),
+    );
+    final viewport = view.viewport;
+    if (viewport == null) return whole;
+    return ui.Rect.fromLTWH(
+      (viewport.left * whole.width).roundToDouble(),
+      (viewport.top * whole.height).roundToDouble(),
+      (viewport.width * whole.width).roundToDouble(),
+      (viewport.height * whole.height).roundToDouble(),
+    );
+  }
+
+  // Renders [view] into the region of its external target. A view filling
+  // the whole target at its native size renders straight into it; any other
+  // renders into a ring texture of the region's size and copies into place,
+  // so views sharing one image never clear each other.
+  void _renderViewToExternal({
+    required RenderView view,
+    required int viewIndex,
+    required double pixelRatio,
+    required EnvironmentMap environmentMap,
+    required TransientWriter transientsBuffer,
+    required _FrameLighting lighting,
+    required bool capturePlanarReflections,
+    required _GroupShared? groupShared,
+  }) {
+    final target = view.externalTarget!;
+    final region = _externalPixelRect(view);
+    if (region.isEmpty) return;
+    final scale = (view.renderScale ?? _renderScale) * adaptiveRenderScale;
+    final pixelSize = ui.Size(
+      math.max(1.0, (region.width * scale).ceilToDouble()),
+      math.max(1.0, (region.height * scale).ceilToDouble()),
+    );
+    final viewportSize = region.size / pixelRatio;
+    final direct =
+        region.left == 0 &&
+        region.top == 0 &&
+        region.width == target.width &&
+        region.height == target.height &&
+        pixelSize.width == region.width &&
+        pixelSize.height == region.height;
+    final pool = _externalSurface.transientTexturePool(viewIndex);
+    final gpu.Texture output = direct
+        ? target.color
+        : _externalSurface.getNextSwapchainColorTexture(pixelSize, viewIndex);
+    _renderViewToTexture(
+      view: view,
+      outputColor: output,
+      pixelSize: pixelSize,
+      viewportSize: viewportSize,
+      pool: pool,
+      environmentMap: environmentMap,
+      transientsBuffer: transientsBuffer,
+      lightComponent: lighting.lightComponent,
+      punctualLighting: lighting.punctualLighting,
+      spotShadowFrame: lighting.spotShadowFrame,
+      pointShadowFrame: lighting.pointShadowFrame,
+      viewIndex: viewIndex,
+      capturePlanarReflections: capturePlanarReflections,
+      groupShared: groupShared,
+    );
+    if (!direct) {
+      copyTextureToRegion(output, target.color, region);
+    }
+  }
+
+  // Render targets and transient pools for the external-target path, one
+  // ring per view index, kept apart from the screen rings so a frame that
+  // renders both never shares an attachment between them.
+  final Surface _externalSurface = Surface();
+
+  // What each view of a multi-view group shares this frame, keyed by view.
+  // Single-view groups share nothing and are left out.
+  Map<RenderView, _GroupShared> _prepareGroupShared(
+    List<RenderViewGroup> groups,
+    _FrameLighting lighting,
+    ui.Size Function(RenderView view) viewSizeOf,
+  ) {
+    final shared = <RenderView, _GroupShared>{};
+    for (final group in groups) {
+      if (group.views.length < 2) continue;
+      if (!group.sharedCulling && !group.sharedShadowFit) continue;
+      final cameras = [for (final view in group.views) view.camera];
+      final sizes = [for (final view in group.views) viewSizeOf(view)];
+      if (sizes.any((size) => size.isEmpty)) continue;
+      final frustum = group.sharedCulling
+          ? combinedCullingFrustum(cameras, sizes)
+          : null;
+      List<ShadowCascade>? cascades;
+      final light = lighting.lightComponent?.light;
+      if (group.sharedShadowFit && light != null && light.castsShadow) {
+        final combined = combinedViewCamera(cameras, sizes);
+        if (combined != null) {
+          // The combined projection ignores the aspect ratio, so any will do.
+          cascades = light.computeCascades(
+            combined,
+            1.0,
+            lighting.lightComponent!.worldDirection,
+          );
+        }
+      }
+      if (frustum == null && cascades == null) continue;
+      for (final view in group.views) {
+        shared[view] = (cullingFrustum: frustum, cascades: cascades);
+      }
+    }
+    return shared;
   }
 
   /// Whether a debug build checks the scene for surfaces that overlap in one
@@ -2858,6 +3214,7 @@ base class Scene implements SceneGraph {
     required SpotShadowFrame? spotShadowFrame,
     required PointShadowFrame? pointShadowFrame,
     bool capturePlanarReflections = false,
+    _GroupShared? groupShared,
   }) {
     // Allocate the offscreen render target at physical-pixel resolution so
     // the rasterized 3D content matches Flutter's framebuffer density.
@@ -2929,6 +3286,7 @@ base class Scene implements SceneGraph {
       capturer: capturer,
       viewIndex: viewIndex,
       capturePlanarReflections: capturePlanarReflections,
+      groupShared: groupShared,
     );
     if (capturer != null) {
       pendingCapture!.completer.complete(
@@ -2951,33 +3309,24 @@ base class Scene implements SceneGraph {
   DepthRaster _depthRasterFor(
     RenderView view,
     ui.Size viewportSize,
-    int viewIndex,
-  ) {
+    int viewIndex, [
+    Frustum? cullingFrustum,
+  ]) {
     final projection = view.camera.projection;
-    final fittable =
-        projection.runtimeType == PerspectiveProjection &&
-        viewportSize.width > 0 &&
-        viewportSize.height > 0;
+    final clip = viewportSize.width > 0 && viewportSize.height > 0
+        ? _pinholeClipOf(projection, viewportSize)
+        : null;
+    final fittable = clip != null;
     final state = _nearFitStateFor(view, viewIndex);
     final near = fitNearPlane && fittable
-        ? _fitNear(
-            view,
-            projection as PerspectiveProjection,
-            viewportSize,
-            state,
-          )
+        ? _fitNear(view, viewportSize, state, clip, cullingFrustum)
         : null;
     if (fittable) {
       assert(() {
         if (!fitNearPlane) {
           // Measure what a fit would gain, for the advisory only.
           final previous = state.fitted;
-          _fitNear(
-            view,
-            projection as PerspectiveProjection,
-            viewportSize,
-            state,
-          );
+          _fitNear(view, viewportSize, state, clip, cullingFrustum);
           state.fitted = previous;
         }
         final fit = state.last;
@@ -2999,7 +3348,7 @@ base class Scene implements SceneGraph {
           depthPrecisionSummary(
             reversed: raster.reversed,
             floatDepth: raster.floatDepth,
-            authoredNear: (projection as PerspectiveProjection).near,
+            authoredNear: clip.near,
             fittedNear: near,
           ),
         );
@@ -3098,18 +3447,44 @@ base class Scene implements SceneGraph {
 
   // The largest near plane, at least the authored one, that clips nothing
   // [view] draws, or null to keep the authored plane.
+  // The clip range and the widest half-angle tangents of a pinhole projection
+  // the near fit can reason about, or null for a parallel or custom one.
+  _PinholeClip? _pinholeClipOf(CameraProjection projection, ui.Size size) {
+    if (projection.runtimeType == PerspectiveProjection) {
+      final perspective = projection as PerspectiveProjection;
+      final tanY = math.tan(perspective.fovRadiansY * 0.5);
+      return (
+        near: perspective.near,
+        far: perspective.far,
+        tanX: tanY * size.width / size.height,
+        tanY: tanY,
+      );
+    }
+    if (projection.runtimeType == OffAxisProjection) {
+      final offAxis = projection as OffAxisProjection;
+      return (
+        near: offAxis.near,
+        far: offAxis.far,
+        tanX: math.max(offAxis.tanLeft.abs(), offAxis.tanRight.abs()),
+        tanY: math.max(offAxis.tanDown.abs(), offAxis.tanUp.abs()),
+      );
+    }
+    return null;
+  }
+
   double? _fitNear(
     RenderView view,
-    PerspectiveProjection projection,
     ui.Size viewportSize,
     _NearFitState state,
+    _PinholeClip projection,
+    Frustum? cullingFrustum,
   ) {
     final camera = view.camera;
-    final tanY = math.tan(projection.fovRadiansY * 0.5);
-    final tanX = tanY * viewportSize.width / viewportSize.height;
+    final tanX = projection.tanX;
+    final tanY = projection.tanY;
     final cosHalfAngle = 1.0 / math.sqrt(1.0 + tanX * tanX + tanY * tanY);
     final result = renderScene.nearestVisibleDepth(
-      frustum: cullingFrustumOf(camera, viewportSize),
+      frustum: cullingFrustum ?? cullingFrustumOf(camera, viewportSize),
       eye: camera.position,
       forward: camera.forward,
       cosHalfAngle: cosHalfAngle,
@@ -3194,6 +3569,10 @@ base class Scene implements SceneGraph {
     // primary view only; captures follow its camera and other views reuse
     // its result). Never set for a linear-color capture.
     bool capturePlanarReflections = false,
+    // What the view's render group shares with it: a culling frustum
+    // containing every view in the group, and cascades fitted once for all
+    // of them. Null when the view renders alone.
+    _GroupShared? groupShared,
   }) {
     // The entry points check first with their own names; this catches a bake
     // stepper taken before dispose.
@@ -3215,10 +3594,17 @@ base class Scene implements SceneGraph {
     final viewWatch = viewStats == null ? null : (Stopwatch()..start());
     // Bound to the logical size so every pass renders the volume picking
     // hits, whatever render-target size it passes.
+    // The view's own frustum override wins over the group's.
+    final cullingFrustum = view.cullingFrustum ?? groupShared?.cullingFrustum;
     final camera = ViewportBoundCamera(
       view.camera,
       viewportSize ?? pixelSize,
-      raster: _depthRasterFor(view, viewportSize ?? pixelSize, viewIndex),
+      raster: _depthRasterFor(
+        view,
+        viewportSize ?? pixelSize,
+        viewIndex,
+        cullingFrustum,
+      ),
     );
     // A linear capture skips every resampling pass, but multisampling
     // resolves inside the scene pass, so a view that asks for it keeps it.
@@ -3265,11 +3651,12 @@ base class Scene implements SceneGraph {
         projection.scaleY > 0.0 &&
         projection.far > projection.near;
     final cascades = light != null && light.castsShadow && projectionValid
-        ? light.computeCascades(
-            camera,
-            pixelSize.width / pixelSize.height,
-            lightDirection,
-          )
+        ? groupShared?.cascades ??
+              light.computeCascades(
+                camera,
+                pixelSize.width / pixelSize.height,
+                lightDirection,
+              )
         : const <ShadowCascade>[];
 
     // God rays march the cascaded shadow map against the camera depth, so they
@@ -3314,7 +3701,7 @@ base class Scene implements SceneGraph {
     final materialInputs = wholeSceneMaterialInputs.isEmpty
         ? wholeSceneMaterialInputs
         : renderScene.collectMaterialInputs(
-            camera.getFrustum(pixelSize),
+            cullingFrustum ?? camera.getFrustum(pixelSize),
             layerMask: view.layerMask,
             additionalPlanes: view.cullingPlanes,
             includeOffscreen: _warmUpIncludeOffscreen,
@@ -3538,11 +3925,11 @@ base class Scene implements SceneGraph {
     Vector2 prevJitterNdc = Vector2.zero();
     TaaHistoryState? taaState;
     if (enableTaa) {
-      taaState = _taaState ??= TaaHistoryState();
+      taaState = _taaStateFor(view, viewIndex);
       final haltonPt = halton23(
-        (_taaFrameIndex % temporalAntiAliasing.jitterSequenceLength) + 1,
+        (taaState.frameIndex % temporalAntiAliasing.jitterSequenceLength) + 1,
       );
-      _taaFrameIndex++;
+      taaState.frameIndex++;
       currentJitterNdc = Vector2(
         (2 * haltonPt.x - 1) /
             pixelSize.width *
@@ -3659,6 +4046,7 @@ base class Scene implements SceneGraph {
             cameraRight: cameraRight,
             cameraUp: cameraUp,
             cullingPlanes: view.cullingPlanes,
+            cullingFrustum: cullingFrustum,
             cameraTransform: currentJitteredViewProjection,
             primaryView: viewIndex >= 0,
           ),
@@ -3681,6 +4069,7 @@ base class Scene implements SceneGraph {
             previousJitterNdc: prevJitterNdc,
             layerMask: view.layerMask,
             cullingPlanes: view.cullingPlanes,
+            cullingFrustum: cullingFrustum,
             skinnedMotion: temporalAntiAliasing.skinnedMotion,
           ),
         );
@@ -3805,6 +4194,7 @@ base class Scene implements SceneGraph {
         bindSceneDepth: bindSceneDepth && projectionValid,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
         cullingPlanes: view.cullingPlanes,
+        cullingFrustum: cullingFrustum,
         includeOffscreen: _warmUpIncludeOffscreen,
         cameraTransform: currentJitteredViewProjection,
         debugView: debugFrame,
@@ -3894,6 +4284,7 @@ base class Scene implements SceneGraph {
           cameraForward: camera.forward,
           layerMask: view.layerMask,
           cullingPlanes: view.cullingPlanes,
+          cullingFrustum: cullingFrustum,
           primaryView: viewIndex >= 0,
         ),
       );

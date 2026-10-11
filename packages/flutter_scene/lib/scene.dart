@@ -158,6 +158,7 @@ export 'src/camera.dart'
     show
         Camera,
         CameraProjection,
+        OffAxisProjection,
         OrthographicCamera,
         OrthographicContain,
         OrthographicCover,
@@ -316,7 +317,9 @@ export 'src/render/render_layers.dart'
 export 'src/render/selection_outline_pass.dart' show HighlightStyle;
 export 'src/render_texture.dart'
     show RenderTexture, RenderTextureSampling, RenderTextureUpdate;
-export 'src/render_view.dart' show RenderView;
+export 'src/external_render_target.dart'
+    show ExternalRenderTarget, FrameCompletion;
+export 'src/render_view.dart' show RenderView, RenderViewGroup;
 export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
 export 'src/render/planar_reflection.dart' show PlanarReflectionCamera;
@@ -405,4 +408,5 @@ export 'src/widgets/scene_view.dart'
         SceneTickCallback,
         SceneView,
         SceneViewsBuilder;
+export 'src/widgets/widget_host.dart' show WidgetHost;
 export 'src/tone_mapping.dart' show ToneMappingMode;

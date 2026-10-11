@@ -742,6 +742,7 @@ base class SceneEncoder {
     Matrix4? displayReferredCameraTransform,
     DebugViewFrame? debugView,
     bool primaryView = true,
+    Frustum? cullingFrustum,
   }) : _renderPass = renderPass,
        _transientsBuffer = transientsBuffer,
        _debugView = debugView,
@@ -756,7 +757,7 @@ base class SceneEncoder {
     _cameraTransform =
         cameraTransform ?? rasterViewTransformOf(_camera, _dimensions);
     _displayReferredCameraTransform = displayReferredCameraTransform;
-    frustum = cullingFrustumOf(_camera, _dimensions);
+    frustum = cullingFrustum ?? cullingFrustumOf(_camera, _dimensions);
     // A degenerate projection has no screen-size metric, so LOD nodes draw
     // their highest-detail level.
     final projection = ProjectionParams.of(_camera.projection, _dimensions);

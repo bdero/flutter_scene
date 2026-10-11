@@ -96,15 +96,22 @@ final class WebGlRenderPipeline extends RenderPipeline {
 
   web.WebGLProgram get glProgram => _program;
 
+  /// Internal: the clip-space Y flip uniform, or null when the program has
+  /// none (a shader with no vertex position output).
+  web.WebGLUniformLocation? _yFlipLocation;
+
   void _buildUniformCaches() {
     final gl = _gpuContext._gl;
     gl.useProgram(_program);
     final yFlipLocation = gl.getUniformLocation(_program, '_impeller_y_flip');
+    _yFlipLocation = yFlipLocation;
     if (yFlipLocation != null) {
       // Impeller's generated GLES shaders multiply gl_Position.y by this
       // backend uniform. The web shim does not use Impeller's runtime uniform
       // binding layer, so set the value that stores FBO render targets
-      // top-down, matching Flutter GPU's render-to-texture convention.
+      // top-down, matching Flutter GPU's render-to-texture convention. A
+      // pass drawing into an external, bottom-up target sets it to one
+      // for the duration of the pass (see WebGlRenderPass.bindPipeline).
       gl.uniform1f(yFlipLocation, -1.0);
     }
     var nextUnit = 0;

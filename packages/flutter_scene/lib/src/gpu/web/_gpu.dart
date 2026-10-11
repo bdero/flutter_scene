@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../shared/encoded_image_types.dart';
+import '../shared/external_target.dart';
 import '../shared/gpu_capabilities.dart';
 import 'webgl/_webgl.dart' show createWebGlBackend;
 

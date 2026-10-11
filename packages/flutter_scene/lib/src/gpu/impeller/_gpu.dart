@@ -7,6 +7,7 @@ import 'package:flutter_gpu/gpu.dart';
 import 'package:flutter_scene/src/gpu/shared/encoded_image_types.dart';
 import 'package:flutter_scene/src/gpu/shared/shader_library_sources.dart';
 
+import '../shared/external_target.dart';
 import '../shared/gpu_capabilities.dart';
 
 export 'package:flutter_gpu/gpu.dart';

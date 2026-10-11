@@ -1,10 +1,11 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/external_render_target.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/scene.dart' show AntiAliasingMode, Scene;
-import 'package:vector_math/vector_math.dart' show Plane;
+import 'package:vector_math/vector_math.dart' show Frustum, Plane;
 
 /// One view of a `Scene`: a [camera] plus where and how its image is drawn.
 ///
@@ -27,6 +28,8 @@ class RenderView {
     this.renderScale,
     this.filterQuality,
     this.cullingPlanes = const [],
+    this.cullingFrustum,
+    this.externalTarget,
   }) : assert(
          renderScale == null || (renderScale.isFinite && renderScale > 0.0),
          'renderScale must be a positive, finite number.',
@@ -48,11 +51,21 @@ class RenderView {
   /// normalized coordinates (`0..1`, with a top-left origin). `null` fills
   /// the whole target.
   ///
-  /// Ignored when [target] is set; a view renders the full extent of its
-  /// render texture.
+  /// Honored on the screen and on an [externalTarget] (two eyes side by side
+  /// in one swapchain image). Ignored when [target] is set; a view renders
+  /// the full extent of its render texture.
   // TODO(rendertarget): support viewport sub-rects on texture targets
   // (requires compositing multiple views into one texture).
   ui.Rect? viewport;
+
+  /// A caller-owned color target this view renders into through
+  /// `Scene.renderViewsToTargets`, or null for a view drawn to the screen or
+  /// to [target].
+  ///
+  /// [viewport] selects the region of it this view fills; [renderScale]
+  /// still applies on top of the region's pixel size, and [filterQuality]
+  /// chooses how a region smaller than the view's render size is resampled.
+  ExternalRenderTarget? externalTarget;
 
   /// A bitmask selecting which `Node` layers this view renders. A node is
   /// drawn only when `node.layers & layerMask != 0`. Defaults to
@@ -94,4 +107,48 @@ class RenderView {
   /// This supports horizon, portal, and application-defined occlusion culling.
   /// Objects with frustum culling disabled ignore these planes.
   List<Plane> cullingPlanes;
+
+  /// The frustum objects are culled against instead of the camera's own, or
+  /// null to cull against the camera.
+  ///
+  /// A view that shares its culling with others (both eyes of a stereo pair)
+  /// sets a frustum containing every view here, so an object visible to a
+  /// sibling but outside this camera is still processed consistently. The
+  /// frustum is in world space. [cullingPlanes] still apply on top. A
+  /// [RenderViewGroup] supplies one automatically.
+  Frustum? cullingFrustum;
+}
+
+/// Views of one scene rendered together, sharing the work that does not
+/// depend on which view looks.
+///
+/// A stereo pair is the common case. Its two views are 6 cm apart and see
+/// almost the same world, so the group culls against one frustum containing
+/// both ([sharedCulling], see [RenderView.cullingFrustum]) and fits the
+/// directional shadow cascades once from the same combined volume
+/// ([sharedShadowFit]), which also keeps the shadows identical between the
+/// eyes. Everything per view (post-processing, temporal history, the depth
+/// fit) stays per view. Views whose orientations differ by more than a few
+/// degrees fall back to per-view culling and fitting, since one frustum
+/// would then be far larger than either.
+///
+/// A plain list of views passed to `Scene.renderViews` is one group per
+/// view, which is the split-screen behavior.
+/// {@category Rendering}
+class RenderViewGroup {
+  /// Groups [views], at least one.
+  RenderViewGroup(
+    this.views, {
+    this.sharedCulling = true,
+    this.sharedShadowFit = true,
+  }) : assert(views.isNotEmpty, 'A RenderViewGroup needs at least one view');
+
+  /// The views, in the order they render.
+  final List<RenderView> views;
+
+  /// Whether every view culls against one frustum containing them all.
+  final bool sharedCulling;
+
+  /// Whether the directional shadow cascades are fitted once for the group.
+  final bool sharedShadowFit;
 }

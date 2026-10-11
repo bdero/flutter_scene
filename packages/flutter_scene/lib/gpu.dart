@@ -19,6 +19,11 @@ library;
 
 export 'src/generated_assets/generated_asset_lookup.dart'
     show resolveShaderBundleKey;
+export 'src/gpu/external_targets.dart'
+    show
+        externalColorTargetsSupported,
+        nativeGraphicsContext,
+        wrapExternalColorTarget;
 
 export 'src/gpu/gpu.dart'
     show
@@ -26,6 +31,8 @@ export 'src/gpu/gpu.dart'
         ShaderLibrary,
         loadShaderLibraryAsync,
         Texture,
+        PixelFormat,
+        ExternalTargetHandleKind,
         SamplerOptions,
         MinMagFilter,
         MipFilter,

@@ -38,6 +38,7 @@ class GpuCapabilities {
     required this.imageToTexture,
     required this.presentAsImage,
     required this.compute,
+    this.externalColorTargets = false,
   });
 
   /// A rendered texture can be handed to Flutter as a `ui.Image` without a
@@ -58,6 +59,14 @@ class GpuCapabilities {
   /// Compute pipelines and dispatches are available.
   final bool compute;
 
+  /// A color texture or framebuffer the backend did not allocate can be
+  /// wrapped as a render target, which is what rendering into a swapchain
+  /// image a platform runtime owns needs. See `wrapExternalColorTarget`.
+  ///
+  /// False on Flutter GPU, which has no import path yet (tracked upstream as
+  /// flutter/flutter#192059).
+  final bool externalColorTargets;
+
   /// The tier these capabilities add up to.
   GpuHostTier get hostTier {
     if (!textureToImage && !presentAsImage) return GpuHostTier.headless;
@@ -69,5 +78,5 @@ class GpuCapabilities {
   String toString() =>
       'GpuCapabilities(${hostTier.name}, textureToImage: $textureToImage, '
       'imageToTexture: $imageToTexture, presentAsImage: $presentAsImage, '
-      'compute: $compute)';
+      'compute: $compute, externalColorTargets: $externalColorTargets)';
 }

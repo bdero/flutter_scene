@@ -250,6 +250,20 @@ abstract base class GpuHost {
 
   /// Presents [texture] through the backend's own offscreen canvas path.
   Future<ui.Image> present(Texture texture, {bool transferOwnership = false});
+
+  /// The platform graphics context behind this backend (the
+  /// `WebGL2RenderingContext` on WebGL2), for a runtime that must bind it.
+  Object? get nativeGraphicsContext;
+
+  /// Wraps a platform color target this backend can draw into but did not
+  /// allocate. See [GpuCapabilities.externalColorTargets].
+  Texture wrapExternalColorTarget(
+    Object handle, {
+    required int width,
+    required int height,
+    required ExternalTargetHandleKind kind,
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  });
 }
 
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) =>
