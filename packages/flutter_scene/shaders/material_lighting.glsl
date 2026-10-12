@@ -669,8 +669,8 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       float facing =
           step(0.0, dot(cross(c1 - c0, c3 - c0), v_position - c0));
       vec2 ltc_uv = clamp(vec2(roughness, sqrt(1.0 - n_dot_v)), 0.0, 1.0);
-      vec4 t1 = texture(brdf_lut, LtcLutUv(ltc_uv, 1.0));
-      vec4 t2 = texture(brdf_lut, LtcLutUv(ltc_uv, 2.0));
+      vec4 t1 = textureLod(brdf_lut, LtcLutUv(ltc_uv, 1.0), 0.0);
+      vec4 t2 = textureLod(brdf_lut, LtcLutUv(ltc_uv, 2.0), 0.0);
       mat3 inv_m = mat3(
           vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
       float spec_shape = LtcIntegrate(
@@ -688,8 +688,8 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       if (material.clearcoat > 0.0) {
         vec2 coat_ltc_uv = clamp(
             vec2(coat_roughness, sqrt(1.0 - coat_n_dot_v)), 0.0, 1.0);
-        vec4 ct1 = texture(brdf_lut, LtcLutUv(coat_ltc_uv, 1.0));
-        vec4 ct2 = texture(brdf_lut, LtcLutUv(coat_ltc_uv, 2.0));
+        vec4 ct1 = textureLod(brdf_lut, LtcLutUv(coat_ltc_uv, 1.0), 0.0);
+        vec4 ct2 = textureLod(brdf_lut, LtcLutUv(coat_ltc_uv, 2.0), 0.0);
         mat3 coat_inv_m = mat3(
             vec3(ct1.x, 0.0, ct1.y), vec3(0.0, 1.0, 0.0),
             vec3(ct1.z, 0.0, ct1.w));
