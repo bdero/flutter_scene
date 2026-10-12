@@ -763,8 +763,10 @@ void main() {
     expect(lighting, contains('min(CascadeBlendWeight(uv, margin, band),'));
     expect(lighting, contains('float shadow = shadow_sum + (1.0 - weight);'));
     // The weight guard replaces the old `found` flag, so a full cascade ends
-    // the walk instead of a second lookup.
-    expect(lighting, contains('if (weight < 1.0 && count > IDX)'));
+    // the walk instead of a second lookup. The walk is a loop over the
+    // cascade count, so the cascade sampler is compiled once.
+    expect(lighting, contains('for (int i = 0; i < count; i++) {'));
+    expect(lighting, contains('if (weight < 1.0) {'));
     // An early return inside the blend would emit a loop here (see the
     // Direct3D note on SampleShadow), so the helper must stay a select.
     expect(lighting, isNot(contains('if (band <= 0.0) return')));
@@ -787,7 +789,7 @@ void main() {
     expect(sampling, contains('if (fade < 1.0) {'));
     expect(
       sampling.indexOf('if (fade < 1.0) {'),
-      lessThan(sampling.indexOf('    _TRY_CASCADE(0)')),
+      lessThan(sampling.indexOf('for (int i = 0; i < count; i++) {')),
     );
     final packing = File(
       'lib/src/material/engine_lighting.dart',
