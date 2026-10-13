@@ -258,9 +258,9 @@ float CascadeBlendWeight(highp vec2 uv, highp float margin, highp float band) {
 // time on backends that compile at run time (several seconds per pipeline on
 // ANGLE's Direct3D backend).
 //
-// The cascade's matrix and box size are selected with literal indices, so no
-// uniform array or vector is indexed with a dynamic index (misread for indices
-// past the first by some GLES drivers).
+// On GLES the cascade's matrix and box size are selected with literal indices,
+// so no uniform array is indexed with a dynamic index (misread for indices past
+// the first by some GLES drivers).
 float SampleShadow(highp vec3 world_pos, vec3 n) {
   int count = int(frag_info.shadow_cascade_count);
   // Select and sample with the same displaced position. Selecting with the
@@ -291,19 +291,30 @@ float SampleShadow(highp vec3 world_pos, vec3 n) {
       // No break: the remaining cascades fall through this test instead, so
       // the loop has a single exit.
       if (weight < 1.0) {
-        highp mat4 cascade_matrix = frag_info.light_space_matrix[0];
-        highp float box = frag_info.cascade_box_sizes[0];
-        if (i == 1) {
-          cascade_matrix = frag_info.light_space_matrix[1];
+        highp vec4 pos = vec4(biased_world_pos, 1.0);
+#if defined(IMPELLER_TARGET_METAL) || defined(IMPELLER_TARGET_VULKAN)
+        highp vec4 light_clip = frag_info.light_space_matrix[i] * pos;
+        highp float box = frag_info.cascade_box_sizes[i];
+#else
+        // Literal indices, since some GLES drivers misread a dynamically
+        // indexed uniform array. Each branch transforms by its own matrix,
+        // so a GPU that flattens the branches still reads only one.
+        highp vec4 light_clip;
+        highp float box;
+        if (i == 0) {
+          light_clip = frag_info.light_space_matrix[0] * pos;
+          box = frag_info.cascade_box_sizes[0];
+        } else if (i == 1) {
+          light_clip = frag_info.light_space_matrix[1] * pos;
           box = frag_info.cascade_box_sizes[1];
         } else if (i == 2) {
-          cascade_matrix = frag_info.light_space_matrix[2];
+          light_clip = frag_info.light_space_matrix[2] * pos;
           box = frag_info.cascade_box_sizes[2];
-        } else if (i == 3) {
-          cascade_matrix = frag_info.light_space_matrix[3];
+        } else {
+          light_clip = frag_info.light_space_matrix[3] * pos;
           box = frag_info.cascade_box_sizes[3];
         }
-        highp vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);
+#endif
         highp vec3 proj = light_clip.xyz / light_clip.w;
         highp vec2 uv = proj.xy * 0.5 + 0.5;
         highp float margin =
