@@ -20,7 +20,11 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_gpu_shaders/build.dart'
+    show shaderBundleImpellercArguments;
 import 'package:flutter_gpu_shaders/environment.dart';
+import 'package:flutter_scene/src/generated_assets/build_engine_assets.dart'
+    show engineGlesLanguageVersion;
 import 'package:flutter_scene/src/gpu/web/shader_bundle_generated.dart' as fb;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -107,8 +111,6 @@ void main()
       final impellerc = await findImpellerC();
       final temp = Directory.systemTemp.createTempSync('lit_compile_cost');
       try {
-        // Compiled with the build hook's arguments
-        // (shaderBundleImpellercArguments in flutter_gpu_shaders).
         final entries = {
           for (final name in _litEntries)
             name: {
@@ -119,13 +121,18 @@ void main()
             },
         };
         final output = File.fromUri(temp.uri.resolve('lit.shaderbundle'));
-        final result = await Process.run(impellerc.toFilePath(), [
-          '--sl=${output.path}',
-          '--shader-bundle=${jsonEncode(entries)}',
-          '--gles-language-version=300',
-          '--include=${Directory.current.uri.resolve('shaders/').toFilePath()}',
-          '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
-        ]);
+        final shaders = Directory.current.uri.resolve('shaders/');
+        final result = await Process.run(
+          impellerc.toFilePath(),
+          shaderBundleImpellercArguments(
+            outputBundleFilePath: output.uri,
+            manifestJson: jsonEncode(entries),
+            manifestDirectory: shaders,
+            shaderLibDirectory: impellerc.resolve('./shader_lib/'),
+            includeDirectories: [shaders],
+            glesLanguageVersion: engineGlesLanguageVersion,
+          ),
+        );
         expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
         return {
           for (final shader

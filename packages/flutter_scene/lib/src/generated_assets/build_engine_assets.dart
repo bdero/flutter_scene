@@ -55,7 +55,7 @@ const String _baseBundleManifest = 'shaders/base.shaderbundle.json';
 /// GL_EXT_shader_texture_lod, which software GL stacks (Mesa llvmpipe, Android
 /// emulators) reject at compile time. Sets the native GLES floor at OpenGL
 /// ES 3.0.
-const int _glesLanguageVersion = 300;
+const int engineGlesLanguageVersion = 300;
 
 /// Builds the engine's shaders from flutter_scene's own hook into its own
 /// generated tree.
@@ -265,7 +265,7 @@ Future<void> _buildBaseShaderBundle({
     buildOutput: buildOutput,
     manifestFileName: manifestPath,
     includeDirectories: [shaders],
-    glesLanguageVersion: _glesLanguageVersion,
+    glesLanguageVersion: engineGlesLanguageVersion,
     assetMode: TargetShaderBundleAssetMode.generatedTree,
     owner: _engineOwner,
     stamp: stamp,
