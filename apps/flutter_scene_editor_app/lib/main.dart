@@ -616,15 +616,24 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   Future<void> _newProject() async {
-    final installation = await _projectInstallation();
+    final recommended = await _matchingInstallation();
     if (!mounted) return;
+    final revision = _buildInfo.frameworkRevision;
+    final managedId = revision == null
+        ? null
+        : 'managed-${ManagedCheckoutPaths.shortRevision(revision)}';
+    final managedRegistered = _settings.flutterInstallations.any(
+      (installation) => installation.id == managedId,
+    );
     final choice = await showNewProjectDialog(
       context,
-      installation: installation,
-      installManaged: _buildInfo.isKnown
+      installations: _settings.flutterInstallations,
+      initialInstallation: recommended ?? _settings.selectedInstallation,
+      recommended: recommended,
+      installManaged: _buildInfo.isKnown && !managedRegistered
           ? () => _managedCheckouts.create(_buildInfo)
           : null,
-      onInstalled: _registerManagedCheckout,
+      onInstallationUsed: _useProjectInstallation,
       managedVersion: _buildInfo.frameworkVersion,
       flutterSceneVersion: _buildInfo.flutterSceneVersion,
     );
@@ -635,11 +644,10 @@ class _EditorHomeState extends State<_EditorHome> {
     unawaited(_openProjectScene(project));
   }
 
-  /// The installation New Project creates apps with, the first healthy one
-  /// matching the editor's Flutter revision (the selected one preferred).
-  /// Null when none matches, so the editor's managed SDK gets installed. A
-  /// build with unknown identity takes any healthy installation.
-  Future<FlutterInstallation?> _projectInstallation() async {
+  /// The first healthy installation matching the editor's Flutter revision,
+  /// the selected one preferred, or null when none matches.
+  Future<FlutterInstallation?> _matchingInstallation() async {
+    if (!_buildInfo.isKnown) return null;
     final selected = _settings.selectedInstallation;
     for (final candidate in [
       ?selected,
@@ -651,17 +659,22 @@ class _EditorHomeState extends State<_EditorHome> {
     return null;
   }
 
-  /// Registers a managed SDK New Project installed, selecting it when no
-  /// installation is selected so the new app can build right away.
-  void _registerManagedCheckout(FlutterInstallation installation) {
-    _inspector.invalidate(installation.flutterBin);
-    _settings.flutterInstallations
-      ..removeWhere((candidate) => candidate.id == installation.id)
-      ..add(installation);
-    final selectionChanged = _settings.selectedInstallation == null;
-    if (selectionChanged) _settings.selectedInstallationId = installation.id;
+  /// Registers the installation New Project creates an app with (a managed
+  /// SDK it just installed is new), selecting it when none is selected so the
+  /// app can build right away.
+  void _useProjectInstallation(FlutterInstallation installation) {
+    final registered = _settings.flutterInstallations.any(
+      (candidate) => candidate.id == installation.id,
+    );
+    final select = _settings.selectedInstallation == null;
+    if (registered && !select) return;
+    if (!registered) {
+      _inspector.invalidate(installation.flutterBin);
+      _settings.flutterInstallations.add(installation);
+    }
+    if (select) _settings.selectedInstallationId = installation.id;
     _persistSettings();
-    if (selectionChanged) _onInstallationSelectionChanged();
+    if (select) _onInstallationSelectionChanged();
     if (mounted) setState(() {});
   }
 
