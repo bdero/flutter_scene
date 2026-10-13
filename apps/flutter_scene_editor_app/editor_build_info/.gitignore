@@ -1,0 +1,4 @@
+# Written by hook/build.dart with the building SDK's identity, so it is never
+# committed.
+*
+!.gitignore
