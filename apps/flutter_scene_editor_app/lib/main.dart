@@ -170,9 +170,9 @@ class _EditorHomeState extends State<_EditorHome> {
     );
     _gizmoPreferences.addListener(_persistGizmoPreferences);
     unawaited(
-      EditorBuildInfo.load(
-        'packages/flutter_scene_editor_app/editor_build_info.json',
-      ).then((info) {
+      EditorBuildInfo.load('editor_build_info/editor_build_info.json').then((
+        info,
+      ) {
         if (mounted) setState(() => _buildInfo = info);
       }),
     );

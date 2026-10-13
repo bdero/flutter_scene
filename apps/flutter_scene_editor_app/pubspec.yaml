@@ -16,7 +16,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  data_assets: ^0.20.0
   file_selector: ^1.0.0
   flutter_scene: ^0.24.0
   scene: ^0.4.0
@@ -57,3 +56,5 @@ flutter:
         - web
     # Sponsors baked into this build, see assets/sponsors/README.md.
     - assets/sponsors/
+    # The building SDK's identity, written by hook/build.dart.
+    - editor_build_info/
