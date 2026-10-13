@@ -1,7 +1,7 @@
-/// The New Project dialog. Collects a location and app name, installs the
-/// editor's managed Flutter SDK when no matching installation exists, then
-/// scaffolds the app, showing each job's phases and log in place. Wrapping an
-/// existing Flutter app is offered alongside.
+/// The New Project dialog. Collects a location, app name, and Flutter
+/// installation (a configured one, or the editor's managed SDK installed on
+/// the spot), then scaffolds the app, showing each job's phases and log in
+/// place. Wrapping an existing Flutter app is offered alongside.
 library;
 
 import 'dart:io';
@@ -23,15 +23,20 @@ typedef NewProjectChoice = ({FProject? project, bool useExisting});
 
 /// Shows the New Project dialog. Resolves to null when dismissed.
 ///
-/// The app is created with [installation]. Without one, [installManaged]
-/// starts the editor's managed Flutter SDK ([managedVersion] names it) and
-/// [onInstalled] registers the result before scaffolding continues. With
-/// neither, only the existing-app path is offered.
+/// The installation picker lists [installations] plus, when [installManaged]
+/// is given, an entry that installs the editor's managed Flutter SDK
+/// ([managedVersion] names it). It starts on [initialInstallation], else the
+/// managed entry, else the first installation. [recommended] is marked as
+/// matching the editor. [onInstallationUsed] receives the installation the
+/// app is created with (a freshly installed one included) before
+/// scaffolding starts.
 Future<NewProjectChoice?> showNewProjectDialog(
   BuildContext context, {
-  required FlutterInstallation? installation,
+  required List<FlutterInstallation> installations,
+  FlutterInstallation? initialInstallation,
+  FlutterInstallation? recommended,
   ManagedCheckoutJob Function()? installManaged,
-  void Function(FlutterInstallation installation)? onInstalled,
+  void Function(FlutterInstallation installation)? onInstallationUsed,
   String? managedVersion,
   String? flutterSceneVersion,
   String? initialLocation,
@@ -42,9 +47,11 @@ Future<NewProjectChoice?> showNewProjectDialog(
     barrierDismissible: false,
     builder: (context) => Dialog(
       child: _NewProjectDialog(
-        installation: installation,
+        installations: installations,
+        initialInstallation: initialInstallation,
+        recommended: recommended,
         installManaged: installManaged,
-        onInstalled: onInstalled,
+        onInstallationUsed: onInstallationUsed,
         managedVersion: managedVersion,
         scaffolderFor:
             scaffolderFor ??
@@ -74,17 +81,21 @@ Future<bool> _gitAvailable() async {
 
 class _NewProjectDialog extends StatefulWidget {
   const _NewProjectDialog({
-    required this.installation,
+    required this.installations,
+    required this.initialInstallation,
+    required this.recommended,
     required this.installManaged,
-    required this.onInstalled,
+    required this.onInstallationUsed,
     required this.managedVersion,
     required this.scaffolderFor,
     required this.initialLocation,
   });
 
-  final FlutterInstallation? installation;
+  final List<FlutterInstallation> installations;
+  final FlutterInstallation? initialInstallation;
+  final FlutterInstallation? recommended;
   final ManagedCheckoutJob Function()? installManaged;
-  final void Function(FlutterInstallation installation)? onInstalled;
+  final void Function(FlutterInstallation installation)? onInstallationUsed;
   final String? managedVersion;
   final ProjectScaffolder Function(FlutterInstallation installation)
   scaffolderFor;
@@ -101,18 +112,33 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
     text: widget.initialLocation,
   );
   final TextEditingController _name = TextEditingController(text: 'my_scene');
+  // The picked installation's id, or [_installManagedId].
+  late String? _choice =
+      widget.initialInstallation?.id ??
+      (widget.installManaged != null
+          ? _installManagedId
+          : widget.installations.firstOrNull?.id);
   String? _error;
   bool _starting = false;
   ManagedCheckoutJob? _sdkJob;
   ProjectScaffoldJob? _job;
 
-  bool get _canCreate =>
-      widget.installation != null || widget.installManaged != null;
+  // Not a valid installation id (those are generated or `managed-<sha>`).
+  static const _installManagedId = ' install-managed';
+
+  bool get _canCreate => _choice != null;
+
+  String get _managedName =>
+      'Flutter${widget.managedVersion == null ? '' : ' ${widget.managedVersion}'}';
+
+  FlutterInstallation? get _chosenInstallation {
+    for (final installation in widget.installations) {
+      if (installation.id == _choice) return installation;
+    }
+    return null;
+  }
 
   bool get _running => _sdkJob != null || _job != null;
-
-  String get _sdkLabel =>
-      'Installing Flutter${widget.managedVersion == null ? '' : ' ${widget.managedVersion}'}';
 
   @override
   void dispose() {
@@ -140,7 +166,7 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
       setState(() => _error = error);
       return;
     }
-    final installation = widget.installation;
+    final installation = _chosenInstallation;
     if (installation != null) {
       _scaffold(installation);
       return;
@@ -169,11 +195,11 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
     final job = _sdkJob!;
     final installed = job.result;
     if (!job.done || installed == null || _job != null || !mounted) return;
-    widget.onInstalled?.call(installed);
     _scaffold(installed);
   }
 
   void _scaffold(FlutterInstallation installation) {
+    widget.onInstallationUsed?.call(installation);
     final ProjectScaffoldJob job;
     try {
       job = widget
@@ -242,16 +268,20 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
               : null,
         ),
         _field('Name', _name, enabled: enabled, onSubmitted: _create),
+        _installationPicker(enabled: enabled),
         if (!_canCreate)
           const Text(
-            'Creating an app needs a Flutter installation. Configure one in '
-            'Settings, or open an existing Flutter app.',
+            'No Flutter installation is available. Configure one in Settings, '
+            'or open an existing Flutter app.',
             style: TextStyle(fontSize: 11, color: editorErrorColor),
           )
-        else if (widget.installation == null)
-          Text(
-            '$_sdkLabel first, a one-time download of a few GB.',
-            style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
+        else if (_choice == _installManagedId)
+          const Padding(
+            padding: EdgeInsets.only(left: 70),
+            child: Text(
+              'A one-time download of a few GB, shared by every project.',
+              style: TextStyle(fontSize: 11, color: editorMutedTextColor),
+            ),
           ),
         if (_error != null)
           Padding(
@@ -290,6 +320,53 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _installationPicker({required bool enabled}) {
+    final items = [
+      for (final installation in widget.installations)
+        DropdownMenuItem(
+          value: installation.id,
+          child: Text(
+            installation.id == widget.recommended?.id
+                ? '${installation.name} (matches the editor)'
+                : installation.name,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      if (widget.installManaged != null)
+        DropdownMenuItem(
+          value: _installManagedId,
+          child: Text('Install $_managedName (managed)'),
+        ),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 70,
+            child: Text('Flutter', style: TextStyle(fontSize: 11)),
+          ),
+          Expanded(
+            child: DropdownButton<String>(
+              value: _choice,
+              isExpanded: true,
+              isDense: true,
+              style: const TextStyle(fontSize: 11, color: editorTextColor),
+              hint: const Text('None available'),
+              items: items,
+              onChanged: enabled && items.isNotEmpty
+                  ? (value) => setState(() {
+                      _choice = value;
+                      _error = null;
+                    })
+                  : null,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -361,7 +438,7 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
                     : sdk.done
                     ? _PhaseState.failed
                     : _PhaseState.active,
-                _sdkLabel,
+                'Installing $_managedName',
                 detail: sdk.done ? null : sdk.phase.label,
               ),
             for (final phase in ProjectScaffoldPhase.values)
