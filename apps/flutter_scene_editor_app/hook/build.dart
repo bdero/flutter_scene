@@ -2,36 +2,33 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 
-/// Bakes the building SDK's identity and the flutter_scene version into an
-/// `editor_build_info.json` data asset, so the running editor can compare a
-/// selected Flutter installation (and an open project's flutter_scene
-/// dependency) against what it was built with. Works identically for dev runs
-/// and packaged builds, unlike the release-pin file (CI clone target) and
-/// `tool_manifest.json` (describes the bundled toolchain, packaged only).
+/// Bakes the building SDK's identity and the flutter_scene version into
+/// `editor_build_info/editor_build_info.json`, so the running editor can
+/// compare a selected Flutter installation (and an open project's
+/// flutter_scene dependency) against what it was built with. Works
+/// identically for dev runs and packaged builds, unlike the release-pin file
+/// (CI clone target) and `tool_manifest.json` (describes the bundled
+/// toolchain, packaged only).
+///
+/// It is a plain asset (listed in pubspec.yaml) rather than a data asset,
+/// since data assets are master-only and the editor builds on stable.
 void main(List<String> args) {
   build(args, (input, output) async {
-    if (!input.config.buildDataAssets) {
-      return;
-    }
     final info = <String, Object?>{
       ...await _frameworkInfo(),
       'flutterSceneVersion': await _flutterSceneVersion(),
     };
-    final outDir = Directory.fromUri(
-      input.packageRoot.resolve('build/editor_build_info/'),
-    )..createSync(recursive: true);
-    final file = File.fromUri(outDir.uri.resolve('editor_build_info.json'));
-    file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(info));
-    output.assets.data.add(
-      DataAsset(
-        package: input.packageName,
-        name: 'editor_build_info.json',
-        file: file.uri,
-      ),
+    final file = File.fromUri(
+      input.packageRoot.resolve('editor_build_info/editor_build_info.json'),
     );
+    final encoded = const JsonEncoder.withIndent('  ').convert(info);
+    // An unchanged file keeps its mtime.
+    if (!file.existsSync() || file.readAsStringSync() != encoded) {
+      file.parent.createSync(recursive: true);
+      file.writeAsStringSync(encoded);
+    }
   });
 }
 
