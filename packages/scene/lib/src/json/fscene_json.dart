@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:vector_math/vector_math.dart';
 
@@ -43,7 +44,346 @@ final List<FsceneMigration> _builtInMigrations = [
   // (CCW). Version 4 documents flag geometry index buffers with legacyWinding
   // so index pairs are swapped during realization.
   _migrateV4ToV5,
+  // 5 -> 6 migrated the engine coordinate system from left-handed (+Z forward)
+  // to right-handed (-Z forward). Version 5 documents reflect node transforms,
+  // bounds, and directional vectors across Z in the JSON manifest, flag
+  // binary geometry, skin, and animation payloads with legacyLeftHanded so
+  // their buffers are reflected during realization, and mirror every
+  // environment resource (environmentMirrorZ) so image and procedural skies
+  // keep their place relative to the reflected content.
+  _migrateV5ToV6,
 ];
+
+num _negateNum(num value) => value == 0 ? 0 : -value;
+
+List<dynamic> _reflectVec3ZList(List<dynamic> raw) {
+  if (raw.length < 3 || raw[2] is! num) return raw;
+  final copy = List<dynamic>.of(raw);
+  copy[2] = _negateNum(raw[2] as num);
+  return copy;
+}
+
+List<dynamic> _reflectQuatXYList(List<dynamic> raw) {
+  if (raw.length < 4 || raw[0] is! num || raw[1] is! num) return raw;
+  final copy = List<dynamic>.of(raw);
+  copy[0] = _negateNum(raw[0] as num);
+  copy[1] = _negateNum(raw[1] as num);
+  return copy;
+}
+
+List<dynamic> _reflectMatrix4ZList(List<dynamic> raw) {
+  if (raw.length != 16) return raw;
+  final copy = List<dynamic>.of(raw);
+  for (final index in const [2, 6, 8, 9, 11, 14]) {
+    final entry = copy[index];
+    if (entry is num) copy[index] = _negateNum(entry);
+  }
+  return copy;
+}
+
+void _reflectTaggedVec3Z(Map<dynamic, dynamic> props, String key) {
+  final entry = props[key];
+  if (entry is Map && entry['v3'] is List) {
+    props[key] = {'v3': _reflectVec3ZList(entry['v3'] as List)};
+  }
+}
+
+void _reflectTaggedQuatXY(Map<dynamic, dynamic> props, String key) {
+  final entry = props[key];
+  if (entry is Map && entry['q'] is List) {
+    props[key] = {'q': _reflectQuatXYList(entry['q'] as List)};
+  }
+}
+
+void _reflectTaggedMatrix4Z(Map<dynamic, dynamic> props, String key) {
+  final entry = props[key];
+  if (entry is Map && entry['m4'] is List) {
+    props[key] = {'m4': _reflectMatrix4ZList(entry['m4'] as List)};
+  }
+}
+
+void _migratePhysicsShapeV5ToV6(Object? shapeTagged) {
+  if (shapeTagged is! Map) return;
+  final shapeMap = shapeTagged['map'];
+  if (shapeMap is! Map) return;
+  final kindEntry = shapeMap['kind'];
+  if (kindEntry is Map) {
+    final kind = kindEntry['s'];
+    if (kind == 'convexHull' || kind == 'triMesh') {
+      shapeMap['legacyLeftHanded'] = {'b': true};
+    } else if (kind == 'compound') {
+      final childrenEntry = shapeMap['children'];
+      if (childrenEntry is Map && childrenEntry['list'] is List) {
+        for (final child in childrenEntry['list'] as List) {
+          if (child is Map && child['map'] is Map) {
+            final childMap = child['map'] as Map;
+            _reflectTaggedMatrix4Z(childMap, 'localPose');
+            _migratePhysicsShapeV5ToV6(childMap['shape']);
+          }
+        }
+      }
+    }
+  }
+}
+
+const Set<String> _jointTypesV5 = {
+  'fixedJoint',
+  'sphericalJoint',
+  'revoluteJoint',
+  'prismaticJoint',
+  'genericJoint',
+};
+
+const Set<String> _emitterTypesV5 = {'particleEmitter', 'meshParticleEmitter'};
+
+/// The reflected form of a prefab override's tagged [value] at
+/// `components.<type>.<path...>`, or null when the property carries no Z
+/// component. Mirrors the property table in [_migrateComponentV5ToV6].
+// TODO(legacy-left-handed): an override replacing a whole collider `shape`
+// map is left as authored; its convexHull/triMesh payloads are not tagged.
+Map<String, dynamic>? _reflectOverrideValueV5ToV6(
+  String type,
+  List<String> path,
+  Map<dynamic, dynamic> value,
+) {
+  if (path.isEmpty) return null;
+  final prop = path.first;
+  bool vec3() => path.length == 1 && value['v3'] is List;
+  bool quat() => path.length == 1 && value['q'] is List;
+  bool mat4() => path.length == 1 && value['m4'] is List;
+  Map<String, dynamic> v3() => {'v3': _reflectVec3ZList(value['v3'] as List)};
+  Map<String, dynamic> q() => {'q': _reflectQuatXYList(value['q'] as List)};
+  Map<String, dynamic> m4() => {
+    'm4': _reflectMatrix4ZList(value['m4'] as List),
+  };
+  if (type == 'directionalLight' && prop == 'localDirection' && vec3()) {
+    return v3();
+  }
+  if (type == 'spotLight' && prop == 'direction' && vec3()) return v3();
+  if (type == 'collider' && prop == 'localPose' && mat4()) return m4();
+  if (type == 'physicsWorld' && prop == 'gravity' && vec3()) return v3();
+  if (type == 'characterController' && prop == 'up' && vec3()) return v3();
+  if (_jointTypesV5.contains(type)) {
+    const anchors = {
+      'localAnchorA',
+      'localAnchorB',
+      'localAxisA',
+      'localAxisB',
+    };
+    if (anchors.contains(prop) && vec3()) return v3();
+    if ((prop == 'localBasisA' || prop == 'localBasisB') && quat()) return q();
+  }
+  if (_emitterTypesV5.contains(type)) {
+    if (prop == 'gravity' && vec3()) return v3();
+    if (prop == 'shape' &&
+        path.length == 2 &&
+        path[1] == 'direction' &&
+        value['v3'] is List) {
+      return v3();
+    }
+    if (prop == 'modules' &&
+        path.length == 3 &&
+        (path[2] == 'acceleration' || path[2] == 'scroll') &&
+        value['v3'] is List) {
+      return v3();
+    }
+  }
+  return null;
+}
+
+void _migrateComponentV5ToV6(Object? comp) {
+  if (comp is! Map) return;
+  final type = comp['type'];
+  final props = comp['properties'];
+  if (props is! Map) return;
+  switch (type) {
+    case 'directionalLight':
+      _reflectTaggedVec3Z(props, 'localDirection');
+    case 'spotLight':
+      _reflectTaggedVec3Z(props, 'direction');
+    case 'collider':
+      _reflectTaggedMatrix4Z(props, 'localPose');
+      _migratePhysicsShapeV5ToV6(props['shape']);
+    case 'physicsWorld':
+      _reflectTaggedVec3Z(props, 'gravity');
+    case 'characterController':
+      _reflectTaggedVec3Z(props, 'up');
+    case 'fixedJoint':
+    case 'sphericalJoint':
+    case 'revoluteJoint':
+    case 'prismaticJoint':
+    case 'genericJoint':
+      _reflectTaggedVec3Z(props, 'localAnchorA');
+      _reflectTaggedVec3Z(props, 'localAnchorB');
+      _reflectTaggedVec3Z(props, 'localAxisA');
+      _reflectTaggedVec3Z(props, 'localAxisB');
+      _reflectTaggedQuatXY(props, 'localBasisA');
+      _reflectTaggedQuatXY(props, 'localBasisB');
+    case 'particleEmitter':
+    case 'meshParticleEmitter':
+      _reflectTaggedVec3Z(props, 'gravity');
+      final shapeEntry = props['shape'];
+      if (shapeEntry is Map && shapeEntry['map'] is Map) {
+        _reflectTaggedVec3Z(shapeEntry['map'] as Map, 'direction');
+      }
+      final modulesEntry = props['modules'];
+      if (modulesEntry is Map && modulesEntry['list'] is List) {
+        for (final mod in modulesEntry['list'] as List) {
+          if (mod is Map && mod['map'] is Map) {
+            final modMap = mod['map'] as Map;
+            _reflectTaggedVec3Z(modMap, 'acceleration');
+            _reflectTaggedVec3Z(modMap, 'scroll');
+          }
+        }
+      }
+  }
+}
+
+Map<String, dynamic> _migrateV5ToV6(Map<String, dynamic> json) {
+  final resources = json['resources'];
+  if (resources is Map) {
+    for (final res in resources.values) {
+      if (res is! Map) continue;
+      final kind = res['kind'];
+      if (kind == 'geometry') {
+        if (res['vertices'] != null) {
+          res['legacyLeftHanded'] = true;
+        }
+        final bounds = res['bounds'];
+        if (bounds is Map) {
+          final min = bounds['min'];
+          final max = bounds['max'];
+          if (min is List &&
+              min.length >= 3 &&
+              max is List &&
+              max.length >= 3 &&
+              min[2] is num &&
+              max[2] is num) {
+            final newMin = List<dynamic>.of(min);
+            final newMax = List<dynamic>.of(max);
+            newMin[2] = _negateNum(max[2] as num);
+            newMax[2] = _negateNum(min[2] as num);
+            bounds['min'] = newMin;
+            bounds['max'] = newMax;
+          }
+        }
+      } else if (kind == 'environment') {
+        // The shaders apply the environment transform to every environment
+        // and skybox sample, so one mirror covers equirect images, the studio
+        // default, and procedural skies (whose sun directions therefore stay
+        // as authored).
+        res['environmentMirrorZ'] = true;
+      }
+    }
+  }
+
+  final nodes = json['nodes'];
+  if (nodes is Map) {
+    for (final node in nodes.values) {
+      if (node is! Map) continue;
+      final transform = node['transform'];
+      if (transform is Map) {
+        final trs = transform['trs'];
+        if (trs is Map) {
+          if (trs['t'] is List) {
+            trs['t'] = _reflectVec3ZList(trs['t'] as List);
+          }
+          if (trs['r'] is List) {
+            trs['r'] = _reflectQuatXYList(trs['r'] as List);
+          }
+        } else if (transform['matrix'] is List) {
+          transform['matrix'] = _reflectMatrix4ZList(
+            transform['matrix'] as List,
+          );
+        }
+      }
+      final components = node['components'];
+      if (components is List) {
+        for (final comp in components) {
+          _migrateComponentV5ToV6(comp);
+        }
+      }
+      final instance = node['instance'];
+      if (instance is Map) {
+        final overrides = instance['overrides'];
+        if (overrides is List) {
+          for (final ov in overrides) {
+            if (ov is! Map) continue;
+            final path = ov['path'];
+            final value = ov['value'];
+            if (value is! Map) continue;
+            if (path == 'transform.trs.t' && value['v3'] is List) {
+              ov['value'] = {'v3': _reflectVec3ZList(value['v3'] as List)};
+            } else if (path == 'transform.trs.r' && value['q'] is List) {
+              ov['value'] = {'q': _reflectQuatXYList(value['q'] as List)};
+            } else if (path == 'transform.matrix' && value['m4'] is List) {
+              ov['value'] = {'m4': _reflectMatrix4ZList(value['m4'] as List)};
+            } else if (path is String && path.startsWith('components.')) {
+              final parts = path.split('.');
+              if (parts.length >= 3) {
+                final reflected = _reflectOverrideValueV5ToV6(
+                  parts[1],
+                  parts.sublist(2),
+                  value,
+                );
+                if (reflected != null) ov['value'] = reflected;
+              }
+            }
+          }
+        }
+        final addedComponents = instance['addedComponents'];
+        if (addedComponents is List) {
+          for (final comp in addedComponents) {
+            _migrateComponentV5ToV6(comp);
+          }
+        }
+        final memberComponents = instance['memberComponents'];
+        if (memberComponents is List) {
+          for (final mc in memberComponents) {
+            if (mc is Map) _migrateComponentV5ToV6(mc['component']);
+          }
+        }
+      }
+    }
+  }
+
+  final skins = json['skins'];
+  if (skins is Map) {
+    for (final skin in skins.values) {
+      if (skin is Map) {
+        skin['legacyLeftHanded'] = true;
+      }
+    }
+  }
+
+  final animations = json['animations'];
+  if (animations is Map) {
+    for (final anim in animations.values) {
+      if (anim is Map) {
+        anim['legacyLeftHanded'] = true;
+      }
+    }
+  }
+
+  final editor = json['editor'];
+  if (editor is Map) {
+    final camera = editor['camera'];
+    if (camera is Map) {
+      if (camera['target'] is List) {
+        camera['target'] = _reflectVec3ZList(camera['target'] as List);
+      }
+      // The orbit eye sits at target + (sin a, ., cos a) * r, so the
+      // reflected eye is azimuth pi - a (wrapped to [-pi, pi)).
+      if (camera['azimuth'] is num) {
+        var azimuth = math.pi - (camera['azimuth'] as num).toDouble();
+        azimuth -= 2 * math.pi * ((azimuth + math.pi) / (2 * math.pi)).floor();
+        camera['azimuth'] = azimuth;
+      }
+    }
+  }
+
+  return json;
+}
 
 Map<String, dynamic> _migrateV4ToV5(Map<String, dynamic> json) {
   final resources = json['resources'];
@@ -336,6 +676,7 @@ Map<String, dynamic> _encodeLook({
   required double agxWhite,
   required double agxContrast,
   required double environmentRotationY,
+  required bool environmentMirrorZ,
   required int? radianceCubeSize,
   required SkyboxSpec? skybox,
   required SkyEnvironmentSpec? skyEnvironment,
@@ -367,6 +708,7 @@ Map<String, dynamic> _encodeLook({
   if (agxWhite != 16.29) 'agxWhite': agxWhite,
   if (agxContrast != 1.25) 'agxContrast': agxContrast,
   if (environmentRotationY != 0.0) 'environmentRotationY': environmentRotationY,
+  if (environmentMirrorZ) 'environmentMirrorZ': true,
   if (radianceCubeSize != null) 'radianceCubeSize': radianceCubeSize,
   if (overridesEffects) 'effects': _encodeEnvironmentEffects(effects),
   if (skybox != null)
@@ -734,6 +1076,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
       :final bounds,
       :final morphTargets,
       :final legacyWinding,
+      :final legacyLeftHanded,
     ):
       return {
         'kind': 'geometry',
@@ -760,6 +1103,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
             ...morphTargets.unknown,
           },
         if (legacyWinding) 'legacyWinding': true,
+        if (legacyLeftHanded) 'legacyLeftHanded': true,
         ...r.unknown,
       };
     case TextureResource(:final payload, :final asset, :final content):
@@ -820,6 +1164,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
           agxWhite: r.agxWhite,
           agxContrast: r.agxContrast,
           environmentRotationY: r.environmentRotationY,
+          environmentMirrorZ: r.environmentMirrorZ,
           radianceCubeSize: r.radianceCubeSize,
           skybox: r.skybox,
           skyEnvironment: r.skyEnvironment,
@@ -933,6 +1278,7 @@ Map<String, dynamic> _encodeSkin(SkinSpec s, String Function(LocalId) idKey) =>
       'joints': [for (final j in s.joints) idKey(j)],
       'inverseBindMatrices': idKey(s.inverseBindMatrices),
       if (s.skeleton != null) 'skeleton': idKey(s.skeleton!),
+      if (s.legacyLeftHanded) 'legacyLeftHanded': true,
       ...s.unknown,
     };
 
@@ -952,6 +1298,7 @@ Map<String, dynamic> _encodeAnimation(
         ...ch.unknown,
       },
   ],
+  if (a.legacyLeftHanded) 'legacyLeftHanded': true,
   ...a.unknown,
 };
 
@@ -1617,6 +1964,7 @@ const Set<String> _geometryKeys = {
   'topology',
   'morphTargets',
   'legacyWinding',
+  'legacyLeftHanded',
 };
 
 const Set<String> _textureKeys = {'kind', 'payload', 'ref', 'content'};
@@ -1643,6 +1991,7 @@ const Set<String> _environmentKeys = {
   'agxWhite',
   'agxContrast',
   'environmentRotationY',
+  'environmentMirrorZ',
   'radianceCubeSize',
   'skybox',
   'skyEnvironment',
@@ -1670,6 +2019,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
         topology: json['topology'] as String? ?? 'triangle',
         morphTargets: _decodeMorphTargets(json['morphTargets']),
         legacyWinding: json['legacyWinding'] == true,
+        legacyLeftHanded: json['legacyLeftHanded'] == true,
         unknown: _rest(json, _geometryKeys),
       );
     case 'texture':
@@ -1713,6 +2063,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
         agxWhite: _d(json['agxWhite'] ?? 16.29),
         agxContrast: _d(json['agxContrast'] ?? 1.25),
         environmentRotationY: _d(json['environmentRotationY'] ?? 0.0),
+        environmentMirrorZ: json['environmentMirrorZ'] == true,
         radianceCubeSize: (json['radianceCubeSize'] as num?)?.toInt(),
         skybox: _decodeSkybox(json['skybox']),
         skyEnvironment: _decodeSkyEnvironment(json['skyEnvironment']),
@@ -1871,7 +2222,12 @@ MorphTargetsSpec? _decodeMorphTargets(Object? json) {
 
 SkinSpec _decodeSkin(LocalId id, Map<String, dynamic> json) => SkinSpec(
   id,
-  unknown: _rest(json, const {'joints', 'inverseBindMatrices', 'skeleton'}),
+  unknown: _rest(json, const {
+    'joints',
+    'inverseBindMatrices',
+    'skeleton',
+    'legacyLeftHanded',
+  }),
   joints: [
     for (final j in (json['joints'] as List? ?? const []))
       LocalId.parse(j as String),
@@ -1880,6 +2236,7 @@ SkinSpec _decodeSkin(LocalId id, Map<String, dynamic> json) => SkinSpec(
   skeleton: json['skeleton'] != null
       ? LocalId.parse(json['skeleton'] as String)
       : null,
+  legacyLeftHanded: json['legacyLeftHanded'] == true,
 );
 
 AnimationSpec _decodeAnimation(LocalId id, Map<String, dynamic> json) =>
@@ -1890,7 +2247,8 @@ AnimationSpec _decodeAnimation(LocalId id, Map<String, dynamic> json) =>
         for (final ch in (json['channels'] as List? ?? const []))
           _decodeChannel(Map<String, dynamic>.from(ch as Map)),
       ],
-      unknown: _rest(json, const {'name', 'channels'}),
+      legacyLeftHanded: json['legacyLeftHanded'] == true,
+      unknown: _rest(json, const {'name', 'channels', 'legacyLeftHanded'}),
     );
 
 AnimationChannelSpec _decodeChannel(Map<String, dynamic> json) =>

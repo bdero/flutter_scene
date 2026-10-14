@@ -995,7 +995,7 @@ class ComponentGizmoPainter extends CustomPainter {
 
   static vm.Vector3 _localDirection(List<vm.Vector3> basis, List<double> axis) {
     final local = _listVector(axis);
-    if (local.length2 < 1e-12) return basis[2];
+    if (local.length2 < 1e-12) return -basis[2];
     local.normalize();
     return _frameVector(basis, local.x, local.y, local.z);
   }
@@ -1029,7 +1029,7 @@ class ComponentGizmoPainter extends CustomPainter {
   }
 
   // In-plane basis for the plane normal to [axis], oriented so the default
-  // +Z normal maps u to local +X and v to local +Y (the engine's area-light
+  // -Z normal maps u to local +X and v to local +Y (the engine's area-light
   // width/height convention).
   static (vm.Vector3, vm.Vector3) _perpendicular(vm.Vector3 axis) {
     final helper = axis.x.abs() < 0.9
@@ -1086,7 +1086,7 @@ class ComponentGizmoPainter extends CustomPainter {
       final halfWidth = halfHeight * aspect;
       return [
         for (final (sx, sy) in const [(1, 1), (-1, 1), (-1, -1), (1, -1)])
-          origin + _frameVector(basis, sx * halfWidth, sy * halfHeight, depth),
+          origin + _frameVector(basis, sx * halfWidth, sy * halfHeight, -depth),
       ];
     }
 
@@ -1121,7 +1121,7 @@ class ComponentGizmoPainter extends CustomPainter {
               basis,
               offset.x + sx * halfExtent.x,
               offset.y + sy * halfExtent.y,
-              depth,
+              -depth,
             ),
     ];
 

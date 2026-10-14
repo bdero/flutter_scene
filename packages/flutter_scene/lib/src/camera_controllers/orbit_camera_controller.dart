@@ -29,6 +29,11 @@ import 'package:flutter_scene/src/components/camera_component.dart';
 class OrbitCameraController extends CameraController {
   /// Creates an orbit controller framing [target] from [distance] at the given
   /// [azimuth] and [polar] angles (radians).
+  ///
+  /// [azimuth] 0 puts the eye on the target's `+Z` side, facing the front of a
+  /// glTF model, and grows by the right-hand rule about `+Y` (toward `+X`
+  /// first), so `pi` looks at the model from behind. [polar] 0 is level with
+  /// the target; positive raises the eye.
   OrbitCameraController({
     Vector3? target,
     double distance = 6.0,
@@ -122,8 +127,8 @@ class OrbitCameraController extends CameraController {
   void panBy(Offset fraction) {
     final forward = (_targetGoal - _eyeFor(_targetGoal, _distance))
         .normalized();
-    final right = Vector3(0.0, 1.0, 0.0).cross(forward)..normalize();
-    final up = forward.cross(right)..normalize();
+    final right = forward.cross(Vector3(0.0, 1.0, 0.0))..normalize();
+    final up = right.cross(forward)..normalize();
     final shift =
         (right * -fraction.dx + up * fraction.dy) * (_distance * panSpeed);
     _targetGoal += shift;
@@ -208,7 +213,7 @@ class OrbitCameraController extends CameraController {
   Vector3 _eyeFor(Vector3 pivot, double distance) {
     final horizontal = math.cos(_polar) * distance;
     return pivot +
-        Vector3(-math.sin(_azimuth), 0.0, -math.cos(_azimuth)) * horizontal +
+        Vector3(math.sin(_azimuth), 0.0, math.cos(_azimuth)) * horizontal +
         Vector3(0.0, math.sin(_polar) * distance, 0.0);
   }
 }

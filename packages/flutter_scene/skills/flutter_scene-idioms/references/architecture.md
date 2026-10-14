@@ -109,7 +109,7 @@ class Game {
     // no view-matrix math to hand-roll.
     final cameraNode = Node()
       ..addComponent(CameraComponent(activateOnMount: true))
-      ..lookAtFrom(vm.Vector3(0, 3, -8), vm.Vector3.zero());
+      ..lookAtFrom(vm.Vector3(0, 3, 8), vm.Vector3.zero());
     scene.add(cameraNode);
     // activateOnMount makes this the scene's primary camera when the node
     // mounts, so SceneView needs no `camera:` argument. (The first mounted
@@ -295,7 +295,7 @@ game object.
 ```dart
 SceneView(
   game.scene,
-  camera: PerspectiveCamera(position: vm.Vector3(0, 3, -8)),
+  camera: PerspectiveCamera(position: vm.Vector3(0, 3, 8)),
   children: [
     SceneSubtree(
       parent: game.player,

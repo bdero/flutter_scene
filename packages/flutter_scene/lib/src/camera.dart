@@ -94,30 +94,30 @@ abstract class Camera {
   Vector3 get up;
 
   /// The world-space direction pointing toward the right edge of the view
-  /// (unit length), computed as `up.cross(forward).normalized()`.
-  Vector3 get right => up.cross(forward).normalized();
+  /// (unit length), computed as `forward.cross(up).normalized()`.
+  Vector3 get right => forward.cross(up).normalized();
 
   /// The camera's look direction projected onto the horizontal `XZ` ground
   /// plane (unit length), for ground-relative movement and panning.
   ///
   /// When the camera looks straight up or down along `Y`, falls back to the
-  /// top-of-screen direction (`right.cross(Vector3(0, 1, 0))`).
+  /// top-of-screen direction (`Vector3(0, 1, 0).cross(right)`).
   Vector3 get horizontalForward {
     final flat = Vector3(forward.x, 0.0, forward.z);
     if (flat.length2 > 1e-12) {
       return flat..normalize();
     }
-    final fallback = right.cross(Vector3(0.0, 1.0, 0.0));
+    final fallback = Vector3(0.0, 1.0, 0.0).cross(right);
     return fallback.length2 > 1e-12
         ? (fallback..normalize())
-        : Vector3(0.0, 0.0, 1.0);
+        : Vector3(0.0, 0.0, -1.0);
   }
 
   /// The world-space horizontal direction pointing toward the right edge of
   /// the view on the `XZ` ground plane (unit length), computed as
-  /// `Vector3(0, 1, 0).cross(horizontalForward).normalized()`.
+  /// `horizontalForward.cross(Vector3(0, 1, 0)).normalized()`.
   Vector3 get horizontalRight =>
-      Vector3(0.0, 1.0, 0.0).cross(horizontalForward)..normalize();
+      horizontalForward.cross(Vector3(0.0, 1.0, 0.0))..normalize();
 
   /// The lens projection paired with this camera's view.
   CameraProjection get projection;
@@ -465,12 +465,12 @@ Matrix4 _matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
     'Camera up is parallel to the view direction (position toward target), so '
     'the view basis is degenerate and the scene renders empty. Use an up vector '
     'that is not parallel to the view direction; for a top-down or bottom-up '
-    'camera use Vector3(0, 0, 1) or Vector3(0, 0, -1) in place of '
+    'camera use Vector3(0, 0, -1) or Vector3(0, 0, 1) in place of '
     'Vector3(0, 1, 0).',
   );
   Vector3 forward = viewDirection.normalized();
-  Vector3 right = up.cross(forward).normalized();
-  up = forward.cross(right).normalized();
+  Vector3 right = forward.cross(up).normalized();
+  up = right.cross(forward).normalized();
 
   return Matrix4(
     right.x,
@@ -643,7 +643,7 @@ Matrix4? buildRasterProjectionMatrix(
 /// ([fovNear]/[fovFar]). The horizontal field of view is derived from the
 /// render target's aspect ratio at draw time.
 ///
-/// Default placement is at `(0, 0, -5)` looking at the origin with `+Y`
+/// Default placement is at `(0, 0, 5)` looking at the origin with `+Y`
 /// up, suitable for inspecting a model that fits within a unit cube
 /// centered on the origin.
 /// {@category Scene graph}
@@ -651,7 +651,7 @@ class PerspectiveCamera extends Camera {
   /// Creates a [PerspectiveCamera].
   ///
   /// All parameters are optional; omitting them yields the default
-  /// placement (eye at `(0, 0, -5)`, looking at the origin, `+Y` up) and
+  /// placement (eye at `(0, 0, 5)`, looking at the origin, `+Y` up) and
   /// a 45° vertical field of view with a `0.1`–`1000.0` clip range.
   PerspectiveCamera({
     this.fovRadiansY = 45 * degrees2Radians,
@@ -660,7 +660,7 @@ class PerspectiveCamera extends Camera {
     Vector3? up,
     this.fovNear = 0.1,
     this.fovFar = 1000.0,
-  }) : position = position ?? Vector3(0, 0, -5),
+  }) : position = position ?? Vector3(0, 0, 5),
        target = target ?? Vector3(0, 0, 0),
        up = up ?? Vector3(0, 1, 0);
 
@@ -668,8 +668,8 @@ class PerspectiveCamera extends Camera {
   /// [Node.combinedWorldBounds]) so it fills the view.
   ///
   /// The camera looks at the bounds' center from [direction] (the offset from
-  /// the center toward the eye; defaults to `(0, 0, -1)`, matching the default
-  /// placement and the direction glTF models face after import). The distance
+  /// the center toward the eye; defaults to `(0, 0, 1)`, matching the default
+  /// placement and the `+Z` front of glTF models). The distance
   /// fits the bounds' bounding sphere within the vertical field of view, so it
   /// frames cleanly on a landscape view; [margin] above `1` pulls the camera
   /// back for padding (a portrait view, whose horizontal field of view is
@@ -685,7 +685,7 @@ class PerspectiveCamera extends Camera {
     final center = bounds.center;
     final radius = max((bounds.max - bounds.min).length * 0.5, 1e-4);
     final distance = radius / sin(fovRadiansY / 2) * margin;
-    final dir = (direction ?? Vector3(0, 0, -1)).normalized();
+    final dir = (direction ?? Vector3(0, 0, 1)).normalized();
     return PerspectiveCamera(
       fovRadiansY: fovRadiansY,
       position: center + dir * distance,
@@ -704,7 +704,7 @@ class PerspectiveCamera extends Camera {
 
   /// World-space position of the camera (the eye point).
   @override
-  Vector3 position = Vector3(0, 0, -5);
+  Vector3 position = Vector3(0, 0, 5);
 
   /// World-space point the camera is looking at.
   Vector3 target;
@@ -753,7 +753,7 @@ class PerspectiveCamera extends Camera {
 /// {@category Scene graph}
 class OrthographicCamera extends Camera {
   /// Creates an [OrthographicCamera]. Defaults match [PerspectiveCamera] (eye
-  /// at `(0, 0, -5)` looking at the origin, `+Y` up) with a default
+  /// at `(0, 0, 5)` looking at the origin, `+Y` up) with a default
   /// [OrthographicProjection].
   OrthographicCamera({
     OrthographicProjection? projection,
@@ -761,7 +761,7 @@ class OrthographicCamera extends Camera {
     Vector3? target,
     Vector3? up,
   }) : projection = projection ?? OrthographicProjection(),
-       position = position ?? Vector3(0, 0, -5),
+       position = position ?? Vector3(0, 0, 5),
        target = target ?? Vector3(0, 0, 0),
        up = up ?? Vector3(0, 1, 0);
 
@@ -769,7 +769,7 @@ class OrthographicCamera extends Camera {
   /// [Node.combinedWorldBounds]) so it fills the view on any aspect ratio.
   ///
   /// The camera looks at the bounds' center from [direction] (defaults to
-  /// `(0, 0, -1)`, as [PerspectiveCamera.framing]). The volume contains the
+  /// `(0, 0, 1)`, as [PerspectiveCamera.framing]). The volume contains the
   /// bounds' bounding sphere, scaled by [margin], and its clip planes enclose
   /// it.
   factory OrthographicCamera.framing(
@@ -781,7 +781,7 @@ class OrthographicCamera extends Camera {
     final center = bounds.center;
     final radius = max((bounds.max - bounds.min).length * 0.5, 1e-4);
     final reach = radius * margin;
-    final dir = (direction ?? Vector3(0, 0, -1)).normalized();
+    final dir = (direction ?? Vector3(0, 0, 1)).normalized();
     return OrthographicCamera(
       projection: OrthographicProjection(
         size: OrthographicSize.contain(reach * 2.0, reach * 2.0),

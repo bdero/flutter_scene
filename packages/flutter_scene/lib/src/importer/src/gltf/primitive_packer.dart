@@ -5,7 +5,6 @@ import 'package:scene/scene.dart' show sceneLog;
 
 import '../../constants.dart';
 import 'accessor.dart';
-import 'coordinate_policy.dart';
 import 'draco/gltf_draco.dart';
 import 'types.dart';
 
@@ -13,9 +12,8 @@ import 'types.dart';
 /// flutter_scene's vertex layout.
 ///
 /// Shared by the runtime GLB importer and the offline scene emitter so layout,
-/// attribute defaults, and index handling stay identical. The selected
-/// coordinate policy controls whether spatial values remain in source space
-/// or are baked into native scene space.
+/// attribute defaults, and index handling stay identical. Spatial values stay
+/// in glTF space, which is the engine's native space.
 class PackedPrimitive {
   PackedPrimitive({
     required this.vertexBytes,
@@ -24,7 +22,6 @@ class PackedPrimitive {
     required this.indexCount,
     required this.indices32Bit,
     required this.isSkinned,
-    required this.sourceWindingFlipped,
     this.morphTargets,
   });
 
@@ -47,12 +44,8 @@ class PackedPrimitive {
   /// Whether the vertex layout includes joints and weights.
   final bool isSkinned;
 
-  /// Whether the packed source convention reverses native winding.
-  final bool sourceWindingFlipped;
-
   /// The primitive's morph target deltas, remapped to the packed vertex
-  /// order and coordinate-converted like the base vertices, or null when
-  /// the primitive declares no targets.
+  /// order, or null when the primitive declares no targets.
   final PackedMorphTargets? morphTargets;
 }
 
@@ -111,7 +104,6 @@ PackedPrimitive packGltfPrimitive({
   required List<GltfAccessor> accessors,
   required List<GltfBufferView> bufferViews,
   required Uint8List bufferData,
-  required GltfCoordinatePolicy coordinatePolicy,
   bool includeSkinning = true,
 }) {
   // KHR_draco_mesh_compression: decode the payload and swap in synthesized
@@ -311,24 +303,6 @@ PackedPrimitive packGltfPrimitive({
     }
   }
 
-  // Runtime import stops above with an exact source copy. Offline import pays
-  // for a separate conversion pass so serialized geometry is native.
-  if (coordinatePolicy.bakesNative) {
-    for (var o = 0; o < out.length; o += stride) {
-      out[o + 2] = -out[o + 2];
-      out[o + 5] = -out[o + 5];
-      out[o + 16] = -out[o + 16];
-      out[o + 17] = -out[o + 17];
-    }
-    // Negating Z mirrors triangle winding; swap indices (a, b, c) -> (a, c, b)
-    // so baked native geometry retains Counter-Clockwise (CCW) front faces.
-    for (var i = 0; i + 2 < outIndexList.length; i += 3) {
-      final tmp = outIndexList[i + 1];
-      outIndexList[i + 1] = outIndexList[i + 2];
-      outIndexList[i + 2] = tmp;
-    }
-  }
-
   // The engine wants 16- or 32-bit indices. Pass 32-bit through; narrow
   // everything else to 16-bit.
   final Uint8List indexBytes;
@@ -355,7 +329,6 @@ PackedPrimitive packGltfPrimitive({
     indexCount: outIndexList.length,
     indices32Bit: outIndices32Bit,
     isSkinned: hasJoints,
-    sourceWindingFlipped: coordinatePolicy.sourceWindingFlipped,
     morphTargets: _packMorphTargets(
       primitive,
       accessors,
@@ -363,7 +336,6 @@ PackedPrimitive packGltfPrimitive({
       bufferData,
       srcOf: srcOf,
       sourceVertexCount: vertexCount,
-      coordinatePolicy: coordinatePolicy,
     ),
   );
 }
@@ -380,7 +352,6 @@ PackedMorphTargets? _packMorphTargets(
   Uint8List bufferData, {
   required List<int> srcOf,
   required int sourceVertexCount,
-  required GltfCoordinatePolicy coordinatePolicy,
 }) {
   final targets = primitive.targets;
   if (targets.isEmpty) return null;
@@ -439,12 +410,11 @@ PackedMorphTargets? _packMorphTargets(
       );
     }
     final base = targetIndex * outVertexCount * 3;
-    final flipZ = coordinatePolicy.bakesNative;
     for (var k = 0; k < outVertexCount; k++) {
       final s = srcOf[k] * comps;
       slab[base + k * 3] = source[s];
       slab[base + k * 3 + 1] = source[s + 1];
-      slab[base + k * 3 + 2] = flipZ ? -source[s + 2] : source[s + 2];
+      slab[base + k * 3 + 2] = source[s + 2];
     }
   }
 

@@ -275,15 +275,15 @@ void main() {
 
         final top = image.height * 58 ~/ 100;
         final bottom = image.height * 76 ~/ 100;
-        // The view basis puts world -x on the right of the frame, so the red
-        // wall (at -x) lights the right half of the floor.
-        final greenSide = redBias(
+        // The camera sits on +Z looking down -Z, so world -x is on the left of
+        // the frame and the red wall (at -x) lights the left half of the floor.
+        final redSide = redBias(
           image.width * 12 ~/ 100,
           top,
           image.width * 28 ~/ 100,
           bottom,
         );
-        final redSide = redBias(
+        final greenSide = redBias(
           image.width * 72 ~/ 100,
           top,
           image.width * 88 ~/ 100,

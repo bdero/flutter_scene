@@ -118,6 +118,7 @@ Future<void> realizeStage(
     agxWhite: look?.agxWhite ?? 16.29,
     agxContrast: look?.agxContrast ?? 1.25,
     environmentRotationY: look?.environmentRotationY ?? 0.0,
+    environmentMirrorZ: look?.environmentMirrorZ ?? false,
     radianceCubeSize: look?.radianceCubeSize,
     skybox: look?.skybox,
     skyEnvironment: look?.skyEnvironment,
@@ -160,6 +161,7 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   double agxWhite = 16.29,
   double agxContrast = 1.25,
   double environmentRotationY = 0.0,
+  bool environmentMirrorZ = false,
   int? radianceCubeSize,
   SkyboxSpec? skybox,
   SkyEnvironmentSpec? skyEnvironment,
@@ -175,7 +177,10 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
     toneMapping: _toneMapping(toneMapping),
     agxWhite: agxWhite,
     agxContrast: agxContrast,
-    environmentTransform: Matrix3.rotationY(environmentRotationY),
+    environmentTransform: environmentTransformFor(
+      environmentRotationY,
+      mirrorZ: environmentMirrorZ,
+    ),
   );
   _applyEffectSpec(settings, effects ?? EnvironmentEffectsSpec());
   await _applyColorGradingLut(settings, effects, bundle);
@@ -457,6 +462,7 @@ bool reapplyEnvironmentSettingsInPlace({
   required double agxWhite,
   required double agxContrast,
   required double environmentRotationY,
+  bool environmentMirrorZ = false,
   required EnvironmentEffectsSpec? effects,
   SkyboxSpec? skybox,
   SkyEnvironmentSpec? skyEnvironment,
@@ -483,7 +489,10 @@ bool reapplyEnvironmentSettingsInPlace({
     ..toneMapping = _toneMapping(toneMapping)
     ..agxWhite = agxWhite
     ..agxContrast = agxContrast
-    ..environmentTransform = Matrix3.rotationY(environmentRotationY);
+    ..environmentTransform = environmentTransformFor(
+      environmentRotationY,
+      mirrorZ: environmentMirrorZ,
+    );
   if (effects != null) _applyEffectSpec(target, effects);
 
   final liveSkyEnvironment = target.skyEnvironment;
@@ -634,10 +643,13 @@ void serializeStage(Scene scene, SceneDocument document) {
   resource.toneMapping = scene.toneMapping.name;
   resource.agxWhite = scene.agxWhite;
   resource.agxContrast = scene.agxContrast;
-  final transform = scene.environmentTransform.storage;
   // TODO(environment-transform): store a full orientation in the document so
   // serialization does not discard rotations outside world Y.
-  resource.environmentRotationY = math.atan2(transform[6], transform[0]);
+  final (rotationY, mirrorZ) = environmentRotationYAndMirrorZ(
+    scene.environmentTransform,
+  );
+  resource.environmentRotationY = rotationY;
+  resource.environmentMirrorZ = mirrorZ;
   resource.effects = _effectSpecFromSettings(
     EnvironmentSettings.fromScene(scene),
   );
@@ -1123,4 +1135,30 @@ SkyEnvironmentRefresh _refresh(String name) {
     debugPrint('fscene: unknown sky refresh policy "$name"; using manual');
     return SkyEnvironmentRefresh.manual;
   }
+}
+
+/// The environment sampling transform for a document look: a rotation of
+/// [rotationY] about world Y, applied after a reflection across the XY plane
+/// when [mirrorZ] is set (so a direction `(x, y, z)` samples at `(x, y, -z)`
+/// before rotating). The shaders apply this matrix to every environment and
+/// skybox direction, so the mirror is exact for image and procedural sources
+/// alike.
+Matrix3 environmentTransformFor(double rotationY, {bool mirrorZ = false}) {
+  final rotation = Matrix3.rotationY(rotationY);
+  if (!mirrorZ) return rotation;
+  final reflection = Matrix3.identity()..setEntry(2, 2, -1.0);
+  return rotation.multiplied(reflection);
+}
+
+/// Recovers the document look fields from a live environment transform, the
+/// inverse of [environmentTransformFor]. A negative determinant is the Z
+/// mirror; the rotation is read off the de-mirrored matrix.
+(double rotationY, bool mirrorZ) environmentRotationYAndMirrorZ(
+  Matrix3 transform,
+) {
+  final mirrorZ = transform.determinant() < 0.0;
+  final s = transform.storage;
+  // Column 2 carries the reflection, so its entries read back negated.
+  final m02 = mirrorZ ? -s[6] : s[6];
+  return (math.atan2(m02, s[0]), mirrorZ);
 }

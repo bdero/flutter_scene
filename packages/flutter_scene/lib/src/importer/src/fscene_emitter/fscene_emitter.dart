@@ -33,7 +33,7 @@ import '../../../texture/mipmap.dart';
 import '../../texture_roles.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
-import '../gltf/coordinate_policy.dart';
+import '../gltf/keyframe_values.dart';
 import '../../gltf_light_units.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
@@ -186,14 +186,7 @@ SceneDocument buildSceneDocument(
   // payload chunk).
   final skinIds = [
     for (final skin in doc.skins)
-      _buildSkin(
-        document,
-        skin,
-        doc,
-        bufferData,
-        nodeIds,
-        GltfCoordinatePolicy.bakeNative,
-      ),
+      _buildSkin(document, skin, doc, bufferData, nodeIds),
   ];
 
   // Nodes.
@@ -263,14 +256,7 @@ SceneDocument buildSceneDocument(
 
   // Animations (one keyframe timeline/value payload per channel).
   for (final animation in doc.animations) {
-    _buildAnimation(
-      document,
-      animation,
-      doc,
-      bufferData,
-      nodeIds,
-      GltfCoordinatePolicy.bakeNative,
-    );
+    _buildAnimation(document, animation, doc, bufferData, nodeIds);
   }
 
   // `-split<N>` node-name hints split level-spanning meshes into grid-cell
@@ -286,14 +272,11 @@ LocalId _buildSkin(
   GltfDocument doc,
   Uint8List bufferData,
   List<LocalId> nodeIds,
-  GltfCoordinatePolicy coordinatePolicy,
 ) {
   final Float32List matrices;
   if (skin.inverseBindMatrices != null) {
     final accessor = doc.accessors[skin.inverseBindMatrices!];
-    matrices = coordinatePolicy.convertMatrices(
-      readAccessorAsFloat32(accessor, doc.bufferViews, bufferData),
-    );
+    matrices = readAccessorAsFloat32(accessor, doc.bufferViews, bufferData);
   } else {
     // Spec default: identity per joint, column-major.
     matrices = Float32List(skin.joints.length * 16);
@@ -328,7 +311,6 @@ void _buildAnimation(
   GltfDocument doc,
   Uint8List bufferData,
   List<LocalId> nodeIds,
-  GltfCoordinatePolicy coordinatePolicy,
 ) {
   final channels = <AnimationChannelSpec>[];
   for (final channel in animation.channels) {
@@ -369,13 +351,10 @@ void _buildAnimation(
       _ => 3,
     };
     if (property == AnimationProperty.weights && componentCount == 0) continue;
-    final keyframes = coordinatePolicy.convertAnimationValues(
-      selectGltfKeyframeValues(
-        values,
-        componentCount: componentCount,
-        cubicSpline: isCubic,
-      ),
-      targetPath: channel.targetPath,
+    final keyframes = selectGltfKeyframeValues(
+      values,
+      componentCount: componentCount,
+      cubicSpline: isCubic,
     );
 
     channels.add(
@@ -471,7 +450,7 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
       return ComponentSpec('pointLight', properties: properties);
     case 'spot':
       properties
-        ..['direction'] = Vec3Value(Vector3(0, 0, 1))
+        ..['direction'] = Vec3Value(Vector3(0, 0, -1))
         ..['range'] = DoubleValue(light.range ?? 0)
         ..['innerConeAngle'] = DoubleValue(light.innerConeAngle)
         ..['outerConeAngle'] = DoubleValue(light.outerConeAngle)
@@ -482,13 +461,12 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
 }
 
 TransformSpec _transform(GltfNode node) {
-  const policy = GltfCoordinatePolicy.bakeNative;
   if (node.matrix != null) {
-    return MatrixTransform(policy.convertTransform(node.matrix!));
+    return MatrixTransform(node.matrix!.clone());
   }
   return TrsTransform(
-    translation: policy.convertPosition(node.translation ?? Vector3.zero()),
-    rotation: policy.convertRotation(node.rotation ?? Quaternion.identity()),
+    translation: (node.translation ?? Vector3.zero()).clone(),
+    rotation: (node.rotation ?? Quaternion.identity()).clone(),
     scale: (node.scale ?? Vector3(1, 1, 1)).clone(),
   );
 }
@@ -508,7 +486,6 @@ LocalId _buildGeometry(
     accessors: doc.accessors,
     bufferViews: doc.bufferViews,
     bufferData: bufferData,
-    coordinatePolicy: GltfCoordinatePolicy.bakeNative,
     includeSkinning: includeSkinning,
   );
   final morph = packed.morphTargets;
@@ -644,8 +621,8 @@ BoundsSpec? _primitiveBounds(
   }
   if (box.isEmpty) return null;
   return BoundsSpec(
-    min: Vector3(box.minX, box.minY, -box.maxZ),
-    max: Vector3(box.maxX, box.maxY, -box.minZ),
+    min: Vector3(box.minX, box.minY, box.minZ),
+    max: Vector3(box.maxX, box.maxY, box.maxZ),
   );
 }
 
@@ -657,8 +634,8 @@ BoundsSpec? _restBounds(GltfMeshPrimitive primitive, GltfDocument doc) {
   final max = accessor.max;
   if (min != null && min.length >= 3 && max != null && max.length >= 3) {
     return BoundsSpec(
-      min: Vector3(min[0], min[1], -max[2]),
-      max: Vector3(max[0], max[1], -min[2]),
+      min: Vector3(min[0], min[1], min[2]),
+      max: Vector3(max[0], max[1], max[2]),
     );
   }
   // No spec-provided bounds; the realizer scans positions on upload.

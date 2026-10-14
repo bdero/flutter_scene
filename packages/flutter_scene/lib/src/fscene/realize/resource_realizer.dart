@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:collection/collection.dart' show DeepCollectionEquality;
@@ -330,6 +331,7 @@ class ResourceRealizer {
             agxWhite: resource.agxWhite,
             agxContrast: resource.agxContrast,
             environmentRotationY: resource.environmentRotationY,
+            environmentMirrorZ: resource.environmentMirrorZ,
             radianceCubeSize: resource.radianceCubeSize,
             skybox: resource.skybox,
             skyEnvironment: resource.skyEnvironment,
@@ -588,9 +590,17 @@ class ResourceRealizer {
       );
     }
     final vertexCount = vertexBytes.lengthInBytes ~/ perVertexBytes;
+    final isLegacyLeftHanded =
+        res.legacyLeftHanded || document.formatVersion < 6;
+    final isLegacyWinding = res.legacyWinding || document.formatVersion < 5;
     final morphData = res.morphTargets == null
         ? null
-        : _buildMorphData(res, res.morphTargets!, vertexCount);
+        : _buildMorphData(
+            res,
+            res.morphTargets!,
+            vertexCount,
+            legacyLeftHanded: isLegacyLeftHanded,
+          );
     final Geometry geometry = skinned
         ? (morphData != null
               ? MorphedSkinnedGeometry(morphData)
@@ -611,8 +621,10 @@ class ResourceRealizer {
       final isUint32 = document.payload(indexId)!.format == 'uint32';
       indexType = isUint32 ? gpu.IndexType.int32 : gpu.IndexType.int16;
       final isTriangleTopology = res.topology == 'triangle';
-      if ((res.legacyWinding || document.formatVersion < 5) &&
-          isTriangleTopology) {
+      // Reflecting vertex Z reverses triangle winding, so swap indices when
+      // exactly one of legacyWinding or legacyLeftHanded applies (v4 assets
+      // have both, which cancel out; v5 assets have legacyLeftHanded only).
+      if ((isLegacyWinding != isLegacyLeftHanded) && isTriangleTopology) {
         final migrated = Uint8List.fromList(rawIndexBytes);
         if (isUint32) {
           final u32 = migrated.buffer.asUint32List(
@@ -654,11 +666,15 @@ class ResourceRealizer {
     }
 
     if (legacy && soa) {
+      var streams = InterleavedLayoutAdapter.upgradeLegacyUnskinnedSoa(
+        vertexBytes,
+        vertexCount,
+      );
+      if (isLegacyLeftHanded) {
+        streams = _reflectSoaZ(streams);
+      }
       (geometry as UnskinnedGeometry).uploadUnskinnedAttributeStreams(
-        InterleavedLayoutAdapter.upgradeLegacyUnskinnedSoa(
-          vertexBytes,
-          vertexCount,
-        ),
+        streams,
         vertexCount,
         indices: indexBytes,
         indexType: indexType,
@@ -667,10 +683,13 @@ class ResourceRealizer {
       // Morphed geometry keeps its base interleaved for CPU re-blending, so
       // a structure-of-arrays payload (the emitter writes morphed geometry
       // interleaved, but be tolerant) is interleaved once here.
-      final streams = InterleavedLayoutAdapter.sliceUnskinnedStreams(
+      var streams = InterleavedLayoutAdapter.sliceUnskinnedStreams(
         vertexBytes,
         vertexCount,
       );
+      if (isLegacyLeftHanded) {
+        streams = _reflectSoaZ(streams);
+      }
       final interleaved = InterleavedLayoutAdapter.packUnskinned(
         positions: Float32List.sublistView(streams.position),
         vertexCount: vertexCount,
@@ -690,11 +709,15 @@ class ResourceRealizer {
     } else if (soa) {
       // De-interleaved payload: upload each attribute stream straight to its
       // GPU buffer, no realize-time reshuffle.
+      var streams = InterleavedLayoutAdapter.sliceUnskinnedStreams(
+        vertexBytes,
+        vertexCount,
+      );
+      if (isLegacyLeftHanded) {
+        streams = _reflectSoaZ(streams);
+      }
       (geometry as UnskinnedGeometry).uploadUnskinnedAttributeStreams(
-        InterleavedLayoutAdapter.sliceUnskinnedStreams(
-          vertexBytes,
-          vertexCount,
-        ),
+        streams,
         vertexCount,
         indices: indexBytes,
         indexType: indexType,
@@ -713,10 +736,22 @@ class ResourceRealizer {
                     vertexCount,
                   )
           : null;
-      geometry.uploadVertexData(
+      final TypedData uploadData;
+      if (isLegacyLeftHanded) {
+        uploadData = _reflectInterleavedZ(
+          upgraded ?? vertexBytes,
+          vertexCount,
+          skinned: skinned,
+        );
+      } else {
         // An upgrade repacks into floats; a pass-through stays the payload's
         // own bytes. Either way the upload gets the store's element type.
-        upgraded == null ? vertexBytes : Float32List.sublistView(upgraded),
+        uploadData = upgraded == null
+            ? vertexBytes
+            : Float32List.sublistView(upgraded);
+      }
+      geometry.uploadVertexData(
+        uploadData,
         vertexCount,
         indexBytes,
         indexType: indexType,
@@ -726,21 +761,84 @@ class ResourceRealizer {
     return geometry;
   }
 
+  static UnskinnedAttributeStreams _reflectSoaZ(
+    UnskinnedAttributeStreams streams,
+  ) {
+    final posBytes = Uint8List.fromList(streams.position);
+    final pos = Float32List.sublistView(posBytes);
+    for (var i = 2; i < pos.length; i += 3) {
+      pos[i] = -pos[i];
+    }
+    final normBytes = Uint8List.fromList(streams.normal);
+    final norm = Float32List.sublistView(normBytes);
+    for (var i = 2; i < norm.length; i += 3) {
+      norm[i] = -norm[i];
+    }
+    final tanBytes = Uint8List.fromList(streams.tangent);
+    final tan = Float32List.sublistView(tanBytes);
+    for (var i = 0; i + 3 < tan.length; i += 4) {
+      tan[i + 2] = -tan[i + 2];
+      if (tan[i + 3] != 0) tan[i + 3] = -tan[i + 3];
+    }
+    return UnskinnedAttributeStreams(
+      position: posBytes,
+      normal: normBytes,
+      texCoord: streams.texCoord,
+      texCoord1: streams.texCoord1,
+      color: streams.color,
+      tangent: tanBytes,
+    );
+  }
+
+  static Float32List _reflectInterleavedZ(
+    Uint8List bytes,
+    int vertexCount, {
+    required bool skinned,
+  }) {
+    final stride =
+        (skinned ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize) ~/ 4;
+    final aligned = bytes.offsetInBytes % 4 == 0
+        ? bytes.buffer.asFloat32List(
+            bytes.offsetInBytes,
+            bytes.lengthInBytes ~/ 4,
+          )
+        : Float32List.sublistView(Uint8List.fromList(bytes));
+    final out = Float32List.fromList(aligned);
+    for (var v = 0; v < vertexCount; v++) {
+      final o = v * stride;
+      out[o + 2] = -out[o + 2];
+      out[o + 5] = -out[o + 5];
+      out[o + 16] = -out[o + 16];
+      if (out[o + 17] != 0) out[o + 17] = -out[o + 17];
+    }
+    return out;
+  }
+
   /// Reads a geometry's morph delta payload into engine [MorphTargetData]:
   /// the dense position slab, then the normal and tangent slabs when the
   /// spec declares them.
   MorphTargetData _buildMorphData(
     GeometryResource res,
     MorphTargetsSpec spec,
-    int vertexCount,
-  ) {
+    int vertexCount, {
+    required bool legacyLeftHanded,
+  }) {
     final bytes = _payloadBytes(spec.deltas, 'morph delta');
-    final floats = bytes.offsetInBytes % 4 == 0
+    final rawFloats = bytes.offsetInBytes % 4 == 0
         ? bytes.buffer.asFloat32List(
             bytes.offsetInBytes,
             bytes.lengthInBytes ~/ 4,
           )
         : Float32List.sublistView(Uint8List.fromList(bytes));
+    final Float32List floats;
+    if (legacyLeftHanded) {
+      floats = Float32List.fromList(rawFloats);
+      for (var i = 2; i < floats.length; i += 3) {
+        floats[i] = -floats[i];
+      }
+    } else {
+      floats = rawFloats;
+    }
     final slab = spec.targetCount * vertexCount * 3;
     final sections =
         1 + (spec.hasNormalDeltas ? 1 : 0) + (spec.hasTangentDeltas ? 1 : 0);

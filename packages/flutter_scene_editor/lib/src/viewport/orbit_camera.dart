@@ -92,7 +92,7 @@ class OrbitCamera {
 
   /// Orbits by [deltaX] and [deltaY] pixel deltas.
   void orbit(double deltaX, double deltaY) {
-    azimuth += deltaX * 0.006;
+    azimuth -= deltaX * 0.006;
     elevation = (elevation + deltaY * 0.006).clamp(
       _minElevation,
       _maxElevation,
@@ -167,10 +167,10 @@ class OrbitCamera {
   }
 
   /// The camera's screen-right direction (always horizontal). Matches the
-  /// renderer's view basis (`up cross forward`), so projecting a world
+  /// renderer's view basis (`forward cross up`), so projecting a world
   /// direction onto this maps to on-screen horizontal movement.
   vm.Vector3 get rightVector =>
-      vm.Vector3(-cos(azimuth), 0, sin(azimuth))..normalize();
+      vm.Vector3(cos(azimuth), 0, -sin(azimuth))..normalize();
 
   /// The camera's screen-up direction, the elevation tangent of the orbit
   /// sphere. Matches a constant world-up for ordinary elevations and stays

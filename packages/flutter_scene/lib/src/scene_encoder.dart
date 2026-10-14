@@ -1473,7 +1473,7 @@ base class SceneEncoder {
       // material's fragment slots; only the pass state and the vertex stage
       // are the material's.
       _renderPass.setCullMode(material.renderCullMode);
-      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
       if (_coveragePass) _bindCoverage(material, fade);
     } else {
       material.lodFade = fade;
@@ -1776,8 +1776,8 @@ base class SceneEncoder {
     // a cached material bind no longer resets it between compatible draws.
     _setWindingOrder(
       windingFlipped
-          ? gpu.WindingOrder.counterClockwise
-          : gpu.WindingOrder.clockwise,
+          ? gpu.WindingOrder.clockwise
+          : gpu.WindingOrder.counterClockwise,
     );
     _setPrimitiveType(geometry.primitiveType);
     _drawGeometry(geometry, material);
@@ -1946,7 +1946,7 @@ base class SceneEncoder {
         // Each instance can itself mirror; combine with the node's parity.
         final flip = windingFlipped != (instanceTransform.determinant() < 0);
         _setWindingOrder(
-          flip ? gpu.WindingOrder.counterClockwise : gpu.WindingOrder.clockwise,
+          flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
         );
         _drawGeometry(geometry, material);
       }
@@ -1967,8 +1967,8 @@ base class SceneEncoder {
       if (flipped != null) {
         _setWindingOrder(
           flipped
-              ? gpu.WindingOrder.counterClockwise
-              : gpu.WindingOrder.clockwise,
+              ? gpu.WindingOrder.clockwise
+              : gpu.WindingOrder.counterClockwise,
         );
         _drawGeometry(
           geometry,
@@ -2013,12 +2013,12 @@ base class SceneEncoder {
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);
-      _setWindingOrder(gpu.WindingOrder.clockwise);
+      _setWindingOrder(gpu.WindingOrder.counterClockwise);
       _drawGeometry(geometry, material, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
       _bindPackedInstances(packed.cw, instanceSlot);
-      _setWindingOrder(gpu.WindingOrder.counterClockwise);
+      _setWindingOrder(gpu.WindingOrder.clockwise);
       _drawGeometry(geometry, material, instanceCount: packed.cwCount);
     }
   }
@@ -2099,12 +2099,12 @@ base class SceneEncoder {
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);
-      _setWindingOrder(gpu.WindingOrder.clockwise);
+      _setWindingOrder(gpu.WindingOrder.counterClockwise);
       _drawGeometry(geometry, material, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
       _bindPackedInstances(packed.cw, instanceSlot);
-      _setWindingOrder(gpu.WindingOrder.counterClockwise);
+      _setWindingOrder(gpu.WindingOrder.clockwise);
       _drawGeometry(geometry, material, instanceCount: packed.cwCount);
     }
   }

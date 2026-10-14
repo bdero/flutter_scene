@@ -15,7 +15,6 @@ Skin buildSkin({
   required List<GltfBufferView> bufferViews,
   required Uint8List bufferData,
   required List<Node> engineNodes,
-  required GltfCoordinatePolicy coordinatePolicy,
 }) {
   final skin = Skin();
 
@@ -36,9 +35,7 @@ Skin buildSkin({
         'got ${accessor.type}',
       );
     }
-    final floats = coordinatePolicy.convertMatrices(
-      readAccessorAsFloat32(accessor, bufferViews, bufferData),
-    );
+    final floats = readAccessorAsFloat32(accessor, bufferViews, bufferData);
     if (floats.length != gltfSkin.joints.length * 16) {
       throw FormatException(
         'glTF skin has ${gltfSkin.joints.length} joints but the inverse-bind '
