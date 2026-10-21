@@ -44,6 +44,44 @@ Map<String, Object?> _text(CallToolResult result) =>
 
 void main() {
   group('EditorMcpServer transport', () {
+    test(
+      'serves measured test coverage over MCP without a scene document',
+      () async {
+        final server = await _connect(
+          EditorToolSurface(
+            () => null,
+            readTestCoverage: ({required includeFiles}) async => {
+              'revision': 'tested-source',
+              'percent': 75.0,
+              'includeFiles': includeFiles,
+            },
+          ),
+        );
+        addTearDown(server.shutdown);
+        expect(
+          (await server.listTools(ListToolsRequest())).tools.map((t) => t.name),
+          contains('get_test_coverage'),
+        );
+        final result = await server.callTool(
+          CallToolRequest(
+            name: 'get_test_coverage',
+            arguments: {'includeFiles': true},
+          ),
+        );
+        expect(_text(result), {
+          'revision': 'tested-source',
+          'percent': 75.0,
+          'includeFiles': true,
+        });
+        final invalid = await server.callTool(
+          CallToolRequest(
+            name: 'get_test_coverage',
+            arguments: {'includeFiles': 'yes'},
+          ),
+        );
+        expect(invalid.isError, isTrue);
+      },
+    );
     test('lists the curated bootstrap tools over the protocol', () async {
       final server = await _connect(EditorToolSurface.of(_session()));
       final tools = (await server.listTools(

@@ -15,6 +15,7 @@ export 'src/tool_surface.dart'
         ScreenshotResult,
         ToolDefinition,
         ToolError,
+        TestCoverageReader,
         ViewportCameraPose,
         ViewportCameraRead,
         ViewportCameraWrite,

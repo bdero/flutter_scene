@@ -24,6 +24,7 @@ import 'package:scene/scene.dart'
 import 'package:vector_math/vector_math.dart' show Aabb3;
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart' show ToolError;
 import 'package:flutter_scene_mcp/socket_host.dart';
+import 'package:flutter_scene_mcp/coverage_host.dart';
 
 void main() {
   // The windowing guards in the framework read this at call time, and the
@@ -1354,6 +1355,18 @@ class _EditorHomeState extends State<_EditorHome> {
                   in _runner.console.reversed.take(tail).toList().reversed)
                 line.text,
             ],
+          },
+          readTestCoverage: ({required bool includeFiles}) async {
+            final project = _project;
+            if (project == null) {
+              throw const FormatException(
+                'Open a project before reading test coverage',
+              );
+            }
+            return readProjectTestCoverage(
+              project.resolvedProjectRoot,
+              includeFiles: includeFiles,
+            );
           },
           renderGraphCapture: ({required bool thumbnails, int? maxDimension}) =>
               _renderGraphMcp.capture(

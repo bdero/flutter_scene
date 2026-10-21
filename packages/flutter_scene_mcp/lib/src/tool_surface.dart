@@ -266,6 +266,17 @@ typedef ComponentTypeDescriber = Map<String, Object?>? Function(String type);
 /// The console tail plus building/running flags.
 typedef ConsoleReader = Map<String, Object?> Function(int tail);
 
+/// Reads the host project's latest measured test coverage report without
+/// running tests. The host resolves its project-local report and includes the
+/// source revision, suites, covered/measured line counts and unreported files.
+/// [includeFiles] requests the optional per-source-file breakdown.
+///
+/// Coverage is historical test evidence, not proof of current widget rebuild
+/// frequency, rendering correctness, or GPU performance. A missing/invalid
+/// report should throw [FormatException], never return invented zero coverage.
+typedef TestCoverageReader =
+    Future<Map<String, Object?>> Function({required bool includeFiles});
+
 /// Lists devices from the selected installation ({devices: [{id, name,
 /// targetPlatform, emulator}]}).
 typedef DeviceLister = Future<Map<String, Object?>> Function({bool refresh});
@@ -317,6 +328,7 @@ class EditorToolSurface {
     this.listComponentTypes,
     this.describeComponentType,
     this.readConsole,
+    this.readTestCoverage,
     this.listDevices,
     this.selectDevice,
     this.renderGraphCapture,
@@ -448,6 +460,9 @@ class EditorToolSurface {
   final ComponentTypeLister? listComponentTypes;
   final ComponentTypeDescriber? describeComponentType;
   final ConsoleReader? readConsole;
+
+  /// Project-scoped coverage supplied by the host; no document or GPU needed.
+  final TestCoverageReader? readTestCoverage;
   final DeviceLister? listDevices;
   final DeviceSelector? selectDevice;
 
@@ -734,6 +749,24 @@ class EditorToolSurface {
             'tail': {
               'type': 'integer',
               'description': 'Lines from the end (default 100).',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
+    if (readTestCoverage != null)
+      const ToolDefinition(
+        name: 'get_test_coverage',
+        description:
+            'Read the host project\'s latest measured test coverage, including '
+            'source revision, suites, covered/measured lines and percentages. '
+            'Does not run tests or qualify widget rebuilds or GPU rendering.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'includeFiles': {
+              'type': 'boolean',
+              'description': 'Include per-source-file details (default false).',
             },
           },
           'additionalProperties': false,
@@ -1554,6 +1587,27 @@ class EditorToolSurface {
         }
         final tail = args['tail'];
         return reader(tail is num ? tail.toInt() : 100);
+      case 'get_test_coverage':
+        final coverageReader = readTestCoverage;
+        if (coverageReader == null) {
+          throw const ToolError(
+            'No test coverage report provider in this host',
+          );
+        }
+        if (args.keys.any((key) => key != 'includeFiles') ||
+            (args.containsKey('includeFiles') &&
+                args['includeFiles'] is! bool)) {
+          throw const ToolError(
+            'get_test_coverage accepts only boolean "includeFiles"',
+          );
+        }
+        try {
+          return await coverageReader(
+            includeFiles: args['includeFiles'] == true,
+          );
+        } on FormatException catch (e) {
+          throw ToolError(e.message);
+        }
       case 'import_environment':
         final envImporter = importEnvironment;
         if (envImporter == null) {
