@@ -2,12 +2,28 @@
 library;
 
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter_scene/scene.dart' show BloomSettings;
 import 'package:flutter_scene/src/render/bloom_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('views sharing a reference size spread bloom alike', () {
+    // A header, and a taller overlay the same character moves into.
+    const header = ui.Size(820, 760);
+    const overlay = ui.Size(820, 2568);
+    double texel(ui.Size view, {double? reference}) =>
+        view.height / bloomBaseSize(view, reference: reference).height;
+    expect(texel(overlay), greaterThan(texel(header) * 3));
+    expect(
+      texel(overlay, reference: 820),
+      closeTo(texel(header, reference: 820), 1e-9),
+    );
+    // The view measured against its own size is unchanged.
+    expect(bloomBaseSize(header, reference: 820), bloomBaseSize(header));
+  });
+
   test('the default scatter weights every mip equally', () {
     expect(bloomLevelWeight(0.7), 1.0);
     expect(_mipWeights(1.0, 6), everyElement(closeTo(1.0, 1e-9)));

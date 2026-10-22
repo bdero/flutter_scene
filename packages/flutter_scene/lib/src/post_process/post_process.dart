@@ -140,6 +140,16 @@ class BloomSettings {
   /// however intense, keeps its full bloom.
   bool fireflySuppression = true;
 
+  /// The render size, in pixels along its larger side, that the blur's spread
+  /// is measured against. Null measures each view against its own size, so
+  /// the bloom covers the same fraction of whatever the view draws.
+  ///
+  /// Views that each show part of one picture (a header, and a taller overlay
+  /// that the same character moves into) should share one value, so a glow
+  /// spreads the same number of pixels in either and nothing changes as it
+  /// crosses between them.
+  double? referenceSize;
+
   /// The brightness a source pixel softly compresses toward before it blooms,
   /// so an extreme highlight cannot flood the frame. Values well below it pass
   /// nearly unchanged. 0 turns compression off.

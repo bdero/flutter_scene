@@ -84,12 +84,17 @@ const double _kMaxBloomBaseSide = 256.0;
 
 const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
-// The first bloom mip's size: half the render resolution, scaled down so its
-// larger side is at most [_kMaxBloomBaseSide], preserving aspect.
-ui.Size _bloomBaseSize(ui.Size dimension) {
+/// The first bloom mip's size: half the render resolution, scaled down so the
+/// larger side of a [reference] render (the view's own by default) would be
+/// at most [_kMaxBloomBaseSide], preserving aspect. Views sharing a
+/// [reference] get the same render pixels per mip texel, so the same glow
+/// spreads alike in each.
+@visibleForTesting
+ui.Size bloomBaseSize(ui.Size dimension, {double? reference}) {
   var width = dimension.width / 2.0;
   var height = dimension.height / 2.0;
-  final larger = math.max(width, height);
+  final larger =
+      (reference ?? math.max(dimension.width, dimension.height)) / 2.0;
   if (larger > _kMaxBloomBaseSide) {
     final scale = _kMaxBloomBaseSide / larger;
     width *= scale;
@@ -152,7 +157,7 @@ class BloomPass extends RenderGraphPass {
     // Allocate the downsample chain at successively halved resolutions,
     // starting from a resolution-capped base so the bloom's on-screen spread
     // stays stable across device pixel ratios.
-    final base = _bloomBaseSize(_dimensions);
+    final base = bloomBaseSize(_dimensions, reference: _settings.referenceSize);
     final down = <gpu.Texture>[];
     final sizes = <ui.Size>[];
     var width = base.width.floor();
