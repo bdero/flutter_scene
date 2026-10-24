@@ -696,6 +696,16 @@ void main() {
     );
   });
 
+  test('texture rotation follows KHR_texture_transform', () {
+    // The extension turns UVs counter-clockwise with V pointing down:
+    // u' = c * u + s * v and v' = -s * u + c * v. The opposite sign is what
+    // Khronos' TextureTransformTest marks with its red marker.
+    final inputs = File('shaders/material_inputs.glsl').readAsStringSync();
+
+    expect(inputs, contains('rotation.x * scaled.x + rotation.y * scaled.y'));
+    expect(inputs, contains('-rotation.y * scaled.x + rotation.x * scaled.y'));
+  });
+
   test('filtered scene color lives in a reviewable shader include', () {
     final filtered = File(
       'shaders/filtered_scene_color.glsl',

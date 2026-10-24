@@ -10,12 +10,18 @@
 // be declared before it is included.
 
 // Applies offset/scale plus a cosine/sine rotation pair to texture coordinates.
+//
+// The rotation follows KHR_texture_transform: it turns the UVs
+// counter-clockwise in UV space, whose V axis points down, so the image turns
+// clockwise. The extension's GLSL snippet, read as column-major, has the
+// opposite sign; its prose, its example and the Khronos TextureTransformTest
+// model (which marks the opposite direction in red) all agree with this one.
 highp vec2 ApplyMaterialUvTransform(highp vec2 uv, highp vec4 transform,
                                     vec2 rotation) {
   highp vec2 scaled = uv * transform.zw;
   return transform.xy +
-         vec2(rotation.x * scaled.x - rotation.y * scaled.y,
-              rotation.y * scaled.x + rotation.x * scaled.y);
+         vec2(rotation.x * scaled.x + rotation.y * scaled.y,
+              -rotation.y * scaled.x + rotation.x * scaled.y);
 }
 
 // Applies a texture transform whose rotation is stored as an angle.
