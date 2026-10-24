@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show internal;
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../asset_helpers.dart';
 import '../gpu/gpu.dart' as gpu;
 import '../render/mip_sampling_probe.dart';
+import 'data_texture.dart' show dataTextureBytesPerTexel;
 import 'encoded_image.dart';
 import 'mip_upload_web.dart' if (dart.library.io) 'mip_upload_native.dart';
 import 'mipmap.dart';
@@ -72,6 +74,14 @@ class TextureSampling {
     this.maxAnisotropy = defaultMaxAnisotropy,
     this.addressMode = gpu.SamplerAddressMode.repeat,
   });
+
+  /// Bilinear, unmipped, clamped: the default for data textures
+  /// ([Texture2D.fromData], [Texture2DArray], [Texture3D]), whose texels are
+  /// values rather than colors and which carry no mip chain.
+  static const TextureSampling data = TextureSampling(
+    mipmaps: false,
+    addressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
 
   /// The anisotropy a mipmapped texture samples with by default, shared with
   /// [GpuTextureSource] so a texture filters the same however it was built.
@@ -165,6 +175,40 @@ class Texture2D implements TextureSource {
     ),
     sampling.toSamplerOptions(),
   );
+
+  /// Builds a single-level texture from raw texels of [format]: [data] holds
+  /// [width] x [height] texels, row by row, exactly.
+  ///
+  /// Unlike [fromPixels] no mip chain is built and the texels are not treated
+  /// as color, so this suits scalar fields, lookup tables and other data. See
+  /// [dataTextureBytesPerTexel] for the formats it takes.
+  static Texture2D fromData(
+    TypedData data,
+    int width,
+    int height, {
+    gpu.PixelFormat format = gpu.PixelFormat.r8g8b8a8UNormInt,
+    TextureSampling sampling = TextureSampling.data,
+  }) {
+    final bytesPerTexel =
+        dataTextureBytesPerTexel[format] ??
+        (throw ArgumentError.value(format, 'format', 'Not a data format'));
+    final expected = width * height * bytesPerTexel;
+    if (data.lengthInBytes != expected) {
+      throw ArgumentError(
+        'data holds ${data.lengthInBytes} bytes; a ${width}x$height '
+        '${format.name} texture needs $expected.',
+      );
+    }
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      width,
+      height,
+      format: format,
+      enableRenderTargetUsage: false,
+    );
+    texture.overwrite(ByteData.sublistView(data));
+    return Texture2D._(texture, sampling.toSamplerOptions());
+  }
 
   /// This texture's GPU image sampled with [sampler] instead (for example a
   /// glTF sampler's wrap and filter modes). The GPU texture is shared.

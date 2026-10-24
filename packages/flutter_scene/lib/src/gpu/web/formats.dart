@@ -148,4 +148,12 @@ enum TextureType {
   texture2DMultisample,
   textureCube,
   textureExternalOES,
+
+  /// Layers of one size, sampled as `sampler2DArray`.
+  texture2DArray,
+
+  /// A volume, sampled as `sampler3D`. Web only: Flutter GPU has no 3D
+  /// texture type, so code shared with native creates one through
+  /// [createTexture3D] and tests for one with [isTexture3D].
+  texture3D,
 }

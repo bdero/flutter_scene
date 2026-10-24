@@ -26,6 +26,11 @@ export 'src/gpu/gpu.dart'
         ShaderLibrary,
         loadShaderLibraryAsync,
         Texture,
+        // Data textures: their formats, and the device limits that size them.
+        PixelFormat,
+        TextureType,
+        GpuLimits,
+        gpuLimits,
         SamplerOptions,
         MinMagFilter,
         MipFilter,

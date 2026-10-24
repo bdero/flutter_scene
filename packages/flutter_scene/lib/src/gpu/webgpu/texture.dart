@@ -19,7 +19,20 @@ final class _WebGpuTexture extends Texture {
     required this.enableShaderReadUsage,
     required this.enableShaderWriteUsage,
     required this.mipLevelCount,
+    this.layerCount = 1,
+    this.depth = 1,
   }) : _format = _gpuFormatFor(format, _context.device) {
+    if (layerCount < 1 ||
+        (layerCount > 1 && textureType != TextureType.texture2DArray)) {
+      throw ArgumentError(
+        'layerCount ($layerCount) must be 1 for textures of type $textureType',
+      );
+    }
+    if (depth < 1 || (depth > 1 && textureType != TextureType.texture3D)) {
+      throw ArgumentError(
+        'depth ($depth) must be 1 for textures of type $textureType',
+      );
+    }
     if (textureType == TextureType.textureExternalOES) {
       throw UnsupportedError('External OES textures do not exist on WebGPU.');
     }
@@ -50,7 +63,7 @@ final class _WebGpuTexture extends Texture {
         'size': [width, height, sliceCount],
         'mipLevelCount': mipLevelCount,
         'sampleCount': sampleCount,
-        'dimension': '2d',
+        'dimension': textureType == TextureType.texture3D ? '3d' : '2d',
         'format': _format.name,
         'usage': usage,
       }),
@@ -82,12 +95,21 @@ final class _WebGpuTexture extends Texture {
   final bool enableShaderWriteUsage;
   @override
   final int mipLevelCount;
+  @override
+  final int layerCount;
+  @override
+  final int depth;
 
   @override
   bool get isValid => true;
 
   @override
-  int get sliceCount => textureType == TextureType.textureCube ? 6 : 1;
+  int get sliceCount => switch (textureType) {
+    TextureType.textureCube => 6,
+    TextureType.texture2DArray => layerCount,
+    TextureType.texture3D => depth,
+    _ => 1,
+  };
 
   @override
   int get bytesPerTexel => _format.compressed ? 0 : _format.bytesPerBlock;
@@ -96,7 +118,12 @@ final class _WebGpuTexture extends Texture {
   /// and depth only for a depth-stencil target sampled as a float.
   late final GPUTextureView sampledView = texture.createView(
     _obj({
-      'dimension': textureType == TextureType.textureCube ? 'cube' : '2d',
+      'dimension': switch (textureType) {
+        TextureType.textureCube => 'cube',
+        TextureType.texture2DArray => '2d-array',
+        TextureType.texture3D => '3d',
+        _ => '2d',
+      },
       if (_format.depth) 'aspect': 'depth-only',
     }),
   );
@@ -112,15 +139,25 @@ final class _WebGpuTexture extends Texture {
 
   /// A single-level, single-slice view, for a render attachment or a mip
   /// generation source.
-  GPUTextureView levelView(int mipLevel, {int slice = 0}) => texture.createView(
-    _obj({
-      'dimension': '2d',
-      'baseMipLevel': mipLevel,
-      'mipLevelCount': 1,
-      'baseArrayLayer': slice,
-      'arrayLayerCount': 1,
-    }),
-  );
+  ///
+  /// A 3D texture has no 2D view of one depth slice, so it cannot be a render
+  /// attachment here.
+  GPUTextureView levelView(int mipLevel, {int slice = 0}) {
+    if (textureType == TextureType.texture3D) {
+      throw UnsupportedError(
+        'A 3D texture cannot be rendered into on the WebGPU backend.',
+      );
+    }
+    return texture.createView(
+      _obj({
+        'dimension': '2d',
+        'baseMipLevel': mipLevel,
+        'mipLevelCount': 1,
+        'baseArrayLayer': slice,
+        'arrayLayerCount': 1,
+      }),
+    );
+  }
 
   int _mipExtent(int base, int mipLevel) {
     final size = base >> mipLevel;
@@ -153,8 +190,12 @@ final class _WebGpuTexture extends Texture {
         'mipLevel ($mipLevel) must be in the range [0, $mipLevelCount)',
       );
     }
-    if (slice < 0 || slice >= sliceCount) {
-      throw Exception('slice ($slice) must be in [0, $sliceCount)');
+    // A 3D texture's depth halves per level like its width and height.
+    final slices = textureType == TextureType.texture3D
+        ? _mipExtent(depth, mipLevel)
+        : sliceCount;
+    if (slice < 0 || slice >= slices) {
+      throw Exception('slice ($slice) must be in [0, $slices)');
     }
     final expectedSize = getMipLevelSizeInBytes(mipLevel);
     if (sourceBytes.lengthInBytes != expectedSize) {

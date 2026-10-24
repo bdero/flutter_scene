@@ -1,0 +1,5 @@
+{
+  "QuadVertex": {"type": "vertex", "file": "quad.vert"},
+  "ArrayFragment": {"type": "fragment", "file": "array.frag"},
+  "VolumeFragment": {"type": "fragment", "file": "volume.frag"}
+}

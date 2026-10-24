@@ -113,10 +113,26 @@ final class WebGlTexture extends Texture {
     this.enableRenderTargetUsage,
     this.enableShaderReadUsage,
     this.enableShaderWriteUsage,
-    this.mipLevelCount,
-  ) {
+    this.mipLevelCount, {
+    this.layerCount = 1,
+    this.depth = 1,
+  }) {
     if (sampleCount != 1 && sampleCount != 4) {
       throw Exception('Only a sample count of 1 or 4 is currently supported');
+    }
+    if (layerCount < 1 ||
+        (layerCount > 1 && textureType != TextureType.texture2DArray)) {
+      throw ArgumentError(
+        'layerCount ($layerCount) must be 1 for textures of type $textureType',
+      );
+    }
+    if (depth < 1 || (depth > 1 && textureType != TextureType.texture3D)) {
+      throw ArgumentError(
+        'depth ($depth) must be 1 for textures of type $textureType',
+      );
+    }
+    if (_isLayered && sampleCount != 1) {
+      throw ArgumentError('$textureType does not support multisampling');
     }
     final entry = _formatTable[format];
     if (entry == null) {
@@ -134,15 +150,27 @@ final class WebGlTexture extends Texture {
       // The setup unit keeps this bind from replacing a texture a render
       // pass bound for its next draw.
       _gpuContext._bindTextureForSetup(target, _texture);
-      // texStorage2D on the cube target allocates all six faces (and their
-      // mips). A cube must be square.
-      gl.texStorage2D(
-        target,
-        mipLevelCount,
-        entry.internalFormat,
-        width,
-        height,
-      );
+      if (_isLayered) {
+        // One allocation holds every layer (or depth slice) and its mips.
+        gl.texStorage3D(
+          target,
+          mipLevelCount,
+          entry.internalFormat,
+          width,
+          height,
+          textureType == TextureType.texture3D ? depth : layerCount,
+        );
+      } else {
+        // texStorage2D on the cube target allocates all six faces (and their
+        // mips). A cube must be square.
+        gl.texStorage2D(
+          target,
+          mipLevelCount,
+          entry.internalFormat,
+          width,
+          height,
+        );
+      }
       // Sensible default sampler state for sampling. Pipelines override
       // these per `bindTexture` later via sampler objects.
       gl.texParameteri(
@@ -167,6 +195,13 @@ final class WebGlTexture extends Texture {
         web.WebGL2RenderingContext.TEXTURE_WRAP_T,
         web.WebGL2RenderingContext.CLAMP_TO_EDGE,
       );
+      if (textureType == TextureType.texture3D) {
+        gl.texParameteri(
+          target,
+          web.WebGL2RenderingContext.TEXTURE_WRAP_R,
+          web.WebGL2RenderingContext.CLAMP_TO_EDGE,
+        );
+      }
     } else {
       // MSAA. We use a renderbuffer for color storage; bindable as an FBO
       // attachment but not directly sampleable. Resolve to a sibling
@@ -224,6 +259,16 @@ final class WebGlTexture extends Texture {
   final bool enableShaderWriteUsage;
   @override
   final int mipLevelCount;
+  @override
+  final int layerCount;
+  @override
+  final int depth;
+
+  /// Whether this texture is allocated with `texStorage3D` and addressed by
+  /// layer or depth slice: a 2D array or a 3D texture.
+  bool get _isLayered =>
+      textureType == TextureType.texture2DArray ||
+      textureType == TextureType.texture3D;
 
   // Sampler state last applied to this texture (GL sampler parameters are
   // per-texture-object state). Lets RenderPass.bindTexture skip redundant
@@ -232,6 +277,7 @@ final class WebGlTexture extends Texture {
   int _lastMagFilter = -1;
   int _lastWrapS = -1;
   int _lastWrapT = -1;
+  int _lastWrapR = -1;
   double _lastAnisotropy = -1;
 
   late final _GlFormat _glFormat;
@@ -249,10 +295,13 @@ final class WebGlTexture extends Texture {
   /// Internal: GL renderbuffer (MSAA) or null for single-sample.
   web.WebGLRenderbuffer? get glRenderbuffer => _renderbuffer;
 
-  /// Internal: the GL texture target for this texture (2D or cube map).
-  int get glTarget => textureType == TextureType.textureCube
-      ? web.WebGL2RenderingContext.TEXTURE_CUBE_MAP
-      : web.WebGL2RenderingContext.TEXTURE_2D;
+  /// Internal: the GL texture target for this texture.
+  int get glTarget => switch (textureType) {
+    TextureType.textureCube => web.WebGL2RenderingContext.TEXTURE_CUBE_MAP,
+    TextureType.texture2DArray => web.WebGL2RenderingContext.TEXTURE_2D_ARRAY,
+    TextureType.texture3D => web.WebGL2RenderingContext.TEXTURE_3D,
+    _ => web.WebGL2RenderingContext.TEXTURE_2D,
+  };
 
   /// Internal: the GL target a given [slice] addresses. For a cube each slice
   /// is a face (`TEXTURE_CUBE_MAP_POSITIVE_X + slice`); for 2D it is the 2D
@@ -262,7 +311,18 @@ final class WebGlTexture extends Texture {
       : web.WebGL2RenderingContext.TEXTURE_2D;
 
   @override
-  int get sliceCount => textureType == TextureType.textureCube ? 6 : 1;
+  int get sliceCount => switch (textureType) {
+    TextureType.textureCube => 6,
+    TextureType.texture2DArray => layerCount,
+    TextureType.texture3D => depth,
+    _ => 1,
+  };
+
+  /// The slices a [mipLevel] has. A 3D texture's depth halves per level like
+  /// its width and height; layers and cube faces do not.
+  int _sliceCountAt(int mipLevel) => textureType == TextureType.texture3D
+      ? (depth >> mipLevel).clamp(1, depth).toInt()
+      : sliceCount;
 
   @override
   int get bytesPerTexel => _glFormat.bytesPerTexel;
@@ -293,8 +353,9 @@ final class WebGlTexture extends Texture {
         'mipLevel ($mipLevel) must be in the range [0, $mipLevelCount)',
       );
     }
-    if (slice < 0 || slice >= sliceCount) {
-      throw Exception('slice ($slice) must be in [0, $sliceCount)');
+    final slices = _sliceCountAt(mipLevel);
+    if (slice < 0 || slice >= slices) {
+      throw Exception('slice ($slice) must be in [0, $slices)');
     }
     final expectedSize = getMipLevelSizeInBytes(mipLevel);
     if (sourceBytes.lengthInBytes != expectedSize) {
@@ -315,6 +376,21 @@ final class WebGlTexture extends Texture {
       final blocks = sourceBytes.buffer
           .asUint8List(sourceBytes.offsetInBytes, sourceBytes.lengthInBytes)
           .toJS;
+      if (_isLayered) {
+        gl.compressedTexSubImage3D(
+          glTarget,
+          mipLevel,
+          0,
+          0,
+          slice,
+          mipWidth,
+          mipHeight,
+          1,
+          _glFormat.internalFormat,
+          blocks,
+        );
+        return;
+      }
       gl.compressedTexSubImage2D(
         sliceTarget,
         mipLevel,
@@ -351,6 +427,23 @@ final class WebGlTexture extends Texture {
         view = sourceBytes.buffer
             .asUint8List(sourceBytes.offsetInBytes, sourceBytes.lengthInBytes)
             .toJS;
+    }
+    if (_isLayered) {
+      // A layer, or a depth slice, is one texel deep at its z offset.
+      gl.texSubImage3D(
+        glTarget,
+        mipLevel,
+        0,
+        0,
+        slice,
+        mipWidth,
+        mipHeight,
+        1,
+        _glFormat.format,
+        _glFormat.type,
+        view,
+      );
+      return;
     }
     gl.texSubImage2D(
       sliceTarget,

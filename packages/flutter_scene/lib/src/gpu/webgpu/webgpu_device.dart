@@ -87,6 +87,10 @@ final class WebGpuDevice {
     'maxVertexAttributes',
     'maxVertexBuffers',
     'maxInterStageShaderVariables',
+    // Data textures size themselves to the device, through gpuLimits.
+    'maxTextureDimension2D',
+    'maxTextureDimension3D',
+    'maxTextureArrayLayers',
   ];
 
   /// Whether the device was created with [feature].

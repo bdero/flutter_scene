@@ -1,5 +1,8 @@
 ## 0.24.4
 
+* `Texture2DArray.fromLayers` and `Texture3D.fromVoxels` upload data textures, and `Texture2D.fromData` takes raw texels, in `r8`, `rg8`, `rgba8`, `r32Float`, `rgba16Float`, or `rgba32Float`. `.fmat` materials sample them through `sampler2DArray` and `sampler3D` parameters. 2D arrays work on every backend; 3D textures on WebGL2 and WebGPU only, since Flutter GPU has none (`Texture3D.isSupported`). A ray-marched MIP of a 256³ volume went from 33 ms to 3.7 ms a frame on an M1 Pro against the slices-in-an-atlas workaround.
+* `gpuLimits` (from `package:flutter_scene/gpu.dart`) reports the largest texture, array layer count, and 3D size, samplers per stage, and whether 32-bit floats filter, so data can be sized to the device.
+* `r8` and `rg8` textures whose rows are not a multiple of four bytes upload correctly on WebGL2. Their rows were read with a four-byte stride.
 * Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
 * Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
 * A billboard batch on a scaled node is no longer culled while still on screen.

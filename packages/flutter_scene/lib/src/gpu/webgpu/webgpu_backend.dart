@@ -16,6 +16,7 @@ import 'package:web/web.dart' as web;
 import '../../generated_assets/generated_asset_fetch_web.dart';
 import '../shared/encoded_image_types.dart';
 import '../shared/gpu_capabilities.dart';
+import '../shared/gpu_limits.dart';
 import '../shared/gpu_sample_types.dart';
 import '../shared/sidecar_hash.dart';
 import '../shared/shader_library_sources.dart';
@@ -118,6 +119,62 @@ final class _WebGpuBackend extends WebBackend {
 
   @override
   late final GpuHost host = _WebGpuHost(this);
+
+  @override
+  GpuLimits get limits => context.limits;
+
+  @override
+  Texture createTexture3D(
+    StorageMode storageMode,
+    int width,
+    int height,
+    int depth, {
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  }) => context.createTexture3D(
+    storageMode,
+    width,
+    height,
+    depth,
+    format: format,
+  );
+
+  /// WebGPU timestamp queries need the `timestamp-query` feature and a
+  /// resolve-and-map round trip; this times to `onSubmittedWorkDone` instead.
+  // TODO(gpu-timing): timestamp queries where the device has the feature.
+  @override
+  Future<GpuWorkTiming> timeGpuWork(
+    void Function(CommandBuffer Function() newCommandBuffer) encode,
+  ) {
+    final commandBuffers = <CommandBuffer>[];
+    encode(() {
+      final commandBuffer = context.createCommandBuffer();
+      commandBuffers.add(commandBuffer);
+      return commandBuffer;
+    });
+    if (commandBuffers.isEmpty) {
+      commandBuffers.add(context.createCommandBuffer());
+    }
+    final completer = Completer<GpuWorkTiming>();
+    final stopwatch = Stopwatch()..start();
+    for (final commandBuffer in commandBuffers.take(
+      commandBuffers.length - 1,
+    )) {
+      commandBuffer.submit();
+    }
+    commandBuffers.last.submit(
+      completionCallback: (status) {
+        stopwatch.stop();
+        if (status == CompletionStatus.error) {
+          completer.completeError(StateError('GPU work failed to complete.'));
+        } else {
+          completer.complete(
+            GpuWorkTiming(stopwatch.elapsed, GpuTimingSource.completion),
+          );
+        }
+      },
+    );
+    return completer.future;
+  }
 
   @override
   Texture textureFromImage(GpuContext gpuContext, ui.Image image) =>
