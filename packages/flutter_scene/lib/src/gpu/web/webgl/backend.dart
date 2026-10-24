@@ -14,6 +14,29 @@ final class _WebGlBackend extends WebBackend {
   GpuHost get host => webGlHost;
 
   @override
+  GpuLimits get limits => webGlContext.limits;
+
+  @override
+  Texture createTexture3D(
+    StorageMode storageMode,
+    int width,
+    int height,
+    int depth, {
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  }) => webGlContext.createTexture3D(
+    storageMode,
+    width,
+    height,
+    depth,
+    format: format,
+  );
+
+  @override
+  Future<GpuWorkTiming> timeGpuWork(
+    void Function(CommandBuffer Function() newCommandBuffer) encode,
+  ) => webGlContext.timeGpuWork(encode);
+
+  @override
   Texture textureFromImage(GpuContext gpuContext, ui.Image image) =>
       WebGlTexture.fromImage();
 

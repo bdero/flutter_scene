@@ -331,6 +331,8 @@ export 'src/texture/external_texture.dart'
     show ExternalTexture, ExternalTextureSampling, ExternalTextureUpdate;
 export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
+export 'src/texture/data_texture.dart'
+    show Texture2DArray, Texture3D, dataTextureBytesPerTexel;
 export 'src/memory_pressure.dart'
     show releaseTransientRenderTargets, releaseRenderTargetsOnMemoryPressure;
 export 'src/memory_report.dart'

@@ -21,6 +21,7 @@ workspace:
   - examples/flutter_gpu_shim_smoke
   - examples/smoke_render
   - examples/stress_bench
+  - examples/volume_bench
   - examples/editor_example
   - apps/flutter_scene_editor_app
 

@@ -605,10 +605,7 @@ String? _fragmentKeepAliveTerm(
   // fetches cost nothing at runtime.
   final terms = <String>[
     if (uniforms.isNotEmpty) _paramsKeepAliveScalar(uniforms.first),
-    for (final p in samplers)
-      p.type == FmatType.samplerCube
-          ? 'texture(${p.name}, vec3(0.0, 0.0, 1.0)).x'
-          : 'texture(${p.name}, vec2(0.0)).x',
+    for (final p in samplers) _samplerKeepAliveFetch(p),
     if (material.shadingModel == FmatShadingModel.unlit &&
         material.engineInputs.isNotEmpty)
       'frag_info.scene_inputs.x',
@@ -622,6 +619,15 @@ String? _fragmentKeepAliveTerm(
   }
   return '(${terms.join(' + ')})';
 }
+
+/// A fetch from sampler [p] that keeps it in the compiled shader, with the
+/// coordinate its sampler type takes.
+String _samplerKeepAliveFetch(FmatParameter p) => switch (p.type) {
+  FmatType.samplerCube => 'texture(${p.name}, vec3(0.0, 0.0, 1.0)).x',
+  FmatType.sampler2DArray ||
+  FmatType.sampler3D => 'texture(${p.name}, vec3(0.0)).x',
+  _ => 'texture(${p.name}, vec2(0.0)).x',
+};
 
 /// Emits the vertex-shader GLSL for each variant of [material], keyed by the
 /// shader-bundle entry name. Empty when the material has no `vertex { }` block

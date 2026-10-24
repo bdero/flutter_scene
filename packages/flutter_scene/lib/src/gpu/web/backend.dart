@@ -22,6 +22,23 @@ abstract base class WebBackend {
   GpuContext get context;
   GpuHost get host;
 
+  /// The device's texture limits; see [gpuLimits].
+  GpuLimits get limits;
+
+  /// A [width] x [height] x [depth] texture of [TextureType.texture3D].
+  Texture createTexture3D(
+    StorageMode storageMode,
+    int width,
+    int height,
+    int depth, {
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  });
+
+  /// See [timeGpuWork].
+  Future<GpuWorkTiming> timeGpuWork(
+    void Function(CommandBuffer Function() newCommandBuffer) encode,
+  );
+
   Texture textureFromImage(GpuContext gpuContext, ui.Image image);
 
   Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName);
@@ -73,6 +90,36 @@ GpuContext get gpuContext => _backend.context;
 /// The active backend's host integration.
 GpuHost get gpuHost => _backend.host;
 
+/// The active device's texture limits. Needs [initializeGpuBackend] to have
+/// completed.
+GpuLimits get gpuLimits => _backend.limits;
+
+/// Creates a 3D texture of [width] x [height] x [depth] texels, uploaded one
+/// depth slice at a time through [Texture.overwrite]. Check
+/// [GpuLimits.supports3DTextures] first; native backends have none.
+Texture createTexture3D(
+  StorageMode storageMode,
+  int width,
+  int height,
+  int depth, {
+  PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+}) =>
+    _backend.createTexture3D(storageMode, width, height, depth, format: format);
+
+/// Whether [texture] is a 3D texture.
+bool isTexture3D(Texture texture) =>
+    texture.textureType == TextureType.texture3D;
+
+/// The depth of a 3D [texture], or 1 for every other kind.
+int textureDepth(Texture texture) => texture.depth;
+
+/// Records work with [encode] into the command buffers it opens through its
+/// argument, submits them in order, and completes with how long the GPU took
+/// to finish them, from the GPU's own timer where the browser exposes one.
+Future<GpuWorkTiming> timeGpuWork(
+  void Function(CommandBuffer Function() newCommandBuffer) encode,
+) => _backend.timeGpuWork(encode);
+
 abstract base class GpuContext {
   PixelFormat get defaultColorFormat;
   PixelFormat get defaultStencilFormat;
@@ -81,6 +128,7 @@ abstract base class GpuContext {
   bool get doesSupportOffscreenMSAA;
   bool get doesSupportFramebufferRenderMipmap;
   bool get doesSupportManuallyMippedTextures;
+  bool get doesSupportTextureArrays;
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes);
   DeviceBuffer createDeviceBufferWithCopy(ByteData data);
   HostBuffer createHostBuffer({
@@ -97,6 +145,7 @@ abstract base class GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   });
   bool supportsTextureCompression(TextureCompressionFamily family);
   CommandBuffer createCommandBuffer();
@@ -147,7 +196,17 @@ abstract base class Texture {
   bool get enableShaderReadUsage;
   bool get enableShaderWriteUsage;
   int get mipLevelCount;
+
+  /// The layers of a [TextureType.texture2DArray]; 1 for every other type.
+  int get layerCount;
+
+  /// The depth of a [TextureType.texture3D]; 1 for every other type. Web
+  /// only, read it through [textureDepth] in code shared with native.
+  int get depth;
   bool get isValid;
+
+  /// The slices [overwrite] addresses: 6 cube faces, the layers of an array,
+  /// or the depth slices of a 3D texture.
   int get sliceCount;
   int get bytesPerTexel;
   int getMipLevelSizeInBytes(int mipLevel);

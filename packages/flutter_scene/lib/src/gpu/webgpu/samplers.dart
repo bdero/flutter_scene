@@ -42,7 +42,9 @@ final class _SamplerCache {
     _obj({
       'addressModeU': _addressMode(SamplerAddressMode.values[(key >> 3) & 3]),
       'addressModeV': _addressMode(SamplerAddressMode.values[(key >> 5) & 3]),
-      'addressModeW': 'clamp-to-edge',
+      // SamplerOptions has no depth address mode, so a 3D texture wraps along
+      // depth as it does along width, as on WebGL2.
+      'addressModeW': _addressMode(SamplerAddressMode.values[(key >> 3) & 3]),
       'minFilter': MinMagFilter.values[key & 1].name,
       'magFilter': MinMagFilter.values[(key >> 1) & 1].name,
       'mipmapFilter': MipFilter.values[(key >> 2) & 1].name,

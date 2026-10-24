@@ -29,6 +29,10 @@ final class WebGlContext extends GpuContext {
       );
     }
     _gl = gl;
+    // Uploads are tightly packed, as flutter_gpu takes them. GL's default
+    // row alignment of 4 would skew any r8 or rg8 texture whose rows are not
+    // a multiple of four bytes.
+    _gl.pixelStorei(web.WebGL2RenderingContext.UNPACK_ALIGNMENT, 1);
     // Cache extensions we rely on for later phases.
     _gl.getExtension('EXT_color_buffer_float');
     _gl.getExtension('OES_texture_float_linear');
@@ -104,6 +108,11 @@ final class WebGlContext extends GpuContext {
   // mipmap min filters sample correctly.
   @override
   bool get doesSupportManuallyMippedTextures => true;
+
+  // TEXTURE_2D_ARRAY is core WebGL2, and the GLSL ES 3.00 bundles declare
+  // sampler2DArray as written.
+  @override
+  bool get doesSupportTextureArrays => true;
 
   final Map<TextureCompressionFamily, bool> _compressionSupport = {};
 
@@ -221,12 +230,18 @@ final class WebGlContext extends GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   }) {
     final resolvedType =
         textureType ??
         (sampleCount == 1
             ? TextureType.texture2D
             : TextureType.texture2DMultisample);
+    if (resolvedType == TextureType.texture3D) {
+      throw ArgumentError(
+        'Create a 3D texture with createTexture3D, which takes its depth.',
+      );
+    }
     return WebGlTexture._initialize(
       this,
       storageMode,
@@ -239,7 +254,126 @@ final class WebGlContext extends GpuContext {
       enableShaderReadUsage,
       enableShaderWriteUsage,
       mipLevelCount,
+      layerCount: layerCount,
     );
+  }
+
+  /// A [width] x [height] x [depth] 3D texture, sampled through `sampler3D`.
+  Texture createTexture3D(
+    StorageMode storageMode,
+    int width,
+    int height,
+    int depth, {
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  }) {
+    final limit = max3DTextureSize;
+    if (width > limit || height > limit || depth > limit) {
+      throw ArgumentError(
+        'A ${width}x${height}x$depth 3D texture exceeds this device\'s '
+        'MAX_3D_TEXTURE_SIZE ($limit).',
+      );
+    }
+    return WebGlTexture._initialize(
+      this,
+      storageMode,
+      format,
+      width,
+      height,
+      1,
+      TextureType.texture3D,
+      false,
+      true,
+      false,
+      1,
+      depth: depth,
+    );
+  }
+
+  /// MAX_3D_TEXTURE_SIZE; WebGL2 guarantees at least 256.
+  late final int max3DTextureSize =
+      _integerParameter(web.WebGL2RenderingContext.MAX_3D_TEXTURE_SIZE) ?? 256;
+
+  /// The device's texture limits, read once from the context.
+  late final GpuLimits limits = GpuLimits(
+    maxTextureSize: _maxTextureSize,
+    maxArrayLayers: _integerParameter(
+      web.WebGL2RenderingContext.MAX_ARRAY_TEXTURE_LAYERS,
+    ),
+    max3DTextureSize: max3DTextureSize,
+    maxSamplersPerStage: _integerParameter(
+      web.WebGL2RenderingContext.MAX_TEXTURE_IMAGE_UNITS,
+    ),
+    supportsTextureArrays: true,
+    supports3DTextures: true,
+    // Enabled at context creation when the browser has it.
+    supportsFloat32Filtering:
+        _gl.getExtension('OES_texture_float_linear') != null,
+  );
+
+  /// EXT_disjoint_timer_query_webgl2, or null where the browser withholds it.
+  late final JSObject? _timerQuery = _gl.getExtension(
+    'EXT_disjoint_timer_query_webgl2',
+  );
+
+  /// See [timeGpuWork]. Uses the GPU timer where the browser exposes one,
+  /// otherwise blocks on `finish` once the work is submitted.
+  Future<GpuWorkTiming> timeGpuWork(
+    void Function(CommandBuffer Function() newCommandBuffer) encode,
+  ) async {
+    // The shim issues GL calls as passes encode, so the timed range brackets
+    // encoding rather than submission.
+    if (_timerQuery != null) {
+      // TIME_ELAPSED_EXT; GPU_DISJOINT_EXT; QUERY_RESULT(_AVAILABLE) are core.
+      const timeElapsed = 0x88BF;
+      const gpuDisjoint = 0x8FBB;
+      final query = _gl.createQuery()!;
+      _gl.beginQuery(timeElapsed, query);
+      _encodeAndSubmit(encode);
+      _gl.endQuery(timeElapsed);
+      _gl.flush();
+      // Results arrive a frame or more later; poll without blocking.
+      while (!(_gl.getQueryParameter(
+                query,
+                web.WebGL2RenderingContext.QUERY_RESULT_AVAILABLE,
+              )
+              as JSBoolean)
+          .toDart) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      final disjoint = (_gl.getParameter(gpuDisjoint) as JSBoolean?)?.toDart;
+      final nanos =
+          (_gl.getQueryParameter(query, web.WebGL2RenderingContext.QUERY_RESULT)
+                  as JSNumber)
+              .toDartDouble;
+      _gl.deleteQuery(query);
+      if (disjoint != true) {
+        return GpuWorkTiming(
+          Duration(microseconds: (nanos / 1000).round()),
+          GpuTimingSource.gpuTimer,
+        );
+      }
+      // A disjoint event (a clock change, a context switch) voids the
+      // result; fall through and time the work again by blocking.
+    }
+    final stopwatch = Stopwatch()..start();
+    _encodeAndSubmit(encode);
+    _gl.finish();
+    stopwatch.stop();
+    return GpuWorkTiming(stopwatch.elapsed, GpuTimingSource.blockingWait);
+  }
+
+  void _encodeAndSubmit(
+    void Function(CommandBuffer Function() newCommandBuffer) encode,
+  ) {
+    final commandBuffers = <CommandBuffer>[];
+    encode(() {
+      final commandBuffer = createCommandBuffer();
+      commandBuffers.add(commandBuffer);
+      return commandBuffer;
+    });
+    for (final commandBuffer in commandBuffers) {
+      commandBuffer.submit();
+    }
   }
 
   @override

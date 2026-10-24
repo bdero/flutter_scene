@@ -38,14 +38,19 @@ final class _WebGpuContext extends GpuContext {
   /// renderer never binds; GL samples an unbound unit the same way.
   _WebGpuTexture blankTexture(String viewDimension) =>
       _blankTextures[viewDimension] ??= () {
-        final cube = viewDimension == 'cube';
-        final texture = createTexture(
-          StorageMode.hostVisible,
-          1,
-          1,
-          textureType: cube ? TextureType.textureCube : TextureType.texture2D,
-          enableRenderTargetUsage: false,
-        );
+        final texture = viewDimension == '3d'
+            ? createTexture3D(StorageMode.hostVisible, 1, 1, 1)
+            : createTexture(
+                StorageMode.hostVisible,
+                1,
+                1,
+                textureType: switch (viewDimension) {
+                  'cube' => TextureType.textureCube,
+                  '2d-array' => TextureType.texture2DArray,
+                  _ => TextureType.texture2D,
+                },
+                enableRenderTargetUsage: false,
+              );
         for (var slice = 0; slice < texture.sliceCount; slice++) {
           texture.overwrite(ByteData(4)..setUint8(3, 255), slice: slice);
         }
@@ -122,6 +127,7 @@ final class _WebGpuContext extends GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   }) => _WebGpuTexture._(
     this,
     storageMode,
@@ -138,7 +144,54 @@ final class _WebGpuContext extends GpuContext {
     enableShaderReadUsage: enableShaderReadUsage,
     enableShaderWriteUsage: enableShaderWriteUsage,
     mipLevelCount: mipLevelCount,
+    layerCount: layerCount,
   );
+
+  /// A [width] x [height] x [depth] texture of [TextureType.texture3D].
+  _WebGpuTexture createTexture3D(
+    StorageMode storageMode,
+    int width,
+    int height,
+    int depth, {
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  }) => _WebGpuTexture._(
+    this,
+    storageMode,
+    width,
+    height,
+    format: format,
+    sampleCount: 1,
+    textureType: TextureType.texture3D,
+    enableRenderTargetUsage: false,
+    enableShaderReadUsage: true,
+    enableShaderWriteUsage: false,
+    mipLevelCount: 1,
+    depth: depth,
+  );
+
+  // Every WebGPU device has 2D arrays.
+  @override
+  bool get doesSupportTextureArrays => true;
+
+  /// The device's texture limits, as granted at device creation.
+  late final GpuLimits limits = () {
+    int? limit(String name) {
+      final value = device.device.limits.getProperty<JSAny?>(name.toJS);
+      return value != null && value.isA<JSNumber>()
+          ? (value as JSNumber).toDartInt
+          : null;
+    }
+
+    return GpuLimits(
+      maxTextureSize: limit('maxTextureDimension2D'),
+      maxArrayLayers: limit('maxTextureArrayLayers'),
+      max3DTextureSize: limit('maxTextureDimension3D'),
+      maxSamplersPerStage: limit('maxSamplersPerShaderStage'),
+      supportsTextureArrays: true,
+      supports3DTextures: true,
+      supportsFloat32Filtering: float32Filterable,
+    );
+  }();
 
   @override
   bool supportsTextureCompression(TextureCompressionFamily family) =>

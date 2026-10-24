@@ -108,7 +108,14 @@ enum FmatType {
   vec4('vec4', 16),
   mat4('mat4', 64),
   sampler2d('sampler2D', 0),
-  samplerCube('samplerCube', 0);
+  samplerCube('samplerCube', 0),
+
+  /// Layers of one size, sampled with `texture(name, vec3(uv, layer))`.
+  sampler2DArray('sampler2DArray', 0),
+
+  /// A volume, sampled with `texture(name, uvw)`. Only the web backends have
+  /// 3D textures; see `GpuLimits.supports3DTextures`.
+  sampler3D('sampler3D', 0);
 
   const FmatType(this.glslType, this.componentBytes);
 
@@ -120,7 +127,11 @@ enum FmatType {
   /// informational only.
   final int componentBytes;
 
-  bool get isSampler => this == sampler2d || this == samplerCube;
+  bool get isSampler =>
+      this == sampler2d ||
+      this == samplerCube ||
+      this == sampler2DArray ||
+      this == sampler3D;
 
   /// The number of scalar components, or 0 for samplers (mat4 counts as 16).
   int get componentCount => switch (this) {
@@ -129,7 +140,7 @@ enum FmatType {
     vec3 => 3,
     vec4 => 4,
     mat4 => 16,
-    sampler2d || samplerCube => 0,
+    sampler2d || samplerCube || sampler2DArray || sampler3D => 0,
   };
 
   static FmatType? fromToken(String token) {

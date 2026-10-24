@@ -1,0 +1,46 @@
+{
+    "FullscreenVertex": {
+        "type": "vertex",
+        "file": "shaders/fullscreen.vert"
+    },
+    "AtlasResliceFragment": {
+        "type": "fragment",
+        "file": "shaders/atlas_reslice.frag"
+    },
+    "AtlasMipFragment": {
+        "type": "fragment",
+        "file": "shaders/atlas_mip.frag"
+    },
+    "ArrayRResliceFragment": {
+        "type": "fragment",
+        "file": "shaders/array_r_reslice.frag"
+    },
+    "ArrayRMipFragment": {
+        "type": "fragment",
+        "file": "shaders/array_r_mip.frag"
+    },
+    "ArrayRgResliceFragment": {
+        "type": "fragment",
+        "file": "shaders/array_rg_reslice.frag"
+    },
+    "ArrayRgMipFragment": {
+        "type": "fragment",
+        "file": "shaders/array_rg_mip.frag"
+    },
+    "VolumeRResliceFragment": {
+        "type": "fragment",
+        "file": "shaders/volume_r_reslice.frag"
+    },
+    "VolumeRMipFragment": {
+        "type": "fragment",
+        "file": "shaders/volume_r_mip.frag"
+    },
+    "VolumeRgResliceFragment": {
+        "type": "fragment",
+        "file": "shaders/volume_rg_reslice.frag"
+    },
+    "VolumeRgMipFragment": {
+        "type": "fragment",
+        "file": "shaders/volume_rg_mip.frag"
+    }
+}

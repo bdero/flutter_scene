@@ -15,6 +15,7 @@ import '../../../generated_assets/generated_asset_fetch_web.dart';
 import '../../shared/encoded_image_types.dart';
 import '../../shared/glsl_transpile.dart';
 import '../../shared/gpu_capabilities.dart';
+import '../../shared/gpu_limits.dart';
 import '../../shared/shader_library_sources.dart';
 import '../_gpu.dart';
 import '../shader_bundle_generated.dart' as fb;
