@@ -25,6 +25,14 @@ mat3 CotangentFrame(vec3 normal, highp vec3 view_vector, highp vec2 uv) {
   highp vec3 T = view_y_perp * d_uv_x.x + view_x_perp * d_uv_y.x;
   highp vec3 B = view_y_perp * d_uv_x.y + view_x_perp * d_uv_y.y;
 
+  // Divide out the sign of the screen's orientation, then point B the way a
+  // supplied tangent's bitangent does: along -V on a front face, since glTF
+  // normal maps are +Y up and V grows down.
+  highp float orientation =
+      dot(cross(d_view_x, d_view_y), normal) < 0.0 ? -1.0 : 1.0;
+  T *= orientation;
+  B *= gl_FrontFacing ? -orientation : orientation;
+
   // Construct a scale-invariant frame. An edge-on card drives T and B toward
   // zero; if the squared length underflows to zero (or a denormal the GPU
   // flushes to zero inside inversesqrt) the reciprocal is +Inf and 0 * Inf is a

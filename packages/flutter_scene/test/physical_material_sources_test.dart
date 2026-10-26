@@ -834,6 +834,18 @@ void main() {
     );
   });
 
+  test('derived tangent frames orient like supplied tangents', () {
+    // Without both, a mesh with no tangents reads one normal-map channel
+    // inverted (NormalTangentTest's flipped Y).
+    final normals = File('shaders/normals.glsl').readAsStringSync();
+
+    expect(normals, contains('dot(cross(d_view_x, d_view_y), normal) < 0.0'));
+    expect(
+      normals,
+      contains('B *= gl_FrontFacing ? -orientation : orientation;'),
+    );
+  });
+
   test('vertex bodies carry normals by the inverse-transpose', () {
     final helper = File('shaders/normal_transform.glsl').readAsStringSync();
     final unskinned = File(
