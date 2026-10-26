@@ -49,9 +49,8 @@ class TextureTransform {
   /// Per-axis UV scale.
   Vector2 scale;
 
-  /// Rotation in radians, counter-clockwise in UV space as in glTF's
-  /// `KHR_texture_transform`. The V axis points down, so the texture turns
-  /// clockwise on the surface.
+  /// Rotation in radians, turning UVs counter-clockwise as glTF's
+  /// `KHR_texture_transform` does, so the texture turns clockwise.
   double rotation;
 
   /// Whether this transform leaves UV coordinates unchanged.
