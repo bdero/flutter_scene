@@ -285,11 +285,7 @@ class ImmediatePoolTransients implements FrameTransients {
     _onBeforeSubmit(_tracker.latestSubmission);
     _frame++;
     final completed = _tracker.completedThrough;
-    _pooled.removeWhere(
-      (block) =>
-          block.stamp <= completed &&
-          _frame - block.lastUsed > kTransientIdleFrames,
-    );
+    _pooled.removeWhere((block) => block.retireIfIdle(completed, _frame));
   }
 }
 
@@ -381,11 +377,7 @@ class TransientArena implements FrameTransients {
     _open.clear();
     _frame++;
     final completed = _tracker.completedThrough;
-    _sealed.removeWhere(
-      (block) =>
-          block.stamp <= completed &&
-          _frame - block.lastUsed > kTransientIdleFrames,
-    );
+    _sealed.removeWhere((block) => block.retireIfIdle(completed, _frame));
   }
 
   /// Decides where an emplacement of [length] lands: at the aligned offset
@@ -535,6 +527,17 @@ class _TransientBlock {
 
   final gpu.DeviceBuffer device;
   final ByteData staging;
+
+  /// Releases the device buffer when no submitted work still reads it and it
+  /// has sat unused past [kTransientIdleFrames], returning whether it did.
+  bool retireIfIdle(int completed, int frame) {
+    if (stamp > completed || frame - lastUsed <= kTransientIdleFrames) {
+      return false;
+    }
+    gpu.gpuHost.releaseBuffer(device);
+    return true;
+  }
+
   final Uint8List _stagingBytes;
   final int length;
   final bool oversize;

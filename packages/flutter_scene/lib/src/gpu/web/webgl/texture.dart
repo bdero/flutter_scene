@@ -243,6 +243,18 @@ final class WebGlTexture extends Texture {
   bool get isValid => _valid;
   bool get isDepthOrStencil => _isDepthOrStencilFormat(format);
 
+  /// Deletes the GL objects, and every cached framebuffer attaching them.
+  void _release() {
+    if (!_valid) return;
+    _valid = false;
+    _gpuContext._forgetFramebuffersOf(this);
+    final gl = _gpuContext._gl;
+    if (_texture != null) gl.deleteTexture(_texture);
+    if (_renderbuffer != null) gl.deleteRenderbuffer(_renderbuffer);
+    _texture = null;
+    _renderbuffer = null;
+  }
+
   /// Internal: GL texture object (single-sample) or null for MSAA.
   web.WebGLTexture? get glTexture => _texture;
 

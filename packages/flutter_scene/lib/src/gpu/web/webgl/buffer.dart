@@ -102,6 +102,18 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   @override
   bool get isValid => _valid;
 
+  /// Deletes the GL buffers. A cached VAO that captured one keeps it alive
+  /// in the driver until that VAO is evicted.
+  void _release() {
+    if (!_valid) return;
+    _valid = false;
+    final gl = _gpuContext._gl;
+    if (_glElementBuffer != null) gl.deleteBuffer(_glElementBuffer);
+    if (_glOtherBuffer != null) gl.deleteBuffer(_glOtherBuffer);
+    _glElementBuffer = null;
+    _glOtherBuffer = null;
+  }
+
   int get _usage => storageMode == StorageMode.devicePrivate
       ? web.WebGL2RenderingContext.STATIC_DRAW
       : web.WebGL2RenderingContext.DYNAMIC_DRAW;
@@ -116,6 +128,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   /// dedicated element-typed buffer; all other targets share a non-element
   /// buffer.
   web.WebGLBuffer _bindForTarget(int target) {
+    assert(_valid, 'A released DeviceBuffer was bound.');
     final gl = _gpuContext._gl;
     final isElement = target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER;
     var buffer = isElement ? _glElementBuffer : _glOtherBuffer;

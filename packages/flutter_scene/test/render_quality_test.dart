@@ -43,7 +43,7 @@ void main() {
     expect(c.scale, closeTo(0.85 * 0.85, 1e-9));
   });
 
-  test('the scale bottoms out, then the tier steps down and scale resets', () {
+  test('the scale bottoms out, then the tier steps down at that scale', () {
     final c = controller(min: 0.8);
     feed(c, 1 / 30, window);
     expect(c.scale, closeTo(0.85, 1e-9));
@@ -51,16 +51,13 @@ void main() {
     expect(c.scale, 0.8);
     feed(c, 1 / 30, window);
     expect(c.tierSteps, 1);
-    expect(c.scale, 1.0);
+    expect(c.scale, 0.8, reason: 'a tier step keeps the output size');
     expect(c.effectiveTier(RenderQualityTier.high), RenderQualityTier.medium);
-    // The scale has to bottom out again before the next tier step.
-    feed(c, 1 / 30, window * 2);
-    expect(c.tierSteps, 1);
-    expect(c.scale, 0.8);
     feed(c, 1 / 30, window);
     expect(c.tierSteps, 2);
     feed(c, 1 / 30, window * 6);
     expect(c.tierSteps, 2, reason: 'never below the lowest tier');
+    expect(c.scale, 0.8);
     expect(c.effectiveTier(RenderQualityTier.high), RenderQualityTier.low);
   });
 
@@ -116,11 +113,56 @@ void main() {
     expect(c.scale, 1.0);
   });
 
-  test('frames near the refresh period hold steady', () {
-    // Vsync-capped frames sit at the target; that is neither slow nor fast.
+  test('frames at the refresh period recover', () {
+    // Vsync caps frames at the target, so keeping it is the only headroom
+    // signal there is.
     final c = controller();
     feed(c, 1 / 30, window);
-    feed(c, 1 / 60, window * 20);
+    feed(c, 1 / 60, window * (AdaptiveQualityController.cooldownWindows + 1));
+    expect(c.scale, 1.0);
+  });
+
+  test('frames between budget and overrun hold steady', () {
+    final c = controller();
+    feed(c, 1 / 30, window);
+    feed(c, 1.08 / 60, window * 20);
     expect(c.scale, closeTo(0.85, 1e-9));
+  });
+
+  test('a step up that overruns at once backs off the next probe', () {
+    // A load that fits 0.85 but overruns at full scale: every probe up fails.
+    final c = controller();
+    final stepUps = <int>[];
+    for (var w = 0; w < 400; w++) {
+      final before = c.scale;
+      feed(c, c.scale > 0.9 ? 1 / 30 : 1 / 60, window);
+      if (c.scale > before) stepUps.add(w);
+    }
+    final gaps = [
+      for (var i = 1; i < stepUps.length; i++) stepUps[i] - stepUps[i - 1],
+    ];
+    expect(gaps.length, greaterThan(2));
+    expect(gaps[1], greaterThan(gaps[0]));
+    expect(gaps[2], greaterThan(gaps[1]));
+    expect(
+      gaps.last,
+      lessThanOrEqualTo(AdaptiveQualityController.maxCooldownWindows + 2),
+    );
+    expect(stepUps.length, lessThan(10), reason: 'the size settles');
+  });
+
+  test('a step up that holds resets the backoff', () {
+    final c = controller();
+    // Two failed probes grow the backoff.
+    for (var w = 0; w < 30; w++) {
+      feed(c, c.scale > 0.9 ? 1 / 30 : 1 / 60, window);
+    }
+    // The load lifts; the next probe holds and recovery is prompt again.
+    feed(c, 1 / 60, window * AdaptiveQualityController.maxCooldownWindows);
+    expect(c.scale, 1.0);
+    feed(c, 1 / 30, window);
+    expect(c.scale, closeTo(0.85, 1e-9));
+    feed(c, 1 / 60, window * (AdaptiveQualityController.cooldownWindows + 1));
+    expect(c.scale, 1.0);
   });
 }

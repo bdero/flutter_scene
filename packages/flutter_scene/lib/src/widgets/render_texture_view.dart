@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -56,6 +58,24 @@ class RenderTextureView extends StatefulWidget {
 }
 
 class _RenderTextureViewState extends State<RenderTextureView> {
+  ui.Image? _image;
+  gpu.Texture? _imageTexture;
+  bool _imageStale = true;
+
+  /// [texture] as an image, made again only after the target re-renders.
+  ui.Image _imageOf(gpu.Texture texture) {
+    final cached = _image;
+    if (cached != null && !_imageStale && identical(texture, _imageTexture)) {
+      return cached;
+    }
+    // RawImage keeps its own clone, made when the previous build displayed
+    // this one, so ours can go now rather than when it is collected.
+    cached?.dispose();
+    _imageStale = false;
+    _imageTexture = texture;
+    return _image = gpu.gpuHost.textureToImage(texture);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -74,6 +94,8 @@ class _RenderTextureViewState extends State<RenderTextureView> {
   @override
   void dispose() {
     widget.renderTexture.removeListener(_onUpdated);
+    _image?.dispose();
+    _image = null;
     super.dispose();
   }
 
@@ -81,6 +103,7 @@ class _RenderTextureViewState extends State<RenderTextureView> {
     if (!mounted) {
       return;
     }
+    _imageStale = true;
     // The target re-renders inside the scene's paint, so this notification
     // usually arrives mid-frame, where setState is not allowed. Defer the
     // rebuild to the end of the frame; the new image shows next frame.
@@ -118,7 +141,7 @@ class _RenderTextureViewState extends State<RenderTextureView> {
           child: texture == null
               ? null
               : RawImage(
-                  image: gpu.gpuHost.textureToImage(texture),
+                  image: _imageOf(texture),
                   fit: widget.fit,
                   filterQuality: widget.filterQuality,
                 ),

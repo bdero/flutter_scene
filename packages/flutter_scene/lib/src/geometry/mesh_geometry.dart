@@ -692,6 +692,10 @@ class MeshGeometry extends UnskinnedGeometry {
     if (_indexBuffer == null ||
         indices.length > _indexCapacity ||
         indexType != _indexType) {
+      // TODO(gpu-release): release the outgrown buffer through
+      // gpuHost.releaseBuffer once nothing unsubmitted can still reference it
+      // (WebGPU rejects a submit that reads a destroyed buffer). It waits for
+      // the collector meanwhile.
       _indexCapacity = nextBufferCapacity(indices.length);
       _indexType = indexType;
       // Host-visible for the same reason as the attribute streams (see
@@ -933,6 +937,8 @@ class _RingBufferStream {
     int dirtyEnd,
   ) {
     if (_buffers.isEmpty || vertexCount > _capacityVertices) {
+      // TODO(gpu-release): release the outgrown ring as the index buffer
+      // above would.
       _capacityVertices = nextBufferCapacity(vertexCount);
       _buffers
         ..clear()
