@@ -21,6 +21,10 @@ class GpuHost {
 
   Future<ui.Image> present(Texture texture, {bool transferOwnership = false}) =>
       _stub();
+
+  void releaseTexture(Texture texture) => _stub();
+
+  void releaseBuffer(DeviceBuffer buffer) => _stub();
 }
 
 /// The active backend's host integration.

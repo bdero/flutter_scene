@@ -62,7 +62,16 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
   final int sizeInBytes;
 
   @override
-  bool get isValid => true;
+  bool get isValid => !_released;
+
+  bool _released = false;
+
+  void _release() {
+    if (_released) return;
+    _released = true;
+    _bufferFinalizer.detach(this);
+    buffer.destroy();
+  }
 
   @override
   bool overwrite(ByteData sourceBytes, {int destinationOffsetInBytes = 0}) {

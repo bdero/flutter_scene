@@ -262,6 +262,16 @@ abstract base class GpuHost {
 
   /// Presents [texture] through the backend's own offscreen canvas path.
   Future<ui.Image> present(Texture texture, {bool transferOwnership = false});
+
+  /// Frees [texture]'s GPU memory now instead of when it is collected.
+  ///
+  /// [texture] must not be used again. Work already submitted is unaffected.
+  void releaseTexture(Texture texture);
+
+  /// Frees [buffer]'s GPU memory now instead of when it is collected.
+  ///
+  /// [buffer] must not be used again. Work already submitted is unaffected.
+  void releaseBuffer(DeviceBuffer buffer);
 }
 
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) =>

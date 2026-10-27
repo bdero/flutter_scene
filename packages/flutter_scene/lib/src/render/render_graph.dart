@@ -294,13 +294,20 @@ class TransientTexturePool {
     return texture;
   }
 
-  /// Drops all cached textures. The next [acquire] for any descriptor
+  /// Releases all cached textures. The next [acquire] for any descriptor
   /// reallocates. Call when the output size changes so stale-sized
   /// textures aren't kept alive, or to give the memory back under pressure.
   ///
-  /// Safe at any point in a frame, since a pass that has already acquired a
-  /// texture holds its own reference and this releases only the pool's claim.
-  void clear() => _rings.clear();
+  /// Every texture this pool handed out is invalid afterwards, so call it
+  /// between frames. Work already submitted is unaffected.
+  void clear() {
+    for (final ring in _rings.values) {
+      for (final texture in ring) {
+        if (texture != null) gpu.gpuHost.releaseTexture(texture);
+      }
+    }
+    _rings.clear();
+  }
 
   /// Resident bytes of every texture the pool holds, summed across mip chains.
   int get residentBytes {

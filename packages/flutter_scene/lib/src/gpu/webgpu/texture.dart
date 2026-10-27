@@ -84,7 +84,16 @@ final class _WebGpuTexture extends Texture {
   final int mipLevelCount;
 
   @override
-  bool get isValid => true;
+  bool get isValid => !_released;
+
+  bool _released = false;
+
+  void _release() {
+    if (_released) return;
+    _released = true;
+    _textureFinalizer.detach(this);
+    texture.destroy();
+  }
 
   @override
   int get sliceCount => textureType == TextureType.textureCube ? 6 : 1;

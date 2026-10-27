@@ -31,6 +31,15 @@ final class WebGlHost extends GpuHost {
   @override
   Future<ui.Image> present(Texture texture, {bool transferOwnership = false}) =>
       _presentTextureAsImage(texture, transferOwnership: transferOwnership);
+
+  /// Deletes [texture]'s GL objects. Commands already issued keep it alive in
+  /// the driver until they finish.
+  @override
+  void releaseTexture(Texture texture) => texture.webGl._release();
+
+  /// Deletes [buffer]'s GL objects. See [releaseTexture].
+  @override
+  void releaseBuffer(DeviceBuffer buffer) => buffer.webGl._release();
 }
 
 /// The WebGL2 backend's host integration.

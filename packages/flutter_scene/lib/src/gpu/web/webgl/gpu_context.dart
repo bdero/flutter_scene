@@ -297,6 +297,10 @@ final class WebGlContext extends GpuContext {
     Texture? depth,
     web.WebGLFramebuffer Function() create,
   ) {
+    assert(
+      color.isValid && (depth?.isValid ?? true),
+      'A released Texture was used as a render target.',
+    );
     final key = (color, mipLevel, slice, depth);
     final cached = _framebufferCache[key];
     if (cached != null) return cached;
@@ -307,6 +311,17 @@ final class WebGlContext extends GpuContext {
       _framebufferCache.clear();
     }
     return _framebufferCache[key] = create();
+  }
+
+  /// Deletes the cached framebuffers that attach [texture].
+  void _forgetFramebuffersOf(Texture texture) {
+    _framebufferCache.removeWhere((key, fbo) {
+      if (!identical(key.$1, texture) && !identical(key.$4, texture)) {
+        return false;
+      }
+      _gl.deleteFramebuffer(fbo);
+      return true;
+    });
   }
 
   /// Snapshot the underlying `OffscreenCanvas` into a `ui.Image` for display

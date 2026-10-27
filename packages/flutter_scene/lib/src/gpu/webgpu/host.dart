@@ -32,6 +32,17 @@ final class _WebGpuHost extends GpuHost {
         texture,
         transferOwnership: transferOwnership,
       );
+
+  /// Destroys [texture]'s `GPUTexture`, which WebGPU defers until submitted
+  /// work using it completes.
+  @override
+  void releaseTexture(Texture texture) =>
+      (texture as _WebGpuTexture)._release();
+
+  /// Destroys [buffer]'s `GPUBuffer`. See [releaseTexture].
+  @override
+  void releaseBuffer(DeviceBuffer buffer) =>
+      (buffer as _WebGpuDeviceBuffer)._release();
 }
 
 /// Hands [texture] to Flutter as a `ui.Image`, synchronously, through the
