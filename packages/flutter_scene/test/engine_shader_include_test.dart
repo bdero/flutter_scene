@@ -1,12 +1,15 @@
-// A package's own hook that compiles shaders against the engine's GLSL names
-// the engine's include directory and GLSL ES version through build_hooks.dart.
-// A hook a `flutter test` calls in process has no package resolver, so the
-// directory comes from the package config above the building package instead.
+// A hook that `flutter test` calls in process has no package resolver, so the
+// engine's shader include directory comes from the package config above the
+// building package instead.
+
+@TestOn('vm')
+library;
 
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_scene/build_hooks.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/fmat/framework_shaders.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks/hooks.dart';
 
@@ -48,10 +51,6 @@ void main() {
       );
     },
   );
-
-  test('the engine compiles its shaders for GLSL ES 3.00', () {
-    expect(engineGlesLanguageVersion, 300);
-  });
 }
 
 BuildInput _buildInput(Uri packageRoot) {

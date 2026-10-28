@@ -1,4 +1,4 @@
-// Covers the depth prepass target: the depth-only variant writes a
+// Covers the depth prepass target. The depth-only variant writes a
 // single-channel fp32 target, the normal-writing variant keeps four
 // channels, and both carry the planar view-space depth in red.
 

@@ -36,11 +36,10 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 /// yet, and gives up after [timeout] rather than hanging on a backend that
 /// never reports completion.
 ///
-/// The engine reports completion in real time, so [timeout] is real time too:
-/// its timer runs in the root zone. A zone with its own clock, such as the
-/// fake clock of a widget test, neither owns that timer nor fires it early,
-/// so a test that ends before the engine answers leaves no timer of its own
-/// pending.
+/// The engine reports completion in real time, so [timeout]'s timer runs in
+/// the root zone. A zone with its own clock, such as a widget test's fake
+/// clock, neither owns that timer nor fires it early, so a test that ends
+/// before the engine answers leaves no timer of its own pending.
 Future<void> awaitRasterThread({
   Duration timeout = const Duration(seconds: 2),
 }) {

@@ -21,8 +21,8 @@ final List<WeakReference<Object>> _known = [];
 
 /// Records that [library] was loaded from [source]. Keyed by identity, so a
 /// cached library reloaded under the same key keeps its entry and its first
-/// source: the reflection cache reads a replaced source as a rewritten bundle,
-/// and a hot reload of the key bumps its generation instead.
+/// source, since the reflection cache reads a replaced source as a rewritten
+/// bundle. A hot reload of the key bumps its generation instead.
 void registerShaderLibrarySource(Object library, ShaderLibrarySource source) {
   final current = _sources[library];
   if (current == null) {
