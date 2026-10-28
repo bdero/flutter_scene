@@ -1282,7 +1282,7 @@ class AnimationChannelSpec {
 ///
 /// Paths are `/`-separated and resolve against the target node:
 ///
-///  * `visible` (one value, nonzero shows the node).
+///  * `visible` (one value, 0.5 or more shows the node).
 ///  * `light/<property>`, the node's light `color` (3), `intensity`,
 ///    `range`, `innerConeAngle`, or `outerConeAngle`.
 ///  * `primitives/<index>/material/<property>`, a factor of the material on
