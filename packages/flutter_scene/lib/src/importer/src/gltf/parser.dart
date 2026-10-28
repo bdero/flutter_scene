@@ -177,6 +177,8 @@ GltfNode _parseNode(Map<String, Object?> j) {
     scale: scale,
     weights: _numList(j['weights']),
     // Only an explicit false hides; an absent flag means visible.
+    // TODO(gltf-animation-pointer): animating this flag needs
+    // KHR_animation_pointer, which isn't imported yet.
     visible: visibility?['visible'] != false,
   );
 }
