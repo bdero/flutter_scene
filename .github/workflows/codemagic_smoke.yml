@@ -108,9 +108,11 @@ jobs:
             num=$(gh pr list --state open --json number,headRefOid \
               --jq "map(select(.headRefOid==\"$HEAD_SHA\"))[0].number // empty" || true)
           fi
+          # A pull request merged or closed before this fired has nothing left
+          # to render. Leaving `branch` unset skips the render job.
           if [ -z "$num" ]; then
             echo "No open pull request for $HEAD_SHA; nothing to render."
-            exit 1
+            exit 0
           fi
           base=$(gh pr view "$num" --json baseRefName --jq .baseRefName)
           echo "Resolved pull request #$num into $base"
@@ -140,6 +142,7 @@ jobs:
   render:
     name: ${{ inputs.argos_prefix || '' }}${{ matrix.build_name }} (Flutter ${{ inputs.flutter_revision || inputs.flutter_channel || 'master' }})
     needs: prepare
+    if: needs.prepare.outputs.branch != ''
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
