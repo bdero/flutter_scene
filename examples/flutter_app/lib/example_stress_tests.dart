@@ -947,6 +947,14 @@ final _additionalStressTests = <_StressTest>[
     sizeBytes: 43004,
   ),
   _sampleAsset(
+    id: 'NodeVisibilityTest',
+    title: 'Node Visibility Test',
+    description:
+        'Labels shown and hidden by KHR_node_visibility that spell out '
+        'whether the flag, its default, and hiding by an ancestor all hold.',
+    sizeBytes: 25904,
+  ),
+  _sampleAsset(
     id: 'NormalTangentMirrorTest',
     title: 'Mirrored Normal/Tangent Test',
     description:

@@ -164,6 +164,7 @@ GltfNode _parseNode(Map<String, Object?> j) {
   }
   final nodeExtensions = j['extensions'] as Map?;
   final punctual = nodeExtensions?['KHR_lights_punctual'] as Map?;
+  final visibility = nodeExtensions?['KHR_node_visibility'] as Map?;
   return GltfNode(
     name: j['name'] as String?,
     mesh: j['mesh'] as int?,
@@ -175,6 +176,8 @@ GltfNode _parseNode(Map<String, Object?> j) {
     rotation: rotation,
     scale: scale,
     weights: _numList(j['weights']),
+    // Only an explicit false hides; an absent flag means visible.
+    visible: visibility?['visible'] != false,
   );
 }
 

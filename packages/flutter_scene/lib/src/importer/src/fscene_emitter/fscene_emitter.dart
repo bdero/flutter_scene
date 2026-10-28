@@ -229,6 +229,7 @@ SceneDocument buildSceneDocument(
         skin: (node.skin != null && node.skin! < skinIds.length)
             ? skinIds[node.skin!]
             : null,
+        visible: node.visible,
       ),
     );
   }
