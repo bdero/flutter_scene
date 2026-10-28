@@ -1,5 +1,5 @@
-// A buffer upload between draws on the WebGL2 backend leaves the index
-// buffer of every cached vertex array as the draw that cached it bound it.
+// An index buffer upload between draws on the WebGL2 backend must not
+// re-point the index buffer of the vertex array the last draw left bound.
 //
 //   flutter test --platform chrome \
 //     test/gpu/webgl/webgl_index_binding_browser_test.dart
@@ -17,8 +17,8 @@ import 'package:flutter_scene/src/gpu/web/webgl/_webgl.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:web/web.dart' as web;
 
-// No uint64 reflection field is written, so dart2js builds it too: the
-// explicit vertex layout supplies the format and offset, location is 0.
+// Leaves out the uint64 reflection fields so dart2js can build it too. The
+// explicit vertex layout supplies the attribute's format and offset.
 Uint8List _bundle() {
   fb.ShaderObjectBuilder shader(
     String name,

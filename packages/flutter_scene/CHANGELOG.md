@@ -4,7 +4,7 @@
 * Normal maps on meshes without tangents no longer read their green channel inverted, and anisotropy directions on them are no longer mirrored. The tangent frame derived from screen-space derivatives now matches the one supplied tangents give.
 * `BloomSettings.referenceSize` measures the blur's spread against a shared render size, so views that each show part of one picture (a header and a taller overlay a character moves into) bloom alike.
 * Texture rotation (`KHR_texture_transform`, `TextureTransform.rotation`, and `ApplyMaterialUvTransform` in `.fmat` materials) turns the UVs counter-clockwise as the extension specifies. It turned the other way, so a rotation tuned by eye needs its sign flipped.
-* Geometry on the WebGL2 web backend no longer drops draws with a `glDrawElements` "Insufficient buffer size" or "Vertex buffer is not big enough" error.
+* Rewriting an index buffer on the WebGL2 web backend no longer makes later draws fail with a `glDrawElements` "Insufficient buffer size" or "Vertex buffer is not big enough" error.
 * Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
 * Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
 * A billboard batch on a scaled node is no longer culled while still on screen.
