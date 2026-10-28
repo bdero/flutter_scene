@@ -538,11 +538,14 @@ GltfTextureInfo? _parseTextureInfo(Object? j) {
 }
 
 GltfTexture _parseTexture(Map<String, Object?> j) {
-  final basisu = _extension(j['extensions'] as Map?, 'KHR_texture_basisu');
+  final extensions = j['extensions'] as Map?;
+  final basisu = _extension(extensions, 'KHR_texture_basisu');
+  final webp = _extension(extensions, 'EXT_texture_webp');
   return GltfTexture(
     source: j['source'] as int?,
     sampler: j['sampler'] as int?,
     basisuSource: basisu?['source'] as int?,
+    webpSource: webp?['source'] as int?,
   );
 }
 

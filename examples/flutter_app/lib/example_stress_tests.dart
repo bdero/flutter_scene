@@ -691,6 +691,17 @@ final _additionalStressTests = <_StressTest>[
         'texture transforms over many small parts.',
     sizeBytes: 7446368,
   ),
+  _StressTest(
+    id: 'ChronographWatchWebP',
+    title: 'Chronograph Watch (WebP)',
+    description:
+        'The same watch with every texture as WebP and no fallback, so it '
+        'fails to load without EXT_texture_webp. Multi-file glTF.',
+    url:
+        'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
+        'main/Models/ChronographWatch/glTF-WEBP/ChronographWatch.gltf',
+    sizeBytes: 5396317,
+  ),
   _sampleAsset(
     id: 'ClearCoatCarPaint',
     title: 'Clearcoat Car Paint',

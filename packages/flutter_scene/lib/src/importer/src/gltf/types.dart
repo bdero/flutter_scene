@@ -711,13 +711,20 @@ class GltfTextureTransform {
 }
 
 class GltfTexture {
-  GltfTexture({this.source, this.sampler, this.basisuSource});
+  GltfTexture({this.source, this.sampler, this.basisuSource, this.webpSource});
   final int? source;
   final int? sampler;
 
   /// KHR_texture_basisu image index (a KTX2 image), preferred over [source]
   /// when present.
   final int? basisuSource;
+
+  /// EXT_texture_webp image index, preferred over [source] when present.
+  final int? webpSource;
+
+  /// The image both importers load: a KTX2 image first, then a WebP one, then
+  /// the core [source].
+  int? get imageSource => basisuSource ?? webpSource ?? source;
 }
 
 class GltfImage {
