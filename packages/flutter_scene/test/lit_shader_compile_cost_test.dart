@@ -1,18 +1,21 @@
-// Guards the compile cost of the standard lit shaders on backends that compile
-// GLSL at run time, ANGLE's Direct3D backend (Impeller on Windows) above all.
-// There a pipeline's first use translates the fragment shader to HLSL and runs
-// the Direct3D compiler, and nothing keeps the result between launches, so
-// every launch pays it. Two patterns in the generated OpenGL ES source made
-// that take several seconds per pipeline:
+// Guards the compile cost and the derivatives of the standard lit shaders on
+// backends that compile GLSL at run time, ANGLE's Direct3D backend (Impeller on
+// Windows) above all. There a pipeline's first use translates the fragment
+// shader to HLSL and runs the Direct3D compiler, and nothing keeps the result
+// between launches, so every launch pays it. Three patterns in the generated
+// OpenGL ES source made that slow or wrong:
 //
 //  * An implicit-LOD `texture()` inside a loop. ANGLE marks such a loop
 //    `[loop]` and every branch around it `[flatten]`, and reads the texture
 //    at LOD 0 anyway. SPIRV-Cross emits an early `return` as a one-iteration
 //    `do { } while (false)`, so a function that returns early before such a
 //    read is enough.
+//  * A screen-space derivative (`dFdx`, `dFdy`, `fwidth`) inside a loop. In
+//    a loop that can exit early, a one-iteration one included, ANGLE writes
+//    the derivative as `0.0` instead of `ddx`/`ddy`.
 //  * The directional cascade sampler inlined once per cascade.
 //
-// Both are checked on the source the build hook's compile produces.
+// All three are checked on the source the build hook's compile produces.
 
 @TestOn('vm')
 library;
@@ -39,13 +42,22 @@ const _litEntries = [
 // `textureLod`, `textureGrad` and `texelFetch` do not, and none of them
 // matches because of the word boundary.
 final _implicitLodRead = RegExp(r'\b(texture|textureOffset|textureProj)\s*\(');
+final _derivative = RegExp(r'\b(dFdx|dFdy|fwidth)\w*\s*\(');
 final _loopHead = RegExp(r'^\s*(for\s*\(|while\s*\(|do\b)');
 
 /// The lines of [source] that read a texture at an implicit LOD inside a loop.
+List<String> implicitLodReadsInLoops(String source) =>
+    _linesInLoops(source, _implicitLodRead);
+
+/// The lines of [source] that take a screen-space derivative inside a loop.
+List<String> derivativesInLoops(String source) =>
+    _linesInLoops(source, _derivative);
+
+/// The lines of [source] that match [pattern] inside a loop.
 ///
 /// impellerc inlines every function into `main`, so the loops that enclose a
 /// line are the ones whose braces are open when it is reached.
-List<String> implicitLodReadsInLoops(String source) {
+List<String> _linesInLoops(String source, RegExp pattern) {
   final found = <String>[];
   // The brace depth at which each open loop's body started.
   final loops = <int>[];
@@ -53,7 +65,7 @@ List<String> implicitLodReadsInLoops(String source) {
   var pendingLoop = false;
   for (final line in const LineSplitter().convert(source)) {
     if (_loopHead.hasMatch(line)) pendingLoop = true;
-    if (loops.isNotEmpty && _implicitLodRead.hasMatch(line)) {
+    if (loops.isNotEmpty && pattern.hasMatch(line)) {
       found.add(line.trim());
     }
     for (final char in line.codeUnits) {
@@ -98,6 +110,32 @@ void main()
     expect(implicitLodReadsInLoops(source), [
       'vec4 b = texture(s, uv);',
       'vec4 d = textureOffset(s, uv, ivec2(1, 0));',
+    ]);
+  });
+
+  test('derivativesInLoops finds a derivative in a one-iteration loop', () {
+    const source = '''
+void main()
+{
+    vec3 a = dFdx(n);
+    do
+    {
+        if (early)
+        {
+            break;
+        }
+        vec3 b = dFdy(n);
+    } while (false);
+    for (int i = 0; i < n; i++)
+    {
+        float c = fwidth(uv.x);
+        vec4 d = textureGrad(s, uv, a.xy, a.xy);
+    }
+}
+''';
+    expect(derivativesInLoops(source), [
+      'vec3 b = dFdy(n);',
+      'float c = fwidth(uv.x);',
     ]);
   });
 
@@ -158,6 +196,19 @@ void main()
               '$name reads a texture at an implicit LOD inside a loop. Read '
               'it with textureLod or textureGrad, or give the enclosing '
               'function a single return.',
+        );
+      }
+    }, timeout: const Timeout(Duration(minutes: 10)));
+
+    test('take no derivative inside a loop', () async {
+      final sources = await (compiled ??= compile());
+      for (final name in _litEntries) {
+        expect(
+          derivativesInLoops(sources[name]!),
+          isEmpty,
+          reason:
+              '$name takes a derivative inside a loop, which ANGLE writes as '
+              '0.0. Give the enclosing function a single return.',
         );
       }
     }, timeout: const Timeout(Duration(minutes: 10)));

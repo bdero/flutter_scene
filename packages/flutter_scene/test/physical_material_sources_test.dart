@@ -739,7 +739,7 @@ void main() {
       source,
       contains('(1.0 - 0.5 * material.sheen_roughness) * occlusion *'),
     );
-    expect(source, contains('return roughness;'));
+    expect(source, contains('float filtered = roughness;'));
     expect(source, contains('max(material.sheen_roughness, kMinRoughness)'));
     expect(pbr, contains('kMinRoughness * kMinRoughness'));
     expect(
@@ -830,7 +830,7 @@ void main() {
     expect(normals, contains('vec4 authored = GetWorldTangent();'));
     expect(
       normals,
-      contains('return CotangentFrame(normal, view_vector, uv);'),
+      contains('mat3 frame = CotangentFrame(normal, view_vector, uv);'),
     );
   });
 
