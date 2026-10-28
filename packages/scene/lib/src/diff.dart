@@ -324,7 +324,8 @@ bool _animationsChanged(
     final newAnimation = newDocument.animations[id]!;
     if (oldAnimation == null) return true;
     if (oldAnimation.name != newAnimation.name) return true;
-    if (oldAnimation.channels.length != newAnimation.channels.length) {
+    if (oldAnimation.channels.length != newAnimation.channels.length ||
+        oldAnimation.pathChannels.length != newAnimation.pathChannels.length) {
       return true;
     }
     for (var i = 0; i < newAnimation.channels.length; i++) {
@@ -333,6 +334,27 @@ bool _animationsChanged(
       if (oldChannel.target != newChannel.target ||
           oldChannel.targetName != newChannel.targetName ||
           oldChannel.property != newChannel.property) {
+        return true;
+      }
+      if (retargeted.contains(newChannel.target)) return true;
+      if (!_payloadsEqual(
+            oldDocument.payload(oldChannel.timeline),
+            newDocument.payload(newChannel.timeline),
+          ) ||
+          !_payloadsEqual(
+            oldDocument.payload(oldChannel.keyframes),
+            newDocument.payload(newChannel.keyframes),
+          )) {
+        return true;
+      }
+    }
+    for (var i = 0; i < newAnimation.pathChannels.length; i++) {
+      final oldChannel = oldAnimation.pathChannels[i];
+      final newChannel = newAnimation.pathChannels[i];
+      if (oldChannel.target != newChannel.target ||
+          oldChannel.targetName != newChannel.targetName ||
+          oldChannel.path != newChannel.path ||
+          oldChannel.step != newChannel.step) {
         return true;
       }
       if (retargeted.contains(newChannel.target)) return true;

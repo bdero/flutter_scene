@@ -1823,9 +1823,12 @@ class EditorController extends ChangeNotifier {
     if (document.animations.isNotEmpty) {
       final restoredNames = restored.values.map((s) => s.name).toSet();
       for (final animation in document.animations.values) {
-        for (final channel in animation.channels) {
-          if (restored.containsKey(channel.target) ||
-              restoredNames.contains(channel.targetName)) {
+        for (final (target, targetName) in [
+          for (final c in animation.channels) (c.target, c.targetName),
+          for (final c in animation.pathChannels) (c.target, c.targetName),
+        ]) {
+          if (restored.containsKey(target) ||
+              restoredNames.contains(targetName)) {
             return false;
           }
         }

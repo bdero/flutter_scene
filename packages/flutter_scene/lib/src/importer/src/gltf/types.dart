@@ -193,6 +193,7 @@ class GltfNode {
   final List<double>? weights;
 
   /// False when `KHR_node_visibility` hides this node and its subtree.
+  /// `KHR_animation_pointer` channels animate it through the `visible` path.
   final bool visible;
 }
 
@@ -768,12 +769,42 @@ class GltfAnimationChannel {
     required this.sampler,
     required this.targetNode,
     required this.targetPath,
+    this.pointer,
+    this.pathTargets = const [],
+    this.pathComponentCount = 0,
+    this.pointerLight,
   });
   final int sampler;
   final int? targetNode;
 
-  /// One of 'translation', 'rotation', 'scale', 'weights'.
+  /// One of 'translation', 'rotation', 'scale', 'weights', or 'pointer'.
   final String targetPath;
+
+  /// The `KHR_animation_pointer` JSON pointer, when the channel has one.
+  final String? pointer;
+
+  /// The engine properties a [pointer] drives when it isn't a node transform
+  /// or weights, which resolve to [targetNode] and [targetPath] instead.
+  final List<GltfAnimationPathTarget> pathTargets;
+
+  /// Floats per keyframe for [pathTargets].
+  final int pathComponentCount;
+
+  /// The light a light property [pointer] drives, whose static values its
+  /// keyframes convert against.
+  final int? pointerLight;
+}
+
+/// An engine property a `KHR_animation_pointer` channel drives on one node.
+class GltfAnimationPathTarget {
+  const GltfAnimationPathTarget(this.node, this.path);
+
+  /// The glTF node index.
+  final int node;
+
+  /// The property on [node], as the scene format's
+  /// `AnimationPathChannelSpec.path` names it.
+  final String path;
 }
 
 class GltfAnimationSampler {

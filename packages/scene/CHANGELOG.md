@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- `AnimationSpec.pathChannels` (`AnimationPathChannelSpec`) animates node properties beyond the transform by path, such as visibility, light color and intensity, material factors, and texture transforms.
+
 ## 0.4.1
 
 - `TriMeshShape` documents that a triangle collides from its front (counter-clockwise) face only.

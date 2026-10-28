@@ -714,6 +714,17 @@ AnimationSpec _remapAnimation(
         keyframes: remap(ch.keyframes),
       ),
   ],
+  pathChannels: [
+    for (final ch in a.pathChannels)
+      AnimationPathChannelSpec(
+        target: remap(ch.target),
+        targetName: ch.targetName,
+        path: ch.path,
+        timeline: remap(ch.timeline),
+        keyframes: remap(ch.keyframes),
+        step: ch.step,
+      ),
+  ],
 );
 
 StageMetadata _copyStage(StageMetadata s) => StageMetadata(

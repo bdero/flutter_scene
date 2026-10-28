@@ -251,6 +251,18 @@ AnimationSpec _copyAnimation(AnimationSpec a, _Remap remap) => AnimationSpec(
         unknown: c.unknown,
       ),
   ],
+  pathChannels: [
+    for (final c in a.pathChannels)
+      AnimationPathChannelSpec(
+        target: remap(c.target),
+        targetName: c.targetName,
+        path: c.path,
+        timeline: remap(c.timeline),
+        keyframes: remap(c.keyframes),
+        step: c.step,
+        unknown: c.unknown,
+      ),
+  ],
   unknown: a.unknown,
 );
 

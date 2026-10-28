@@ -75,12 +75,14 @@ _StressTest _sampleAsset({
   required String description,
   required int sizeBytes,
   String variant = 'glTF-Binary',
+  String? animationName,
 }) {
   final extension = variant == 'glTF-Binary' ? 'glb' : 'gltf';
   return _StressTest(
     id: id,
     title: title,
     description: description,
+    animationName: animationName,
     url:
         'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
         'main/Models/$id/$variant/$id.$extension',
@@ -640,6 +642,24 @@ final _catalog = <_StressTest>[
 
 final _additionalStressTests = <_StressTest>[
   _sampleAsset(
+    id: 'AnimatedColorsCube',
+    title: 'Animated Colors Cube',
+    description:
+        'A cube cycling its base color through KHR_animation_pointer while '
+        'a plain channel spins it.',
+    sizeBytes: 15184,
+    animationName: 'Cube Animation',
+  ),
+  _sampleAsset(
+    id: 'AnimationPointerUVs',
+    title: 'Animation Pointer UVs',
+    description:
+        'Labeled tiles scrolling, scaling, and turning the UV transform of '
+        'every core and extension texture slot through KHR_animation_pointer.',
+    sizeBytes: 7980492,
+    animationName: '',
+  ),
+  _sampleAsset(
     id: 'AnisotropyDiscTest',
     title: 'Anisotropy Disc Test',
     description:
@@ -816,6 +836,15 @@ final _additionalStressTests = <_StressTest>[
     sizeBytes: 357024,
   ),
   _sampleAsset(
+    id: 'CubeVisibility',
+    title: 'Cube Visibility',
+    description:
+        'A blue cube that blinks by animating KHR_node_visibility through '
+        'KHR_animation_pointer.',
+    sizeBytes: 3284,
+    animationName: 'BlinkingBlueCube',
+  ),
+  _sampleAsset(
     id: 'CompareVolume',
     title: 'Compare Volume',
     description:
@@ -906,6 +935,15 @@ final _additionalStressTests = <_StressTest>[
     sizeBytes: 5742828,
   ),
   _sampleAsset(
+    id: 'LightVisibility',
+    title: 'Light Visibility',
+    description:
+        'A blue spot light that blinks by animating its node\'s visibility, '
+        'so hiding a node must also hide its light.',
+    sizeBytes: 2940,
+    animationName: 'BlinkingBlueLight',
+  ),
+  _sampleAsset(
     id: 'LightsPunctualLamp',
     title: 'Punctual Lights Lamp',
     description:
@@ -977,6 +1015,15 @@ final _additionalStressTests = <_StressTest>[
         'Emissive coals, textured pottery, and clearcoat in a compact '
         'showcase scene.',
     sizeBytes: 4696240,
+  ),
+  _sampleAsset(
+    id: 'PotOfCoalsAnimationPointer',
+    title: 'Pot of Coals (Animation Pointer)',
+    description:
+        'The pot of coals with its heat dome\'s normal and thickness '
+        'textures turning through KHR_animation_pointer.',
+    sizeBytes: 6326684,
+    animationName: '',
   ),
   _sampleAsset(
     id: 'ScatteringSkull',
