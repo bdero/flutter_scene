@@ -192,7 +192,7 @@ class GltfNode {
   /// null when the node keeps the mesh defaults.
   final List<double>? weights;
 
-  /// `KHR_node_visibility`: false hides this node and its whole subtree.
+  /// False when `KHR_node_visibility` hides this node and its subtree.
   final bool visible;
 }
 

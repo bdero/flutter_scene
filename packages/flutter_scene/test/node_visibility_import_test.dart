@@ -1,5 +1,5 @@
-// Covers KHR_node_visibility: the parsed flag and its default, and both
-// importers carrying it onto the node, so a hidden node hides its subtree.
+// Covers KHR_node_visibility parsing, its default, and both importers carrying
+// the flag onto the node so a hidden node hides its subtree.
 
 import 'dart:convert';
 import 'dart:typed_data';
