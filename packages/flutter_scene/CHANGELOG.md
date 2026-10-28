@@ -3,23 +3,22 @@
 * glTF imports honor `KHR_node_visibility`, so a node marked hidden imports hidden along with its subtree.
 * glTF imports play `KHR_animation_pointer` animations of node visibility, light color, intensity, range, and cone angles, material factors, and texture transforms. A pointer the engine can't drive warns and is skipped.
 * Normal maps on meshes without tangents no longer read their green channel inverted, and anisotropy directions on them are no longer mirrored. The tangent frame derived from screen-space derivatives now matches the one supplied tangents give.
-* Ambient occlusion and the other passes that read only depth get their linear depth from a single-channel `r32Float` target, a quarter of the memory and bandwidth of the four-channel one. A pass that also needs normals (reflections, the irradiance field, `RenderInput.normals`) keeps `r32g32b32a32Float`, so `RenderPassContext.sceneDepthLinear.format` depends on the frame.
 * `BloomSettings.referenceSize` measures the blur's spread against a shared render size, so views that each show part of one picture (a header and a taller overlay a character moves into) bloom alike.
-* A widget test no longer fails with "A Timer is still pending" when it ends while a scene waits on the raster thread (`Scene.warmUp`, the environment prefilter). That wait gives up on a real-time timer the test's fake clock does not own.
 * Texture rotation (`KHR_texture_transform`, `TextureTransform.rotation`, and `ApplyMaterialUvTransform` in `.fmat` materials) turns the UVs counter-clockwise as the extension specifies. It turned the other way, so a rotation tuned by eye needs its sign flipped.
-* Shader bundle reflection (`ShaderReflection.loadBundleInfo`) parses about 10x faster: each backend's compiled output is copied out of the bundle the first time it is read, not during the parse. On Apple platforms a `ShaderMaterial` waits on this parse before its first draw. The engine's base bundle went from 16 ms to 1.7 ms on an M3 Max.
 * Rewriting an index buffer on the WebGL2 web backend no longer makes later draws fail with a `glDrawElements` "Insufficient buffer size" or "Vertex buffer is not big enough" error.
 * Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
-* A shader library loaded again under the same asset key keeps its shader reflection, so a `ShaderMaterial` made after a repeat load of its bundle no longer re-parses the bundle or skips its first draws while that parse runs.
 * Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
-* A `RenderTexture` view no longer freezes, or stays empty, while the GPU is a frame behind and a screen view renders anyway, such as a resized view or a new scene's first frame. It now skips a frame only when every screen view re-presents its previous image.
 * A billboard batch on a scaled node is no longer culled while still on screen.
-* `package:flutter_scene/build_hooks.dart` exports `engineShaderIncludeDirectory(BuildInput)`, the directory of the engine's shader includes, and `engineGlesLanguageVersion`, the GLSL ES version the engine compiles for, so a hook that runs `impellerc` itself compiles shaders that include the engine's GLSL.
 * Shadowed and punctual-lit materials no longer run every shadow cascade and filter for every pixel on Windows (ANGLE). A shadowed scene on a ROG Ally went from 93 ms to 41 ms a frame.
 * Lit materials compile about 60% faster on Windows (ANGLE), so the first frame that needs a new lit shader stalls for far less time. Warming up a shadowed scene with ambient occlusion went from 23.6 s to 9.5 s on a Radeon RX 580.
 * Lit materials with shadows and point or spot lights draw faster on mobile GPUs. Shadow filters only run their full kernel at shadow edges, lights that miss a pixel are skipped, and unused emissive and occlusion reads are dropped. A shadowed, point-lit scene on OpenGL ES on a Galaxy A16 went from 7.9 to 10.8 fps.
-* On Windows (ANGLE), lit materials get their specular anti-aliasing back, and normal maps on meshes without tangents are no longer flattened to the geometric normal. Both read screen-space derivatives inside a function that returned early, which ANGLE's Direct3D backend reads as zero.
-* A shader library loaded again under the same asset key keeps its shader reflection, so a `ShaderMaterial` made after a repeat load of its bundle no longer re-parses the bundle or skips its first draws while that parse runs.
+* Lit materials on Windows (ANGLE) get their specular anti-aliasing back, and normal maps on meshes without tangents are no longer flattened.
+* Loading a shader library again under the same asset key keeps its shader reflection, so a later `ShaderMaterial` no longer re-parses the bundle or skips its first draws.
+* A widget test no longer fails with "A Timer is still pending" when it ends while a scene waits on the raster thread.
+* A `RenderTexture` view no longer freezes while the GPU is a frame behind and a screen view renders anyway, such as after a resize.
+* The depth prepass writes a single-channel `r32Float` target when no pass needs normals, a quarter of the memory and bandwidth. `RenderPassContext.sceneDepthLinear` keeps four channels when normals are written.
+* Shader bundle reflection parses about 10x faster by copying each backend's output on its first read, so a `ShaderMaterial` on Apple platforms waits far less before its first draw.
+* Build hooks that `flutter test` calls in process (`buildMaterials`, `buildTargetShaderBundleJson`) find the engine's shader includes instead of throwing.
 
 ## 0.24.3
 

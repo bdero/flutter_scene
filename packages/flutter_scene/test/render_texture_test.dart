@@ -255,13 +255,13 @@ void main() {
       renderFrame(scene, 32);
       expect(rendered, 1);
 
-      // Same size: the screen view re-presents, and the texture view waits.
+      // At the same size the screen view re-presents and the texture view waits.
       holdFrameInFlight();
       renderFrame(scene, 32);
       expect(scene.pacedFrameCount, 1);
       expect(rendered, 1);
 
-      // Resized: the screen view has no image of the new size and renders,
+      // Resized, the screen view has no image of the new size and renders,
       // so the texture view renders too.
       renderFrame(scene, 48);
       expect(scene.pacedFrameCount, 1);
