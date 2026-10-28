@@ -29,6 +29,9 @@ const Set<String> kRecognizedGltfExtensions = {
   'KHR_mesh_quantization',
   'KHR_draco_mesh_compression',
   'KHR_texture_basisu',
+  // Both importers' image decoders read WebP: the platform codec at runtime,
+  // package:image offline.
+  'EXT_texture_webp',
   'EXT_lights_image_based',
 };
 

@@ -92,7 +92,7 @@ Future<List<Texture2D>> buildTextures(
   final internalPayloads = <Uint8List>[];
   for (int i = 0; i < doc.textures.length; i++) {
     final tex = doc.textures[i];
-    final imageIdx = tex.basisuSource ?? tex.source;
+    final imageIdx = tex.imageSource;
     if (imageIdx == null || imageIdx < 0 || imageIdx >= doc.images.length) {
       warn('glTF texture $i has no image source, using a placeholder.');
       continue;
