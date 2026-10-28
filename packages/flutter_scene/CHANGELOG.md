@@ -7,6 +7,7 @@
 * Rewriting an index buffer on the WebGL2 web backend no longer makes later draws fail with a `glDrawElements` "Insufficient buffer size" or "Vertex buffer is not big enough" error.
 * Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
 * Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
+* A `RenderTexture` view no longer freezes, or stays empty, while the GPU is a frame behind and a screen view renders anyway, such as a resized view or a new scene's first frame. It now skips a frame only when every screen view re-presents its previous image.
 * A billboard batch on a scaled node is no longer culled while still on screen.
 * Shadowed and punctual-lit materials no longer run every shadow cascade and filter for every pixel on Windows (ANGLE). A shadowed scene on a ROG Ally went from 93 ms to 41 ms a frame.
 * Lit materials compile about 60% faster on Windows (ANGLE), so the first frame that needs a new lit shader stalls for far less time. Warming up a shadowed scene with ambient occlusion went from 23.6 s to 9.5 s on a Radeon RX 580.

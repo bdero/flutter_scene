@@ -8,6 +8,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart' show SizedBox;
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -182,5 +184,88 @@ void main() {
     expect(target.texture, isNotNull);
     expect(target.texture!.width, 16);
     expect(notified, 1);
+  });
+
+  group('GPU pacing', () {
+    if (!gpuAvailable()) return;
+    final heldFrames = <int>[];
+    tearDown(() {
+      for (final id in heldFrames) {
+        rendererSubmissions.complete(id);
+      }
+      heldFrames.clear();
+    });
+
+    // Leaves one frame of GPU work unfinished, so the next frame paces.
+    void holdFrameInFlight() {
+      heldFrames.add(rendererSubmissions.record());
+      rendererSubmissions.endFrame();
+    }
+
+    void renderFrame(Scene scene, double size) {
+      final recorder = ui.PictureRecorder();
+      scene.render(
+        PerspectiveCamera(position: Vector3(0, 0, 5)),
+        ui.Canvas(recorder),
+        viewport: ui.Rect.fromLTWH(0, 0, size, size),
+        pixelRatio: 1.0,
+      );
+      recorder.endRecording();
+    }
+
+    // No environment, so no prefilter outlives a test.
+    Scene emptyScene() => Scene()..environment = EnvironmentMap.empty();
+
+    Scene textureViewScene(RenderTexture target) => emptyScene()
+      ..views.add(
+        RenderView(
+          camera: PerspectiveCamera(position: Vector3(0, 0, 5)),
+          target: target,
+        ),
+      );
+
+    testWidgets('a new scene renders its texture views on its first frame '
+        'while another scene has a frame in flight', (tester) async {
+      await tester.runAsync(Scene.initializeStaticResources);
+      final earlier = emptyScene();
+      addTearDown(earlier.dispose);
+      renderFrame(earlier, 32);
+      holdFrameInFlight();
+
+      final target = RenderTexture(width: 16, height: 16);
+      final scene = textureViewScene(target);
+      addTearDown(scene.dispose);
+      var rendered = 0;
+      target.addListener(() => rendered++);
+      renderFrame(scene, 32);
+
+      expect(scene.pacedFrameCount, 0);
+      expect(rendered, 1);
+    });
+
+    testWidgets('a frame skips its texture views only when every screen view '
+        're-presents its previous image', (tester) async {
+      await tester.runAsync(Scene.initializeStaticResources);
+      final target = RenderTexture(width: 16, height: 16);
+      final scene = textureViewScene(target);
+      addTearDown(scene.dispose);
+      var rendered = 0;
+      target.addListener(() => rendered++);
+
+      renderFrame(scene, 32);
+      expect(rendered, 1);
+
+      // Same size: the screen view re-presents, and the texture view waits.
+      holdFrameInFlight();
+      renderFrame(scene, 32);
+      expect(scene.pacedFrameCount, 1);
+      expect(rendered, 1);
+
+      // Resized: the screen view has no image of the new size and renders,
+      // so the texture view renders too.
+      renderFrame(scene, 48);
+      expect(scene.pacedFrameCount, 1);
+      expect(rendered, 2);
+    });
   });
 }
