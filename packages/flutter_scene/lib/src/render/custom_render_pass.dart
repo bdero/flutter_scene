@@ -245,7 +245,8 @@ class RenderPassContext {
   /// units) in the red channel, with the octahedral-packed view-space normal in
   /// green/blue when [RenderInput.normals] was requested. Non-null when the pass
   /// declared [RenderInput.depth] (or [RenderInput.normals]); also present when
-  /// ambient occlusion or reflections ran.
+  /// ambient occlusion or reflections ran. Its format is `r32Float` when the
+  /// prepass wrote no normals, and `r32g32b32a32Float` when it did.
   gpu.Texture? get sceneDepthLinear =>
       _context.blackboard.get<gpu.Texture>(kLinearDepthBlackboardKey);
 
