@@ -316,6 +316,7 @@ void main() {
         bufferViews: doc.bufferViews,
         bufferData: container.binaryChunk,
         engineNodes: engineNodes,
+        lights: doc.lights,
         coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       );
       final channel = animation.channels.single;

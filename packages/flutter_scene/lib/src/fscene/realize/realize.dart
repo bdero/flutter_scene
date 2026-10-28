@@ -345,8 +345,27 @@ void _serializeAnimations(
 ) {
   for (final animation in root.parsedAnimations) {
     final channels = <AnimationChannelSpec>[];
+    final pathChannels = <AnimationPathChannelSpec>[];
     for (final channel in animation.channels) {
       final resolver = channel.resolver;
+      final nodeName = channel.bindTarget.nodeName;
+      if (resolver is engine.PathTimelineResolver) {
+        final target = engine.resolveAnimationTarget(root, nodeName);
+        pathChannels.add(
+          AnimationPathChannelSpec(
+            target: (target != null ? ids[target] : null) ?? document.newId(),
+            targetName: nodeName,
+            path: resolver.path,
+            timeline: _floatsPayload(
+              document,
+              Float32List.fromList(resolver.times),
+            ),
+            keyframes: _floatsPayload(document, resolver.values),
+            step: resolver.step,
+          ),
+        );
+        continue;
+      }
       final AnimationProperty property;
       final List<double> times;
       final Float32List keyframes;
@@ -370,7 +389,6 @@ void _serializeAnimations(
           );
           continue;
       }
-      final nodeName = channel.bindTarget.nodeName;
       final target = engine.resolveAnimationTarget(root, nodeName);
       channels.add(
         AnimationChannelSpec(
@@ -384,9 +402,14 @@ void _serializeAnimations(
         ),
       );
     }
-    if (channels.isEmpty) continue;
+    if (channels.isEmpty && pathChannels.isEmpty) continue;
     document.addAnimation(
-      AnimationSpec(document.newId(), name: animation.name, channels: channels),
+      AnimationSpec(
+        document.newId(),
+        name: animation.name,
+        channels: channels,
+        pathChannels: pathChannels,
+      ),
     );
   }
 }

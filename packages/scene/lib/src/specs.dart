@@ -1277,6 +1277,60 @@ class AnimationChannelSpec {
   final LocalId keyframes;
 }
 
+/// One animation channel driving a property of a target node that
+/// [AnimationProperty] doesn't name, addressed by [path].
+///
+/// Paths are `/`-separated and resolve against the target node:
+///
+///  * `visible` (one value, nonzero shows the node).
+///  * `light/<property>`, the node's light `color` (3), `intensity`,
+///    `range`, `innerConeAngle`, or `outerConeAngle`.
+///  * `primitives/<index>/material/<property>`, a factor of the material on
+///    that mesh primitive, named and sized as the material's own property
+///    (`baseColorFactor` (4), `emissiveFactor` (3), `metallicFactor`, ...).
+///  * `primitives/<index>/material/<texture>/<property>`, that texture's
+///    UV transform `offset` (2), `scale` (2), or `rotation`.
+///
+/// Values are in the engine's units. A renderer skips a path it doesn't
+/// resolve.
+/// {@category Documents}
+class AnimationPathChannelSpec {
+  /// Creates a channel driving [path] of [target].
+  AnimationPathChannelSpec({
+    required this.target,
+    this.targetName,
+    required this.path,
+    required this.timeline,
+    required this.keyframes,
+    this.step = false,
+    this.unknown = const {},
+  });
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
+
+  /// The node this channel animates (primary, id-based binding).
+  final LocalId target;
+
+  /// The target node's name (fallback binding, for clones and merges).
+  final String? targetName;
+
+  /// The property this channel drives, relative to [target].
+  final String path;
+
+  /// The binary chunk of keyframe times (seconds).
+  final LocalId timeline;
+
+  /// The binary chunk of keyframe values, the path's component count per
+  /// keyframe.
+  final LocalId keyframes;
+
+  /// Whether each keyframe holds until the next instead of interpolating.
+  final bool step;
+}
+
 /// A named animation: a set of channels driving target nodes.
 /// {@category Documents}
 class AnimationSpec {
@@ -1285,8 +1339,10 @@ class AnimationSpec {
     this.id, {
     this.name = '',
     List<AnimationChannelSpec>? channels,
+    List<AnimationPathChannelSpec>? pathChannels,
     this.unknown = const {},
-  }) : channels = channels ?? [];
+  }) : channels = channels ?? [],
+       pathChannels = pathChannels ?? [];
 
   /// Keys this build of the engine does not recognize, kept verbatim so a
   /// document written by a newer engine or an extension survives a load and
@@ -1299,8 +1355,11 @@ class AnimationSpec {
   /// The animation's name.
   String name;
 
-  /// The channels this animation drives.
+  /// The transform and morph weight channels this animation drives.
   final List<AnimationChannelSpec> channels;
+
+  /// The channels driving other node properties by path.
+  final List<AnimationPathChannelSpec> pathChannels;
 }
 
 /// How a binary payload chunk's bytes are interpreted.

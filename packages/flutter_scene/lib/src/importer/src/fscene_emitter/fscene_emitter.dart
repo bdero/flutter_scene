@@ -32,6 +32,7 @@ import '../../../texture/ktx2_image.dart';
 import '../../../texture/mipmap.dart';
 import '../../texture_roles.dart';
 import '../gltf/accessor.dart';
+import '../gltf/animation_pointer.dart';
 import '../gltf/bounds_baker.dart';
 import '../gltf/coordinate_policy.dart';
 import '../../gltf_light_units.dart';
@@ -332,7 +333,20 @@ void _buildAnimation(
   GltfCoordinatePolicy coordinatePolicy,
 ) {
   final channels = <AnimationChannelSpec>[];
+  final pathChannels = <AnimationPathChannelSpec>[];
   for (final channel in animation.channels) {
+    if (channel.pathTargets.isNotEmpty) {
+      _buildPathChannels(
+        document,
+        channel,
+        animation,
+        doc,
+        bufferData,
+        nodeIds,
+        pathChannels,
+      );
+      continue;
+    }
     final target = channel.targetNode;
     if (target == null || target < 0 || target >= nodeIds.length) continue;
     if (channel.sampler < 0 || channel.sampler >= animation.samplers.length) {
@@ -393,14 +407,74 @@ void _buildAnimation(
       ),
     );
   }
-  if (channels.isEmpty) return;
+  if (channels.isEmpty && pathChannels.isEmpty) return;
   document.addAnimation(
     AnimationSpec(
       document.newId(),
       name: animation.name ?? '',
       channels: channels,
+      pathChannels: pathChannels,
     ),
   );
+}
+
+// One path channel per target node of a KHR_animation_pointer channel, the
+// targets sharing the timeline and keyframe payloads.
+void _buildPathChannels(
+  SceneDocument document,
+  GltfAnimationChannel channel,
+  GltfAnimation animation,
+  GltfDocument doc,
+  Uint8List bufferData,
+  List<LocalId> nodeIds,
+  List<AnimationPathChannelSpec> out,
+) {
+  if (channel.sampler < 0 || channel.sampler >= animation.samplers.length) {
+    return;
+  }
+  final sampler = animation.samplers[channel.sampler];
+  final times = readAccessorAsFloat32(
+    doc.accessors[sampler.input],
+    doc.bufferViews,
+    bufferData,
+  );
+  final count = channel.pathComponentCount;
+  final keyframes = convertGltfPathKeyframes(
+    channel,
+    doc.lights,
+    selectGltfKeyframeValues(
+      readAccessorAsFloat32(
+        doc.accessors[sampler.output],
+        doc.bufferViews,
+        bufferData,
+      ),
+      componentCount: count,
+      cubicSpline: sampler.interpolation == 'CUBICSPLINE',
+    ),
+  );
+  if (times.isEmpty || keyframes.length != times.length * count) return;
+  final timeline = _floatPayload(
+    document,
+    Float32List.fromList(times),
+    PayloadEncoding.floats,
+  );
+  final values = _floatPayload(document, keyframes, PayloadEncoding.floats);
+  for (final target in channel.pathTargets) {
+    if (target.node < 0 || target.node >= nodeIds.length) continue;
+    out.add(
+      AnimationPathChannelSpec(
+        target: nodeIds[target.node],
+        targetName: resolveGltfNodeName(
+          doc.nodes[target.node].name,
+          target.node,
+        ),
+        path: target.path,
+        timeline: timeline,
+        keyframes: values,
+        step: sampler.interpolation == 'STEP',
+      ),
+    );
+  }
 }
 
 LocalId _floatPayload(

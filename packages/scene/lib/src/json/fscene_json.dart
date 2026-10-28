@@ -952,6 +952,19 @@ Map<String, dynamic> _encodeAnimation(
         ...ch.unknown,
       },
   ],
+  if (a.pathChannels.isNotEmpty)
+    'pathChannels': [
+      for (final ch in a.pathChannels)
+        {
+          'target': idKey(ch.target),
+          if (ch.targetName != null) 'targetName': ch.targetName,
+          'path': ch.path,
+          'timeline': idKey(ch.timeline),
+          'keyframes': idKey(ch.keyframes),
+          if (ch.step) 'step': true,
+          ...ch.unknown,
+        },
+    ],
   ...a.unknown,
 };
 
@@ -1890,7 +1903,11 @@ AnimationSpec _decodeAnimation(LocalId id, Map<String, dynamic> json) =>
         for (final ch in (json['channels'] as List? ?? const []))
           _decodeChannel(Map<String, dynamic>.from(ch as Map)),
       ],
-      unknown: _rest(json, const {'name', 'channels'}),
+      pathChannels: [
+        for (final ch in (json['pathChannels'] as List? ?? const []))
+          _decodePathChannel(Map<String, dynamic>.from(ch as Map)),
+      ],
+      unknown: _rest(json, const {'name', 'channels', 'pathChannels'}),
     );
 
 AnimationChannelSpec _decodeChannel(Map<String, dynamic> json) =>
@@ -1906,6 +1923,24 @@ AnimationChannelSpec _decodeChannel(Map<String, dynamic> json) =>
         'property',
         'timeline',
         'keyframes',
+      }),
+    );
+
+AnimationPathChannelSpec _decodePathChannel(Map<String, dynamic> json) =>
+    AnimationPathChannelSpec(
+      target: LocalId.parse(json['target'] as String),
+      targetName: json['targetName'] as String?,
+      path: json['path'] as String,
+      timeline: LocalId.parse(json['timeline'] as String),
+      keyframes: LocalId.parse(json['keyframes'] as String),
+      step: json['step'] as bool? ?? false,
+      unknown: _rest(json, const {
+        'target',
+        'targetName',
+        'path',
+        'timeline',
+        'keyframes',
+        'step',
       }),
     );
 

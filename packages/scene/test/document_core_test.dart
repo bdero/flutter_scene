@@ -52,4 +52,65 @@ void main() {
     expect(reread.editor, isNull);
     expect(writeFscene(reread), writeFscene(document));
   });
+
+  group('animation path channels', () {
+    SceneDocument document() {
+      final document = SceneDocument();
+      final node = document.newId();
+      document.addNode(NodeSpec(id: node, name: 'Lamp'), root: true);
+      document.addAnimation(
+        AnimationSpec(
+          document.newId(),
+          name: 'Blink',
+          pathChannels: [
+            AnimationPathChannelSpec(
+              target: node,
+              targetName: 'Lamp',
+              path: 'visible',
+              timeline: document.newId(),
+              keyframes: document.newId(),
+              step: true,
+            ),
+          ],
+        ),
+      );
+      return document;
+    }
+
+    test('round trip through .fscene text', () {
+      final text = writeFscene(document());
+      final channel = readFscene(
+        text,
+      ).animations.values.single.pathChannels.single;
+      expect(channel.path, 'visible');
+      expect(channel.targetName, 'Lamp');
+      expect(channel.step, isTrue);
+      expect(writeFscene(readFscene(text)), text);
+    });
+
+    test('a changed path or step is an animation change', () {
+      final base = document();
+      SceneDocument edited({String? path, bool? step}) {
+        final copy = readFscene(writeFscene(base));
+        final channels = copy.animations.values.single.pathChannels;
+        final c = channels.single;
+        channels[0] = AnimationPathChannelSpec(
+          target: c.target,
+          targetName: c.targetName,
+          path: path ?? c.path,
+          timeline: c.timeline,
+          keyframes: c.keyframes,
+          step: step ?? c.step,
+        );
+        return copy;
+      }
+
+      expect(diffScene(base, edited()).animationsChanged, isFalse);
+      expect(
+        diffScene(base, edited(path: 'light/color')).animationsChanged,
+        isTrue,
+      );
+      expect(diffScene(base, edited(step: false)).animationsChanged, isTrue);
+    });
+  });
 }

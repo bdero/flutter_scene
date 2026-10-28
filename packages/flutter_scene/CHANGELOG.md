@@ -1,6 +1,7 @@
 ## 0.24.4
 
 * glTF imports honor `KHR_node_visibility`, so a node marked hidden imports hidden along with its subtree.
+* glTF imports play `KHR_animation_pointer` animations of node visibility, light color, intensity, range, and cone angles, material factors, and texture transforms. A pointer the engine can't drive warns and is skipped.
 * Normal maps on meshes without tangents no longer read their green channel inverted, and anisotropy directions on them are no longer mirrored. The tangent frame derived from screen-space derivatives now matches the one supplied tangents give.
 * `BloomSettings.referenceSize` measures the blur's spread against a shared render size, so views that each show part of one picture (a header and a taller overlay a character moves into) bloom alike.
 * Texture rotation (`KHR_texture_transform`, `TextureTransform.rotation`, and `ApplyMaterialUvTransform` in `.fmat` materials) turns the UVs counter-clockwise as the extension specifies. It turned the other way, so a rotation tuned by eye needs its sign flipped.

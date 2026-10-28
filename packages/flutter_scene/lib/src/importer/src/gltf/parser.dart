@@ -1,5 +1,6 @@
 import 'package:vector_math/vector_math.dart';
 
+import 'animation_pointer.dart';
 import 'extensions.dart';
 import 'types.dart';
 import 'warnings.dart';
@@ -38,21 +39,36 @@ GltfDocument parseGltfJson(Map<String, Object?> json) {
   final punctual = docExtensions?['KHR_lights_punctual'] as Map?;
   final variants = docExtensions?['KHR_materials_variants'] as Map?;
   final imageBased = docExtensions?['EXT_lights_image_based'] as Map?;
+  final scene = json['scene'] as int?;
+  final scenes = _list(json['scenes'], _parseScene);
+  final nodes = _list(json['nodes'], _parseNode);
+  final meshes = _list(json['meshes'], _parseMesh);
+  final materials = _list(json['materials'], _parseMaterial);
+  final lights = _list(punctual?['lights'], _parsePunctualLight);
   return GltfDocument(
-    scene: json['scene'] as int?,
-    scenes: _list(json['scenes'], _parseScene),
-    nodes: _list(json['nodes'], _parseNode),
-    meshes: _list(json['meshes'], _parseMesh),
+    scene: scene,
+    scenes: scenes,
+    nodes: nodes,
+    meshes: meshes,
     accessors: _list(json['accessors'], _parseAccessor),
     bufferViews: _list(json['bufferViews'], _parseBufferView),
     buffers: _list(json['buffers'], _parseBuffer),
-    materials: _list(json['materials'], _parseMaterial),
+    materials: materials,
     textures: _list(json['textures'], _parseTexture),
     images: _list(json['images'], _parseImage),
     samplers: _list(json['samplers'], _parseSampler),
     skins: _list(json['skins'], _parseSkin),
-    animations: _list(json['animations'], _parseAnimation),
-    lights: _list(punctual?['lights'], _parsePunctualLight),
+    animations: resolveGltfAnimationPointers(
+      _list(json['animations'], _parseAnimation),
+      scene: scene,
+      scenes: scenes,
+      nodes: nodes,
+      meshes: meshes,
+      materials: materials,
+      lights: lights,
+      warnings: warnings,
+    ),
+    lights: lights,
     imageBasedLights: _list(imageBased?['lights'], _parseImageBasedLight),
     materialsVariants: [
       for (final v in (variants?['variants'] as List?) ?? const [])
@@ -177,8 +193,6 @@ GltfNode _parseNode(Map<String, Object?> j) {
     scale: scale,
     weights: _numList(j['weights']),
     // Only an explicit false hides; an absent flag means visible.
-    // TODO(gltf-animation-pointer): animating this flag needs
-    // KHR_animation_pointer, which isn't imported yet.
     visible: visibility?['visible'] != false,
   );
 }
@@ -563,10 +577,16 @@ GltfAnimation _parseAnimation(Map<String, Object?> j) {
       .map((c) {
         final cj = c as Map<String, Object?>;
         final target = cj['target'] as Map<String, Object?>;
+        final path = target['path'] as String;
+        final extension =
+            (target['extensions'] as Map?)?['KHR_animation_pointer'] as Map?;
         return GltfAnimationChannel(
           sampler: cj['sampler'] as int,
           targetNode: target['node'] as int?,
-          targetPath: target['path'] as String,
+          targetPath: path,
+          pointer: path == 'pointer'
+              ? (extension?['pointer'] as String?)
+              : null,
         );
       })
       .toList(growable: false);
