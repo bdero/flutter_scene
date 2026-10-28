@@ -322,6 +322,7 @@ void _populateNode({
   required List<MaterialsVariantBinding> variantBindings,
 }) {
   engineNode.name = resolveGltfNodeName(gltfNode.name, index);
+  engineNode.visible = gltfNode.visible;
   const coordinatePolicy = GltfCoordinatePolicy.runtimeBoundary;
   final matrix = gltfNode.matrix;
   if (matrix != null) {

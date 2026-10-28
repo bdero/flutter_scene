@@ -171,6 +171,7 @@ class GltfNode {
     this.rotation,
     this.scale,
     this.weights,
+    this.visible = true,
   });
 
   final String? name;
@@ -190,6 +191,9 @@ class GltfNode {
   /// Per-instance morph target weights overriding [GltfMesh.weights], or
   /// null when the node keeps the mesh defaults.
   final List<double>? weights;
+
+  /// `KHR_node_visibility`: false hides this node and its whole subtree.
+  final bool visible;
 }
 
 /// The engine-side name for the glTF node at [index].

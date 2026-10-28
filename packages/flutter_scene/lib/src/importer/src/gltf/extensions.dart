@@ -7,6 +7,7 @@ library;
 /// Extensions fully parsed today.
 const Set<String> kRecognizedGltfExtensions = {
   'KHR_lights_punctual',
+  'KHR_node_visibility',
   'KHR_materials_variants',
   'KHR_materials_anisotropy',
   'KHR_materials_clearcoat',
