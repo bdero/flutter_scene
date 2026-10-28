@@ -12,6 +12,7 @@
 * Shadowed and punctual-lit materials no longer run every shadow cascade and filter for every pixel on Windows (ANGLE). A shadowed scene on a ROG Ally went from 93 ms to 41 ms a frame.
 * Lit materials compile about 60% faster on Windows (ANGLE), so the first frame that needs a new lit shader stalls for far less time. Warming up a shadowed scene with ambient occlusion went from 23.6 s to 9.5 s on a Radeon RX 580.
 * Lit materials with shadows and point or spot lights draw faster on mobile GPUs. Shadow filters only run their full kernel at shadow edges, lights that miss a pixel are skipped, and unused emissive and occlusion reads are dropped. A shadowed, point-lit scene on OpenGL ES on a Galaxy A16 went from 7.9 to 10.8 fps.
+* On Windows (ANGLE), lit materials get their specular anti-aliasing back, and normal maps on meshes without tangents are no longer flattened to the geometric normal. Both read screen-space derivatives inside a function that returned early, which ANGLE's Direct3D backend reads as zero.
 
 ## 0.24.3
 

@@ -233,20 +233,22 @@ vec3 MultiBounceOcclusion(float visibility, vec3 albedo) {
 
 // Widens a specular lobe to cover unresolved normal variation in one pixel.
 float SpecularAARoughness(vec3 normal, float roughness) {
-  // This toggle is a frame uniform, so the derivatives remain under uniform
-  // control flow.
-  if (frag_info.specular_aa_variance <= 0.0) {
-    return roughness;
-  }
+  // The derivatives come before the branch and the function returns once: an
+  // early return compiles to a one-iteration loop, and ANGLE writes a
+  // derivative inside such a loop as 0.0.
   vec3 d_normal_x = dFdx(normal);
   vec3 d_normal_y = dFdy(normal);
-  float variance = frag_info.specular_aa_variance *
-                   max(dot(d_normal_x, d_normal_x),
-                       dot(d_normal_y, d_normal_y));
-  float kernel = min(2.0 * variance, frag_info.specular_aa_threshold);
-  float square_roughness =
-      clamp(roughness * roughness + kernel, kMinRoughness * kMinRoughness, 1.0);
-  return sqrt(square_roughness);
+  float filtered = roughness;
+  if (frag_info.specular_aa_variance > 0.0) {
+    float variance = frag_info.specular_aa_variance *
+                     max(dot(d_normal_x, d_normal_x),
+                         dot(d_normal_y, d_normal_y));
+    float kernel = min(2.0 * variance, frag_info.specular_aa_threshold);
+    float square_roughness = clamp(roughness * roughness + kernel,
+                                   kMinRoughness * kMinRoughness, 1.0);
+    filtered = sqrt(square_roughness);
+  }
+  return filtered;
 }
 
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
