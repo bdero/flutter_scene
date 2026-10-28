@@ -120,14 +120,14 @@ class DepthPrepass extends RenderGraphPass {
     // fp32 (not fp16): the occlusion pass reconstructs view-space positions
     // and normals from this depth, and fp16's ~11-bit mantissa quantizes it
     // into visibly banded steps (the same reason the shadow map is fp32).
-    // Only the red channel is used.
-    // TODO(flutter_scene): use a single-channel r32Float once Flutter GPU
-    // exposes it, to drop the three unused channels' bandwidth.
+    // Depth alone fills the red channel; the normals take the other three.
     final linearDepth = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: width,
         height: height,
-        format: gpu.PixelFormat.r32g32b32a32Float,
+        format: _writeNormals
+            ? gpu.PixelFormat.r32g32b32a32Float
+            : gpu.PixelFormat.r32Float,
         debugName: 'linear_depth',
         // The kept and transient depth attachments below are different
         // textures, so the color target gets a ring per setup.
