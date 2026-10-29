@@ -78,17 +78,54 @@ final class _WebGpuShader extends Shader {
   UniformSlot getUniformSlot(String uniformName) =>
       _WebGpuUniformSlot(this, uniformName);
 
+  /// Completes once the browser has checked the module of the first compile,
+  /// after reporting a compile error to [FlutterError.reportError].
+  late final Future<void> _checked;
+
+  /// Compiles [entry] into this shader at once, and checks the module when
+  /// the browser answers, so a library compiles only the shaders it is asked
+  /// for.
+  void _compile(GPUDevice device, String name, Map<String, Object?> entry) {
+    final module = _module(device, name, entry);
+    _reflect(name, module, entry);
+    _checked = _report(name, module);
+  }
+
+  static Future<void> _report(String name, GPUShaderModule module) async {
+    try {
+      await _check(name, module);
+    } on StateError catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'flutter_scene',
+        ),
+      );
+    }
+  }
+
   /// Compiles [entry] and replaces this shader's module and reflection.
   Future<void> _populate(
     GPUDevice device,
     String name,
     Map<String, Object?> entry,
   ) async {
-    final wgsl = entry['wgsl']! as String;
-    final candidate = device.createShaderModule(
-      _obj({'code': wgsl, 'label': name}),
-    );
-    final info = await candidate.getCompilationInfo().toDart;
+    final candidate = _module(device, name, entry);
+    await _check(name, candidate);
+    _reflect(name, candidate, entry);
+  }
+
+  static GPUShaderModule _module(
+    GPUDevice device,
+    String name,
+    Map<String, Object?> entry,
+  ) => device.createShaderModule(
+    _obj({'code': entry['wgsl']! as String, 'label': name}),
+  );
+
+  static Future<void> _check(String name, GPUShaderModule module) async {
+    final info = await module.getCompilationInfo().toDart;
     final errors = [
       for (final m in info.messages.toDart)
         if (m.type == 'error') '${m.lineNum}:${m.linePos} ${m.message}',
@@ -98,8 +135,16 @@ final class _WebGpuShader extends Shader {
         'WGSL for "$name" did not compile:\n${errors.join('\n')}',
       );
     }
+  }
+
+  void _reflect(
+    String name,
+    GPUShaderModule module,
+    Map<String, Object?> entry,
+  ) {
+    final wgsl = entry['wgsl']! as String;
     this.name = name;
-    module = candidate;
+    this.module = module;
     entryPoint = entry['entryPoint']! as String;
 
     final declared = {
@@ -242,38 +287,47 @@ final class _WebGpuUniformSlot extends UniformSlot {
 }
 
 final class _WebGpuShaderLibrary extends ShaderLibrary {
-  _WebGpuShaderLibrary._(this._shaders);
+  _WebGpuShaderLibrary._(this._device, this._entries, this._live);
 
-  final Map<String, _WebGpuShader> _shaders;
+  final GPUDevice _device;
+  final Map<String, Map> _entries;
+  final Map<String, WeakReference<_WebGpuShader>>? _live;
+  final Map<String, _WebGpuShader> _shaders = {};
 
   /// Live shaders by the asset they came from, for hot reload.
   static final Map<String, Map<String, WeakReference<_WebGpuShader>>>
   _shadersByAsset = {};
 
   @override
-  Shader? operator [](String shaderName) => _shaders[shaderName];
+  Shader? operator [](String shaderName) =>
+      _shaders[shaderName] ?? _compiled(shaderName);
 
-  /// Compiles every shader in [sidecarJson], after checking it was built with
-  /// exactly [bundle].
-  static Future<_WebGpuShaderLibrary> fromSidecar(
+  _WebGpuShader? _compiled(String name) {
+    final entry = _entries[name];
+    if (entry == null) return null;
+    final shader = _WebGpuShader(
+      entry['stage'] == 'fragment' ? ShaderStage.fragment : ShaderStage.vertex,
+    ).._compile(_device, name, entry.cast<String, Object?>());
+    _live?[name] = WeakReference(shader);
+    return _shaders[name] = shader;
+  }
+
+  /// The shaders of [sidecarJson], after checking it was built with exactly
+  /// [bundle]; each compiles when it is first looked up. Hot reload tracks
+  /// them in [live].
+  static _WebGpuShaderLibrary fromSidecar(
     GPUDevice device,
     Uint8List bundle,
     String sidecarJson, {
     required String source,
-  }) async {
+    Map<String, WeakReference<_WebGpuShader>>? live,
+  }) {
     final sidecar = _checkedSidecar(bundle, sidecarJson, source: source);
-    final shaders = <String, _WebGpuShader>{};
-    for (final MapEntry(:key, :value)
-        in (sidecar['shaders']! as Map).cast<String, Map>().entries) {
-      final shader = _WebGpuShader(
-        value['stage'] == 'fragment'
-            ? ShaderStage.fragment
-            : ShaderStage.vertex,
-      );
-      await shader._populate(device, key, value.cast<String, Object?>());
-      shaders[key] = shader;
-    }
-    return _WebGpuShaderLibrary._(shaders);
+    return _WebGpuShaderLibrary._(
+      device,
+      (sidecar['shaders']! as Map).cast<String, Map>(),
+      live,
+    );
   }
 
   static Map<String, Object?> _checkedSidecar(
@@ -329,16 +383,15 @@ Future<ShaderLibrary?> _loadShaderLibraryAsync(
   String assetKey,
 ) async {
   final (bundle, sidecar) = await _loadBundleAndSidecar(assetKey);
-  final library = await _WebGpuShaderLibrary.fromSidecar(
+  final live = <String, WeakReference<_WebGpuShader>>{};
+  final library = _WebGpuShaderLibrary.fromSidecar(
     context.device.device,
     bundle,
     sidecar,
     source: assetKey,
+    live: live,
   );
-  _WebGpuShaderLibrary._shadersByAsset[assetKey] = {
-    for (final MapEntry(:key, :value) in library._shaders.entries)
-      key: WeakReference(value),
-  };
+  _WebGpuShaderLibrary._shadersByAsset[assetKey] = live;
   registerShaderLibrarySource(library, ShaderLibrarySource(assetKey: assetKey));
   return library;
 }
@@ -380,13 +433,13 @@ Future<void> _reinitializeShaderLibraryAsync(
   }
 }
 
-/// Compiles a library straight from a bundle and its sidecar text, for
-/// tests that serve neither as assets.
+/// Reads a library straight from a bundle and its sidecar text, for tests
+/// that serve neither as assets.
 @visibleForTesting
 Future<ShaderLibrary> webGpuShaderLibraryFromSidecar(
   Uint8List bundle,
   String sidecarJson,
-) {
+) async {
   final backend = gpuContext as _WebGpuContext;
   return _WebGpuShaderLibrary.fromSidecar(
     backend.device.device,
@@ -395,6 +448,12 @@ Future<ShaderLibrary> webGpuShaderLibraryFromSidecar(
     source: 'test',
   );
 }
+
+/// Completes once the browser has checked the first compile of [shader], a
+/// shader of a library [webGpuShaderLibraryFromSidecar] read.
+@visibleForTesting
+Future<void> webGpuShaderChecked(Shader shader) =>
+    (shader as _WebGpuShader)._checked;
 
 /// Recompiles every shader of [library] in place from [sidecarJson], as a
 /// hot reload does, for tests that serve no assets.
