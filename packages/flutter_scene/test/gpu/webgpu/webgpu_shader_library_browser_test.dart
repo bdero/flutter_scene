@@ -106,7 +106,7 @@ void main() {
   });
 
   test('compiles shaders and answers reflection from the sidecar', () async {
-    final library = await webGpuShaderLibraryFromSidecar(_bundle, _sidecar());
+    final library = await webGpuShaderLibraryFromSidecar(_sidecar());
     final vertex = library['TestVertex']!;
     final fragment = library['TestFragment']!;
     expect(vertex.stage, gpu.ShaderStage.vertex);
@@ -126,22 +126,16 @@ void main() {
     expect(webGpuDescribeShader(fragment).textures, [('albedo', 65, 193)]);
   });
 
-  test('refuses a sidecar built with another bundle', () {
-    expect(
-      webGpuShaderLibraryFromSidecar(_bundle, _sidecar(bundleHash: 'stale')),
-      throwsA(
-        isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('stale'),
-        ),
-      ),
+  test('reads a sidecar without the bundle it names', () async {
+    final library = await webGpuShaderLibraryFromSidecar(
+      _sidecar(bundleHash: 'another build'),
     );
+    expect(library['TestVertex'], isNotNull);
   });
 
   test('refuses an older sidecar format', () {
     expect(
-      webGpuShaderLibraryFromSidecar(_bundle, _sidecar(format: 1)),
+      webGpuShaderLibraryFromSidecar(_sidecar(format: 1)),
       throwsA(isA<StateError>()),
     );
   });
@@ -153,7 +147,6 @@ void main() {
     FlutterError.onError = errors.add;
     addTearDown(() => FlutterError.onError = held);
     final library = await webGpuShaderLibraryFromSidecar(
-      _bundle,
       _sidecar(vertex: 'fn broken( {'),
     );
     await webGpuShaderChecked(library['TestVertex']!);
@@ -169,7 +162,6 @@ void main() {
 
   test('loads a library without compiling a shader nobody looks up', () async {
     final library = await webGpuShaderLibraryFromSidecar(
-      _bundle,
       _sidecar(vertex: 'fn broken( {'),
     );
     expect(library['TestFragment'], isNotNull);
@@ -184,10 +176,7 @@ void main() {
     final json = (jsonDecode((await response.text().toDart).toDart) as Map)
       ..['bundle'] = sidecarBundleHash(_bundle);
     final count = (json['shaders'] as Map).length;
-    final library = await webGpuShaderLibraryFromSidecar(
-      _bundle,
-      jsonEncode(json),
-    );
+    final library = await webGpuShaderLibraryFromSidecar(jsonEncode(json));
     for (final name in (json['shaders'] as Map).keys) {
       expect(library[name as String], isNotNull, reason: name);
     }
