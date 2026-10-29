@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show FlutterError, FlutterErrorDetails;
 import 'package:flutter_scene/src/gpu/shared/sidecar_hash.dart';
 import 'package:flutter_scene/src/gpu/web/_gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/webgpu/webgpu_backend.dart';
@@ -145,17 +146,33 @@ void main() {
     );
   });
 
-  test('reports a WGSL compile error with the shader name', () {
+  test('reports a WGSL compile error with the shader name once the shader '
+      'is looked up', () async {
+    final errors = <FlutterErrorDetails>[];
+    final held = FlutterError.onError;
+    FlutterError.onError = errors.add;
+    addTearDown(() => FlutterError.onError = held);
+    final library = await webGpuShaderLibraryFromSidecar(
+      _bundle,
+      _sidecar(vertex: 'fn broken( {'),
+    );
+    await webGpuShaderChecked(library['TestVertex']!);
     expect(
-      webGpuShaderLibraryFromSidecar(_bundle, _sidecar(vertex: 'fn broken( {')),
-      throwsA(
-        isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('TestVertex'),
-        ),
+      errors.single.exception,
+      isA<StateError>().having(
+        (e) => e.message,
+        'message',
+        contains('TestVertex'),
       ),
     );
+  });
+
+  test('loads a library without compiling a shader nobody looks up', () async {
+    final library = await webGpuShaderLibraryFromSidecar(
+      _bundle,
+      _sidecar(vertex: 'fn broken( {'),
+    );
+    expect(library['TestFragment'], isNotNull);
   });
 
   test('every shader of a real sidecar compiles', () async {
