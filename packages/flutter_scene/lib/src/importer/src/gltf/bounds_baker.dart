@@ -3,8 +3,8 @@
 /// Provides static primitive AABBs (from the POSITION accessor's
 /// spec-provided min/max, falling back to a vertex scan) and skinned
 /// pose-union AABBs: for every skinned primitive, the union of the mesh's
-/// extent across every animated pose, sampled at each keyframe time of every
-/// channel driving the skin's joints. A pose-union bound is the only sound
+/// extent in its rest pose and at each keyframe time of each animation, posed
+/// by that animation's channels alone. A pose-union bound is the only sound
 /// cull bound for skinned content; the rest-pose AABB under-covers the mesh
 /// once joints animate.
 ///
@@ -171,8 +171,10 @@ AabbBounds aabbFromPositions(Float32List positions) {
 ///
 /// For each node with both a skin and a mesh, the result holds one entry per
 /// triangle-mode (`mode == 4`) primitive, in source order: the union of the
-/// primitive's extent across the bind pose and every keyframe time of every
-/// animation channel driving the skin's joints, in mesh-local space. An entry
+/// primitive's extent in its rest pose and at every keyframe time of each
+/// animation driving the skin's joints, in mesh-local space. Each animation
+/// is posed on its own over the rest pose, as a model plays one at a time. An
+/// entry
 /// is `null` when the primitive carries no `JOINTS_0`/`WEIGHTS_0` attributes
 /// (it packs and renders unskinned) or the union came up empty; consumers
 /// treat a missing bound as "always visible".
@@ -208,14 +210,16 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
     // them, the spec mandates identity — match the runtime behaviour.
     final ibm = _readInverseBindMatrices(skin, doc, bufferData);
 
-    // Collect every channel that drives any joint in this skin.
-    // Sample times default to {0} (bind pose) plus every keyframe time
-    // from those channels. With the emitters converting CUBICSPLINE to
-    // bare keyframe values, evaluating at each keyframe time is exact
-    // for our pipeline.
-    final sampleTimes = <double>{0.0};
-    final relevantChannels = <_PoseChannel>[];
+    // Samples the rest pose with no channel applied, then each animation's
+    // keyframe times with only that animation's channels. With the
+    // emitters converting CUBICSPLINE to bare keyframe values, evaluating
+    // at each keyframe time is exact for our pipeline.
+    final poses = <(Map<int, List<_PoseChannel>>, List<double>)>[
+      (const {}, const [0.0]),
+    ];
     for (final anim in doc.animations) {
+      final channelsByNode = <int, List<_PoseChannel>>{};
+      final sampleTimes = <double>{};
       for (final ch in anim.channels) {
         if (ch.targetNode == null) continue;
         if (!isJointNode.containsKey(ch.targetNode!)) continue;
@@ -242,22 +246,14 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
           isCubic: isCubic,
         );
         if (pc.isUsable) {
-          relevantChannels.add(pc);
-          for (final t in times) {
-            sampleTimes.add(t);
-          }
+          channelsByNode.putIfAbsent(pc.targetNode, () => []).add(pc);
+          sampleTimes.addAll(times);
         }
       }
+      if (channelsByNode.isNotEmpty) {
+        poses.add((channelsByNode, sampleTimes.toList()..sort()));
+      }
     }
-
-    // Index relevant channels by target node for fast lookup during
-    // pose evaluation.
-    final channelsByNode = <int, List<_PoseChannel>>{};
-    for (final c in relevantChannels) {
-      channelsByNode.putIfAbsent(c.targetNode, () => []).add(c);
-    }
-
-    final sortedTimes = sampleTimes.toList()..sort();
 
     // Pre-compute the static (un-animated) localTransform components
     // for each joint and every joint ancestor, so pose evaluation can
@@ -294,25 +290,27 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
       );
       final transformedScratch = AabbBounds.empty();
 
-      for (final t in sortedTimes) {
-        _buildJointPaletteAtTime(
-          jointNodeIndices: jointNodeIndices,
-          parentOf: parentOf,
-          isJointNode: isJointNode,
-          channelsByNode: channelsByNode,
-          staticTrs: staticTrs,
-          ibm: ibm,
-          time: t,
-          out: palette,
-        );
+      for (final (channelsByNode, sortedTimes) in poses) {
+        for (final t in sortedTimes) {
+          _buildJointPaletteAtTime(
+            jointNodeIndices: jointNodeIndices,
+            parentOf: parentOf,
+            isJointNode: isJointNode,
+            channelsByNode: channelsByNode,
+            staticTrs: staticTrs,
+            ibm: ibm,
+            time: t,
+            out: palette,
+          );
 
-        for (int j = 0; j < jointNodeIndices.length; j++) {
-          final infl = influence[j];
-          if (infl.isEmpty) continue;
-          transformedScratch
-            ..copyFrom(infl)
-            ..transform(palette[j]);
-          poseUnion.expandToBounds(transformedScratch);
+          for (int j = 0; j < jointNodeIndices.length; j++) {
+            final infl = influence[j];
+            if (infl.isEmpty) continue;
+            transformedScratch
+              ..copyFrom(infl)
+              ..transform(palette[j]);
+            poseUnion.expandToBounds(transformedScratch);
+          }
         }
       }
 

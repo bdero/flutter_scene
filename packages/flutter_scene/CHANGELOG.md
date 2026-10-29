@@ -19,6 +19,7 @@
 * The depth prepass writes a single-channel `r32Float` target when no pass needs normals, a quarter of the memory and bandwidth. `RenderPassContext.sceneDepthLinear` keeps four channels when normals are written.
 * Shader bundle reflection parses about 10x faster by copying each backend's output on its first read, so a `ShaderMaterial` on Apple platforms waits far less before its first draw.
 * Build hooks that `flutter test` calls in process (`buildMaterials`, `buildTargetShaderBundleJson`) find the engine's shader includes instead of throwing.
+* A skinned mesh imported offline is no longer culled while on screen in its rest pose, or in one of several animations that move the same joint.
 
 ## 0.24.3
 
