@@ -23,6 +23,7 @@
 * A skinned mesh imported offline is no longer culled while on screen in its rest pose, or in one of several animations that move the same joint.
 * A skinned mesh loaded at runtime is culled when off screen instead of always drawing.
 * Blended double-sided materials, such as glass, leaves, and cloth, show their back faces, and their near side draws over their far side.
+* A `ShaderMaterial` or `.fmat` material with a vertex shader no longer breaks the line segments, billboards, and Gaussian splats it draws.
 
 ## 0.24.3
 

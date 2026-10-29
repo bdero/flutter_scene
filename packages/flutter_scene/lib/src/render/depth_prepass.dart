@@ -539,8 +539,9 @@ class _DepthPrepassEncoder {
     // its FrameInfo and MaterialParams against it below. This pass binds the
     // real camera transform and position, so a camera-relative displacement is
     // correct here.
-    final materialVertex = item.material.materialVertexShader(
-      depthVertex != null ? 'depth' : geometry.materialVertexVariant,
+    final materialVertex = item.material.vertexShaderForGeometry(
+      geometry,
+      depth: depthVertex != null,
     );
     final activeVertex =
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
