@@ -20,6 +20,7 @@
 * Shader bundle reflection parses about 10x faster by copying each backend's output on its first read, so a `ShaderMaterial` on Apple platforms waits far less before its first draw.
 * Build hooks that `flutter test` calls in process (`buildMaterials`, `buildTargetShaderBundleJson`) find the engine's shader includes instead of throwing.
 * A skinned mesh imported offline is no longer culled while on screen in its rest pose, or in one of several animations that move the same joint.
+* A skinned mesh loaded at runtime is culled when off screen instead of always drawing.
 
 ## 0.24.3
 

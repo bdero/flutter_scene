@@ -119,7 +119,9 @@ void _deliverWarnings(
 /// off the UI thread, so a large model does not stall the app while it loads.
 ///
 /// Returns the packed primitives indexed `[meshIndex][primitiveIndex]`, with a
-/// null entry for each non-triangle primitive (skipped, see [_populateNode]).
+/// null entry for each non-triangle primitive (skipped, see [_populateNode]),
+/// and the pose bounds of each skinned node's primitives
+/// ([skinnedPoseBounds]).
 /// The GPU upload of these buffers still happens on the raster thread, in
 /// [geometryFromPacked]; only the pure-data packing moves off it. On the web,
 /// where [compute] runs inline, this is a no-op indirection.
@@ -133,14 +135,19 @@ typedef _PackedPrimitiveVariants = ({
   PackedPrimitive skinned,
 });
 
-Future<List<List<_PackedPrimitiveVariants?>>> _packPrimitives(
+typedef _PackedDocument = ({
+  List<List<_PackedPrimitiveVariants?>> primitives,
+  Map<int, List<Aabb3?>> skinnedBounds,
+});
+
+Future<_PackedDocument> _packPrimitives(
   GltfDocument doc,
   Uint8List bufferData,
 ) => compute(_packPrimitivesIsolate, (doc: doc, bufferData: bufferData));
 
 // Top-level so it can run on a background isolate. Packs each primitive with
 // the shared [packGltfPrimitive]; non-triangle topologies pack to null.
-List<List<_PackedPrimitiveVariants?>> _packPrimitivesIsolate(
+_PackedDocument _packPrimitivesIsolate(
   ({GltfDocument doc, Uint8List bufferData}) input,
 ) {
   final doc = input.doc;
@@ -178,13 +185,16 @@ List<List<_PackedPrimitiveVariants?>> _packPrimitivesIsolate(
   for (final mesh in doc.meshes) {
     validateMorphTargetConsistency(mesh);
   }
-  return [
-    for (var meshIndex = 0; meshIndex < doc.meshes.length; meshIndex++)
-      [
-        for (final p in doc.meshes[meshIndex].primitives)
-          if (p.mode != 4) null else pack(meshIndex, p),
-      ],
-  ];
+  return (
+    primitives: [
+      for (var meshIndex = 0; meshIndex < doc.meshes.length; meshIndex++)
+        [
+          for (final p in doc.meshes[meshIndex].primitives)
+            if (p.mode != 4) null else pack(meshIndex, p),
+        ],
+    ],
+    skinnedBounds: skinnedPoseBounds(doc, input.bufferData),
+  );
 }
 
 /// Builds the [Node] tree from a parsed document, its resolved buffer, and its
@@ -192,7 +202,7 @@ List<List<_PackedPrimitiveVariants?>> _packPrimitivesIsolate(
 Future<Node> _buildScene(
   GltfDocument doc,
   Uint8List bufferData,
-  List<List<_PackedPrimitiveVariants?>> packed,
+  _PackedDocument packed,
   GltfResourceResolver? resolveUri, {
   GltfWarningCallback? onWarning,
   int? maxTextureSize,
@@ -317,7 +327,7 @@ void _populateNode({
   required Node engineNode,
   required GltfNode gltfNode,
   required GltfDocument doc,
-  required List<List<_PackedPrimitiveVariants?>> packed,
+  required _PackedDocument packed,
   required List<Node> engineNodes,
   required List<Material> materials,
   required List<MaterialsVariantBinding> variantBindings,
@@ -347,7 +357,11 @@ void _populateNode({
 
   if (gltfNode.mesh != null) {
     final gltfMesh = doc.meshes[gltfNode.mesh!];
-    final packedMesh = packed[gltfNode.mesh!];
+    final packedMesh = packed.primitives[gltfNode.mesh!];
+    final skinnedBounds = gltfNode.skin == null
+        ? null
+        : packed.skinnedBounds[index];
+    var triangles = 0;
     final primitives = <MeshPrimitive>[];
     for (int pi = 0; pi < gltfMesh.primitives.length; pi++) {
       final p = gltfMesh.primitives[pi];
@@ -364,10 +378,14 @@ void _populateNode({
       final packedPrimitive = gltfNode.skin == null
           ? packedVariants.unskinned
           : packedVariants.skinned;
+      final triangle = triangles++;
       final geometry = geometryFromPacked(
         packedPrimitive,
         morphTargetNames: gltfMesh.targetNames,
         defaultMorphWeights: gltfMesh.weights,
+        skinnedBounds: skinnedBounds != null && triangle < skinnedBounds.length
+            ? skinnedBounds[triangle]
+            : null,
       );
       final material = p.material != null
           ? materials[p.material!]
