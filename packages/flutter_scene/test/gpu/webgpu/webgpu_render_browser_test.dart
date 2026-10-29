@@ -141,7 +141,7 @@ void main() {
 
   setUpAll(() async {
     await gpu.initializeGpuBackend();
-    library = await webGpuShaderLibraryFromSidecar(_bundle, _sidecar());
+    library = await webGpuShaderLibraryFromSidecar(_sidecar());
     vertex = library['QuadVertex']!;
     fragment = library['TintFragment']!;
     pipeline = gpu.gpuContext.createRenderPipeline(vertex, fragment);
