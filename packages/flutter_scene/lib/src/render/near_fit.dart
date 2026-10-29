@@ -55,13 +55,16 @@ const double kNearFitAdvisoryRatio = 4.0;
 /// With [fitEnabled] off it reports how much a fitted (or hand-picked) near
 /// plane would gain. With it on it reports a large node whose bounds hold
 /// the eye, since that keeps the fit at the authored plane. [nodeName] names
-/// [fit]'s nearest node.
+/// [fit]'s nearest node. With [reversedFloatDepth] it says nothing, since
+/// that depth keeps its precision whatever the near plane.
 @internal
 String? nearPlaneAdvisory(
   NearPlaneFit fit, {
   required bool fitEnabled,
   String? nodeName,
+  bool reversedFloatDepth = false,
 }) {
+  if (reversedFloatDepth) return null;
   final label = nodeName == null || nodeName.isEmpty ? 'a node' : "'$nodeName'";
   if (!fitEnabled) {
     final available = fittedNearPlane(
