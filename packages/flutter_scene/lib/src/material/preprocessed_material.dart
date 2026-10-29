@@ -639,11 +639,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   @internal
   gpu.CullMode get renderCullMode {
-    // Translucent double-sided surfaces keep one face per draw so depth
-    // sorting remains stable.
-    // TODO(translucent-sorting): emit and sort front/back surface draws
-    // independently, then disable culling for double-sided materials.
-    if (_culling == FmatCulling.back && doubleSided && isOpaque()) {
+    if (_culling == FmatCulling.back && doubleSided) {
       return gpu.CullMode.none;
     }
     return _cullMode(_culling);
