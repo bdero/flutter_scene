@@ -1,15 +1,24 @@
 // Baked skinned pose bounds must cover the rest pose and the poses of each
-// animation on its own.
+// animation on its own. A runtime-imported skinned mesh must carry the same
+// bounds, so it is culled.
 
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/src/gltf/bounds_baker.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/gpu_available.dart';
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  final noGpu = gpuAvailable()
+      ? null
+      : 'Requires a GPU device: --enable-impeller --enable-flutter-gpu.';
+
   group('baked skinned pose bounds', () {
     AabbBounds boundsOf(Uint8List glb) {
       final container = parseGlb(glb);
@@ -35,6 +44,25 @@ void main() {
       expect(bounds.maxY, 4);
     });
   });
+
+  // A skinned mesh imported at runtime must carry the bounds of its poses, in
+  // the space of its node, so it is culled like one the offline importer
+  // bakes.
+  test('a runtime-imported skinned mesh carries its pose bounds', () async {
+    final root = await Node.fromGlbBytes(_skinnedGlb());
+    final geometry =
+        root.children.single.children.first.mesh!.primitives.single.geometry;
+    expect(geometry, isA<SkinnedGeometry>());
+    final bounds = geometry.localBounds;
+    expect(bounds, isNotNull);
+    expect(bounds!.min.x, -10);
+    expect(bounds.max.x, -9);
+    expect(bounds.min.y, 0);
+    expect(bounds.max.y, 6);
+    expect(bounds.min.z, 0);
+    expect(bounds.max.z, 0);
+    expect(geometry.localBoundingSphere, isNotNull);
+  }, skip: noGpu);
 }
 
 // A triangle skinned to two joints. The root joint moves the first two
