@@ -312,17 +312,15 @@ final class _WebGpuShaderLibrary extends ShaderLibrary {
     return _shaders[name] = shader;
   }
 
-  /// The shaders of [sidecarJson], after checking it was built with exactly
-  /// [bundle]; each compiles when it is first looked up. Hot reload tracks
-  /// them in [live].
+  /// The shaders of [sidecarJson]; each compiles when it is first looked up.
+  /// Hot reload tracks them in [live].
   static _WebGpuShaderLibrary fromSidecar(
     GPUDevice device,
-    Uint8List bundle,
     String sidecarJson, {
     required String source,
     Map<String, WeakReference<_WebGpuShader>>? live,
   }) {
-    final sidecar = _checkedSidecar(bundle, sidecarJson, source: source);
+    final sidecar = _checkedSidecar(sidecarJson, source: source);
     return _WebGpuShaderLibrary._(
       device,
       (sidecar['shaders']! as Map).cast<String, Map>(),
@@ -331,7 +329,6 @@ final class _WebGpuShaderLibrary extends ShaderLibrary {
   }
 
   static Map<String, Object?> _checkedSidecar(
-    Uint8List bundle,
     String sidecarJson, {
     required String source,
   }) {
@@ -343,15 +340,6 @@ final class _WebGpuShaderLibrary extends ShaderLibrary {
         'format 2. Rebuild so the hook rewrites it.',
       );
     }
-    final expected = sidecar['bundle'];
-    final actual = sidecarBundleHash(bundle);
-    if (expected != actual) {
-      throw StateError(
-        'The WGSL sidecar for "$source" was built with a different bundle '
-        '($expected, not $actual). A cache in front of the server may be '
-        'serving a stale file; rebuild and reload.',
-      );
-    }
     return sidecar;
   }
 }
@@ -359,14 +347,11 @@ final class _WebGpuShaderLibrary extends ShaderLibrary {
 /// Where a bundle's WGSL sidecar is served from.
 String _sidecarKeyFor(String bundleKey) => '$bundleKey.wgsl.json';
 
-Future<(Uint8List, String)> _loadBundleAndSidecar(String assetKey) async {
-  final data = await loadGeneratedAsset(assetKey);
-  final bundle = data.buffer.asUint8List(
-    data.offsetInBytes,
-    data.lengthInBytes,
-  );
+/// The sidecar of the bundle at [assetKey]. WebGPU compiles from the sidecar
+/// alone, so the bundle itself is never fetched.
+Future<String> _loadSidecar(String assetKey) async {
   try {
-    return (bundle, await loadGeneratedAssetString(_sidecarKeyFor(assetKey)));
+    return await loadGeneratedAssetString(_sidecarKeyFor(assetKey));
   } on FlutterError {
     throw StateError(
       'The shader bundle "$assetKey" has no WGSL sidecar, which the WebGPU '
@@ -382,11 +367,10 @@ Future<ShaderLibrary?> _loadShaderLibraryAsync(
   _WebGpuContext context,
   String assetKey,
 ) async {
-  final (bundle, sidecar) = await _loadBundleAndSidecar(assetKey);
+  final sidecar = await _loadSidecar(assetKey);
   final live = <String, WeakReference<_WebGpuShader>>{};
   final library = _WebGpuShaderLibrary.fromSidecar(
     context.device.device,
-    bundle,
     sidecar,
     source: assetKey,
     live: live,
@@ -414,10 +398,8 @@ Future<void> _reinitializeShaderLibraryAsync(
     _WebGpuShaderLibrary._shadersByAsset.remove(assetKey);
     return;
   }
-  final (bundle, sidecarJson) = await _loadBundleAndSidecar(assetKey);
   final sidecar = _WebGpuShaderLibrary._checkedSidecar(
-    bundle,
-    sidecarJson,
+    await _loadSidecar(assetKey),
     source: assetKey,
   );
   final entries = (sidecar['shaders']! as Map).cast<String, Map>();
@@ -433,17 +415,13 @@ Future<void> _reinitializeShaderLibraryAsync(
   }
 }
 
-/// Reads a library straight from a bundle and its sidecar text, for tests
-/// that serve neither as assets.
+/// Reads a library straight from sidecar text, for tests that serve no
+/// assets.
 @visibleForTesting
-Future<ShaderLibrary> webGpuShaderLibraryFromSidecar(
-  Uint8List bundle,
-  String sidecarJson,
-) async {
+Future<ShaderLibrary> webGpuShaderLibraryFromSidecar(String sidecarJson) async {
   final backend = gpuContext as _WebGpuContext;
   return _WebGpuShaderLibrary.fromSidecar(
     backend.device.device,
-    bundle,
     sidecarJson,
     source: 'test',
   );
@@ -460,12 +438,10 @@ Future<void> webGpuShaderChecked(Shader shader) =>
 @visibleForTesting
 Future<void> webGpuReloadShaderLibrary(
   ShaderLibrary library,
-  Uint8List bundle,
   String sidecarJson,
 ) async {
   final device = (gpuContext as _WebGpuContext).device.device;
   final sidecar = _WebGpuShaderLibrary._checkedSidecar(
-    bundle,
     sidecarJson,
     source: 'test',
   );
