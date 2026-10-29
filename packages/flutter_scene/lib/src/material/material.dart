@@ -601,6 +601,17 @@ abstract class Material {
   @internal
   gpu.Shader? materialVertexShader(String variant) => null;
 
+  /// The vertex shader this material supplies for [geometry], or null when
+  /// the geometry's own one runs. [depth] asks for the position-only
+  /// `'depth'` variant. A geometry with no [Geometry.materialVertexVariant]
+  /// builds its vertices in its own shader, so it never takes one.
+  @internal
+  gpu.Shader? vertexShaderForGeometry(Geometry geometry, {bool depth = false}) {
+    final variant = geometry.materialVertexVariant;
+    if (variant == null) return null;
+    return materialVertexShader(depth ? 'depth' : variant);
+  }
+
   /// The per-instance attributes this material declares, or null when it
   /// declares none. A `.fmat` `instance_attributes` block declares them, as
   /// does a raw `ShaderMaterial` constructed with `instanceAttributes`.
@@ -617,7 +628,7 @@ abstract class Material {
   /// geometry built in the vertex shader casts the shadow it draws.
   @internal
   bool needsFullVertexForDepth(Geometry geometry) =>
-      materialVertexShader(geometry.materialVertexVariant) != null &&
+      vertexShaderForGeometry(geometry) != null &&
       (geometry.hasCustomAttributes || instanceAttributes != null);
 
   /// The custom vertex attributes this material's own vertex shaders read, or

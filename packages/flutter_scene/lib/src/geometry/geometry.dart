@@ -1060,8 +1060,12 @@ abstract class Geometry {
   /// select a custom material's generated vertex shader (see
   /// [Material.materialVertexShader]). Unskinned geometry is `'unskinned'`;
   /// [SkinnedGeometry] overrides this to `'skinned'`.
+  ///
+  /// Null means the geometry builds its vertices in its own vertex shader
+  /// (a ribbon, a camera-facing quad), so no material's vertex shader
+  /// replaces it in any pass.
   @internal
-  String get materialVertexVariant => 'unskinned';
+  String? get materialVertexVariant => 'unskinned';
 
   /// The morph target deltas this geometry carries, or null for unmorphed
   /// geometry. Overridden by the morphed geometry subclasses.
