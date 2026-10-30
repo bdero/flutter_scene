@@ -222,6 +222,9 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
   void _onJob() {
     final job = _job!;
     if (job.done && job.result != null && mounted) {
+      // The job can notify again while the route animates out, and a second
+      // pop would close the page beneath.
+      job.removeListener(_onJob);
       Navigator.of(context).pop((project: job.result, useExisting: false));
     }
   }

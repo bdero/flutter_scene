@@ -178,5 +178,7 @@ void main() {
     expect(used, _custom);
     expect(scaffoldedWith, _custom);
     expect(find.text('New project'), findsNothing);
+    // Only the dialog closes, not the page that opened it.
+    expect(find.text('open'), findsOneWidget);
   });
 }
