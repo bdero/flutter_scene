@@ -171,7 +171,7 @@ void main() {
 
   setUpAll(() async {
     await gpu.initializeGpuBackend();
-    library = await webGpuShaderLibraryFromSidecar(_bundle, _sidecar());
+    library = await webGpuShaderLibraryFromSidecar(_sidecar());
     vertex = library['TestVertex']!;
     fragment = library['TestFragment']!;
   });
@@ -419,7 +419,6 @@ void main() {
     // The reload drops the uniform, so the layout loses its binding.
     await webGpuReloadShaderLibrary(
       library,
-      _bundle,
       _sidecar(
         fragment: _fragmentWgsl
             .replaceFirst(
@@ -434,7 +433,7 @@ void main() {
     expect(identical(after.variant, before.variant), isFalse);
     expect(after.dynamicBindings, [0]);
     // Restore for the other tests.
-    await webGpuReloadShaderLibrary(library, _bundle, _sidecar());
+    await webGpuReloadShaderLibrary(library, _sidecar());
   });
 
   test('every shader of a real sidecar builds a valid pipeline', () async {
@@ -445,10 +444,7 @@ void main() {
     final response = await web.window.fetch(_sidecarUrl.toJS).toDart;
     final json = (jsonDecode((await response.text().toDart).toDart) as Map)
       ..['bundle'] = sidecarBundleHash(_bundle);
-    final real = await webGpuShaderLibraryFromSidecar(
-      _bundle,
-      jsonEncode(json),
-    );
+    final real = await webGpuShaderLibraryFromSidecar(jsonEncode(json));
     final shaders = (json['shaders'] as Map).cast<String, Map>();
     final vertices = [
       for (final MapEntry(:key, :value) in shaders.entries)

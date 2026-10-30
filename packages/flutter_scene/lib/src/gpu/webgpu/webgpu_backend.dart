@@ -10,14 +10,18 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
-    show FlutterError, debugPrint, kDebugMode, visibleForTesting;
+    show
+        FlutterError,
+        FlutterErrorDetails,
+        debugPrint,
+        kDebugMode,
+        visibleForTesting;
 import 'package:web/web.dart' as web;
 
 import '../../generated_assets/generated_asset_fetch_web.dart';
 import '../shared/encoded_image_types.dart';
 import '../shared/gpu_capabilities.dart';
 import '../shared/gpu_sample_types.dart';
-import '../shared/sidecar_hash.dart';
 import '../shared/shader_library_sources.dart';
 import '../shared/wgsl_bindings.dart'
     show WgslBindingMap, parseWgslDeclarations;
