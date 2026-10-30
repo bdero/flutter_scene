@@ -57,6 +57,17 @@ export 'src/project/fproject.dart'
         resolveWorkingDirectory,
         substituteCommandVariables,
         tokenizeCommand;
+export 'src/project/new_project_dialog.dart'
+    show NewProjectChoice, showNewProjectDialog;
+export 'src/project/project_scaffold.dart'
+    show
+        ProjectScaffoldJob,
+        ProjectScaffoldPhase,
+        ProjectScaffolder,
+        ScaffoldProcessStarter,
+        flutterSceneDependency,
+        validateProjectDirectory,
+        validateProjectName;
 export 'src/project/project_runner.dart'
     show ConsoleLine, ConsoleLineKind, ProjectRunner;
 export 'src/project/project_version_check.dart'
