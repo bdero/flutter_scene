@@ -2,6 +2,7 @@ include: package:flutter_lints/flutter.yaml
 
 analyzer:
   exclude:
+    - agent-artifacts/**
     - packages/*/build/**
     - packages/*/lib/**.g.dart
     - packages/flutter_scene/lib/src/importer/generated/**
