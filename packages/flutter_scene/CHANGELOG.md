@@ -20,7 +20,7 @@
 * The depth prepass writes a single-channel `r32Float` target when no pass needs normals, a quarter of the memory and bandwidth. `RenderPassContext.sceneDepthLinear` keeps four channels when normals are written.
 * Shader bundle reflection parses about 10x faster by copying each backend's output on its first read, so a `ShaderMaterial` on Apple platforms waits far less before its first draw.
 * Build hooks that `flutter test` calls in process (`buildMaterials`, `buildTargetShaderBundleJson`) find the engine's shader includes instead of throwing.
-* A skinned mesh imported offline is no longer culled while on screen in its rest pose, or in one of several animations that move the same joint.
+* A skinned mesh imported offline is no longer culled while on screen in its rest pose, in one of several animations that move the same joint, or when its node sits apart from its skeleton.
 * A skinned mesh loaded at runtime is culled when off screen instead of always drawing.
 * Blended double-sided materials, such as glass, leaves, and cloth, show their back faces, and their near side draws over their far side.
 * A `ShaderMaterial` or `.fmat` material with a vertex shader no longer breaks the line segments, billboards, and Gaussian splats it draws.

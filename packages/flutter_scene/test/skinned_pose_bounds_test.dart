@@ -7,9 +7,11 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
+import 'package:flutter_scene/src/importer/in_memory_import.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/src/gltf/bounds_baker.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:scene/scene.dart' show GeometryResource;
 
 import 'support/gpu_available.dart';
 
@@ -43,6 +45,18 @@ void main() {
       expect(bounds.minY, 0);
       expect(bounds.maxY, 4);
     });
+  });
+
+  // The offline importer stores the bounds in the skinned node's space too, so
+  // a node away from its skeleton is culled where its mesh draws.
+  test('an offline-imported skinned mesh carries node-space bounds', () {
+    final document = importGlbToSceneDocument(_skinnedGlb());
+    final bounds = document.resources.values
+        .whereType<GeometryResource>()
+        .single
+        .bounds!;
+    expect([bounds.min.x, bounds.min.y, bounds.min.z], [-10, 0, 0]);
+    expect([bounds.max.x, bounds.max.y, bounds.max.z], [-9, 6, 0]);
   });
 
   // A skinned mesh imported at runtime must carry the bounds of its poses, in
