@@ -24,6 +24,7 @@
 * A skinned mesh loaded at runtime is culled when off screen instead of always drawing.
 * Blended double-sided materials, such as glass, leaves, and cloth, show their back faces, and their near side draws over their far side.
 * A `ShaderMaterial` or `.fmat` material with a vertex shader no longer breaks the line segments, billboards, and Gaussian splats it draws.
+* Assigning `MeshPrimitive.material` or `MeshPrimitive.geometry` on a node already in a scene now changes what it draws, from the next frame. The assignment was ignored until the node left and rejoined a scene or got a new `Mesh`.
 
 ## 0.24.3
 
