@@ -671,16 +671,28 @@ base class Scene implements SceneGraph {
   /// that thread for the backlog (the queue is serialized with the raster
   /// thread's own submissions), so a GPU-bound scene stalls the UI thread
   /// and everything else on it. Pacing instead re-presents the last frame
-  /// once [maxGpuFramesInFlight] frames are still running; the scene updates
-  /// at the rate the GPU finishes frames, which it did anyway. Scene time
-  /// still advances on a paced frame.
+  /// once [maxGpuFramesInFlight] frames are still running. Scene time still
+  /// advances on a paced frame.
   ///
-  /// The default of 1 keeps the UI thread free and costs about a tenth of
-  /// GPU throughput on a saturated GPU. 2 keeps the throughput but only
-  /// halves the stall on drivers with shallow queues. Set to 0 to always
-  /// encode. Only screen views pace; render-to-texture views always render.
+  /// The default of 2 lets the GPU finish one frame while the next is queued.
+  /// A limit of 1 looks cheaper but can halve the frame rate of a scene the GPU
+  /// has room for: phone GPUs run a governor that lowers the clock until the
+  /// GPU looks about 85% busy, so a frame usually finishes just inside its
+  /// vsync, and any encoding time pushes it past. The skipped frame leaves the
+  /// GPU idle, the clock drops further, and each frame then really takes nearly
+  /// two vsyncs, which keeps the scene at half the rate.
+  ///
+  /// While frames keep taking the GPU over 33 ms it may not be keeping up, and
+  /// queuing more would block this thread, so the limit tightens to 1 and tries
+  /// the full limit again about once a second. Set 1 to always pace at one
+  /// frame, or 0 to always encode. Only screen views pace; render-to-texture
+  /// views always render.
   /// {@category Rendering}
-  int maxGpuFramesInFlight = 1;
+  int maxGpuFramesInFlight = 2;
+
+  /// The limit in effect this frame. See [maxGpuFramesInFlight].
+  int get _gpuFrameLimit =>
+      rendererSubmissions.frameLimit(maxGpuFramesInFlight);
 
   // The frame's shared spot and point shadow tiles while render() runs.
   SharedShadowAtlas? _sharedShadowAtlas;
@@ -735,7 +747,7 @@ base class Scene implements SceneGraph {
   }
 
   void _onPaceRelease() {
-    if (rendererSubmissions.framesInFlight >= maxGpuFramesInFlight) return;
+    if (rendererSubmissions.framesInFlight >= _gpuFrameLimit) return;
     rendererSubmissions.removeCompletionListener(_onPaceRelease);
     _paceHeld = false;
     _repaintRequested.notify();
@@ -2278,7 +2290,7 @@ base class Scene implements SceneGraph {
         _hasPresentedFrame &&
         _pendingGraphCapture == null &&
         views.any((view) => view.target == null) &&
-        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight;
+        rendererSubmissions.priorFramesInFlight >= _gpuFrameLimit;
     // When every screen view can re-present, the frame holds before any
     // per-frame upload: on Vulkan each texture upload is a synchronous submit
     // that waits for the GPU backlog, which pacing exists to avoid.
@@ -2918,7 +2930,7 @@ base class Scene implements SceneGraph {
         previous != null &&
         previous.width == pixelSize.width.toInt() &&
         previous.height == pixelSize.height.toInt() &&
-        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight) {
+        rendererSubmissions.priorFramesInFlight >= _gpuFrameLimit) {
       _pacedFrameCount++;
       _holdPace();
       final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
