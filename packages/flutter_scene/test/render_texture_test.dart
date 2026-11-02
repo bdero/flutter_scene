@@ -233,7 +233,7 @@ void main() {
       holdFrameInFlight();
 
       final target = RenderTexture(width: 16, height: 16);
-      final scene = textureViewScene(target);
+      final scene = textureViewScene(target)..maxGpuFramesInFlight = 1;
       addTearDown(scene.dispose);
       var rendered = 0;
       target.addListener(() => rendered++);
@@ -247,7 +247,7 @@ void main() {
         're-presents its previous image', (tester) async {
       await tester.runAsync(Scene.initializeStaticResources);
       final target = RenderTexture(width: 16, height: 16);
-      final scene = textureViewScene(target);
+      final scene = textureViewScene(target)..maxGpuFramesInFlight = 1;
       addTearDown(scene.dispose);
       var rendered = 0;
       target.addListener(() => rendered++);

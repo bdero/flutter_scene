@@ -30,6 +30,7 @@
 * Two builds for different platforms saving flutter_scene's generated assets at once no longer drop each other's manifest entries or delete each other's files mid-write.
 * Assigning `MeshPrimitive.material` or `MeshPrimitive.geometry` on a node already in a scene changes what it draws from the next frame. The assignment was ignored until the node left and rejoined a scene or got a new `Mesh`.
 * Instanced draws and billboards on the WebGL2 backend no longer copy their instance data byte by byte in WebAssembly builds.
+* A scene the GPU has room for no longer drops to half its frame rate on phones. `Scene.maxGpuFramesInFlight` now defaults to 2, and tightens to 1 by itself while frames keep taking the GPU over 33 ms, so a saturated GPU still doesn't stall the UI thread. A Vulkan OnePlus scene went from 30 to 60 fps.
 
 ## 0.24.3
 
