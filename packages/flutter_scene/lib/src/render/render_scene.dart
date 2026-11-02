@@ -33,8 +33,8 @@ import 'package:flutter_scene/src/render_view.dart';
 /// One drawable primitive in the flat render layer.
 ///
 /// A [RenderItem] is created when a mesh-bearing node is mounted into a
-/// scene and lives until that node is unmounted or its mesh changes. The
-/// scene pre-pass refreshes [visible], [frustumCulled], and
+/// scene and lives until that node is unmounted or its geometry changes. The
+/// scene pre-pass refreshes [material], [visible], [frustumCulled], and
 /// [worldTransform] each frame; the render passes iterate the flat
 /// [RenderScene] and never walk the node tree.
 class RenderItem {
