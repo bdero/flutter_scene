@@ -318,20 +318,17 @@ Future<void> _buildMaterials({
 
   final frameworkShaders = await engineShaderIncludeDirectory(buildInput);
 
-  // Generated GLSL and the synthesized manifest live under the package's build
-  // directory; they are regenerated each run.
+  // The generated GLSL is an intermediate, regenerated each run.
   final generatedDir = Directory.fromUri(
-    packageRoot.resolve('build/fmat/$bundleName/'),
+    hookIntermediateDirectory(buildInput, 'fmat/$bundleName'),
   );
-  generatedDir.createSync(recursive: true);
+  final intermediates = hookIntermediateDirectory(buildInput, 'shaderbundles');
 
-  // impellerc always writes the compiled bundle under build/shaderbundles/;
-  // the generated tree gets a copy of it, and the sidecar and index are written
-  // straight into whichever tree ships them.
-  final bundleFile = File(
-    packageRoot
-        .resolve('build/shaderbundles/$bundleName.shaderbundle')
-        .toFilePath(),
+  // The compiled bundle is an intermediate too. The generated tree gets a copy
+  // of it, and the sidecar and index are written straight into whichever tree
+  // ships them.
+  final bundleFile = File.fromUri(
+    shaderBundleIntermediate(buildInput, bundleName),
   );
   // Builds with and without the debug views sharing one tree write different
   // files instead of racing on one.
@@ -357,7 +354,7 @@ Future<void> _buildMaterials({
           variant: variant,
           target: target,
         ) ??
-        packageRoot.resolve('build/shaderbundles/$bundleName.fmat.json'),
+        intermediates.resolve('$bundleName.fmat.json'),
   );
   final indexFile = File.fromUri(
     tree?.fileUri(
@@ -367,7 +364,7 @@ Future<void> _buildMaterials({
           variant: variant,
           target: target,
         ) ??
-        packageRoot.resolve('build/shaderbundles/$bundleName.index.json'),
+        intermediates.resolve('$bundleName.index.json'),
   );
   // The WebGPU backend's WGSL, only under flutter_scene_webgpu. Data-asset
   // builds do not carry it yet.
@@ -410,9 +407,7 @@ Future<void> _buildMaterials({
   // material or shader file changed.
   stampBuffer.write(' compiler=${materialCompilerFingerprint()}');
   final stamp = stampBuffer.toString();
-  final stampFile = File(
-    packageRoot.resolve('build/shaderbundles/$bundleName.inputs').toFilePath(),
-  );
+  final stampFile = File.fromUri(intermediates.resolve('$bundleName.inputs'));
   final outputs = [shippedBundleFile, sidecarFile, indexFile, ?wgslFile];
   var fresh = tree != null
       ? tree.isFresh(
@@ -495,9 +490,7 @@ Future<void> _buildMaterials({
         ).writeAsStringSync(variant.value);
         manifest[variantEntryName] = <String, Object?>{
           'type': 'fragment',
-          // impellerc resolves a bundle entry's `file` relative to the package
-          // root, so reference it from there instead of from the manifest.
-          'file': 'build/fmat/$bundleName/$fragFileName',
+          'file': fragFileName,
         };
       }
 
@@ -518,7 +511,7 @@ Future<void> _buildMaterials({
         ).writeAsStringSync(vertexGlsl);
         manifest[vertexEntry] = <String, Object?>{
           'type': 'vertex',
-          'file': 'build/fmat/$bundleName/$vertFileName',
+          'file': vertFileName,
         };
       });
 
@@ -526,46 +519,24 @@ Future<void> _buildMaterials({
       materialSources[entryName] = materialPath;
     }
 
-    // Write the synthesized shader-bundle manifest next to the generated
-    // shaders, so its `file` entries resolve relative to it.
-    final manifestRelativePath =
-        'build/fmat/$bundleName/$bundleName.shaderbundle.json';
-    File(
-      packageRoot.resolve(manifestRelativePath).toFilePath(),
-    ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
-
-    // Snapshot the previous bundle so a failed compile that left a partial
-    // file behind can be rolled back to the last good bundle.
-    final previousBundleBytes = bundleFile.existsSync()
-        ? bundleFile.readAsBytesSync()
-        : null;
-    try {
-      // Compile, with flutter_scene's shaders/ on the include path so the
-      // generated shaders' framework `#include`s resolve directly (no copies).
-      await buildTargetShaderBundleJson(
-        buildInput: buildInput,
-        buildOutput: buildOutput,
-        manifestFileName: manifestRelativePath,
-        includeDirectories: [frameworkShaders],
-        // Match the engine bundle's GLES dialect (GLSL ES 3.00); the
-        // framework radiance sampling these materials can `#include` uses
-        // textureLod, which is not available in 1.00 without an extension.
-        glesLanguageVersion: 300,
-        // The material bundle ships under materials/ next to its sidecar and
-        // index, not as a standalone shader bundle.
-        copyToGeneratedTree: false,
-      );
-    } catch (_) {
-      // Roll back only when the failed compile actually disturbed the bundle;
-      // an unnecessary rewrite changes the file's timestamp mid-build, which
-      // the tool flags as a modified file and reruns the build for.
-      if (previousBundleBytes != null &&
-          (!bundleFile.existsSync() ||
-              !_sameBytes(bundleFile.readAsBytesSync(), previousBundleBytes))) {
-        bundleFile.writeAsBytesSync(previousBundleBytes);
-      }
-      rethrow;
-    }
+    // Compile, with flutter_scene's shaders/ on the include path so the
+    // generated shaders' framework `#include`s resolve directly (no copies).
+    // A failed compile leaves the last good bundle in place.
+    await buildTargetShaderBundle(
+      buildInput: buildInput,
+      buildOutput: buildOutput,
+      bundleName: bundleName,
+      manifest: manifest,
+      entryRoot: generatedDir.uri,
+      includeDirectories: [frameworkShaders],
+      // Match the engine bundle's GLES dialect (GLSL ES 3.00); the framework
+      // radiance sampling these materials can `#include` uses textureLod,
+      // which is not available in 1.00 without an extension.
+      glesLanguageVersion: 300,
+      // The material bundle ships under materials/ next to its sidecar and
+      // index, not as a standalone shader bundle.
+      copyToGeneratedTree: false,
+    );
 
     // Publish the freshly compiled bundle into the tree that ships it.
     if (tree != null) {
@@ -726,14 +697,6 @@ Map<String, String> emitFragmentShaderVariants(
   return variants;
 }
 
-bool _sameBytes(List<int> a, List<int> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
-}
-
 // Registers the bundle/sidecar/index outputs and declares the source
 // dependencies. Shared by the success path (which also rewrites the index)
 // and the kept-last-good failure path (which registers the existing files;
@@ -861,8 +824,8 @@ void _registerOutputs({
         );
   }
 
-  // Declare the real inputs as dependencies. buildShaderBundleJson declares the
-  // (generated) .frag files; the sources that actually drive a rebuild are the
+  // Declare the real inputs as dependencies. The compile skips the generated
+  // .frag files; the sources that actually drive a rebuild are the
   // .fmat files and the framework GLSL they include. Every source is declared
   // even when one failed to compile, so fixing it retriggers the hook.
   buildOutput.dependencies.addAll(materialPaths.map(packageRoot.resolve));

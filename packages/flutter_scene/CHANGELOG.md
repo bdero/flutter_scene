@@ -24,6 +24,8 @@
 * A skinned mesh loaded at runtime is culled when off screen instead of always drawing.
 * Blended double-sided materials, such as glass, leaves, and cloth, show their back faces, and their near side draws over their far side.
 * A `ShaderMaterial` or `.fmat` material with a vertex shader no longer breaks the line segments, billboards, and Gaussian splats it draws.
+* Builds that share one flutter_scene in the pub cache (two projects, worktrees, or an app and its tests) no longer fail with `errno = 1224` on Windows or ship each other's half-written shaders. The build hook writes its intermediates into the building app's `.dart_tool/` and only its generated assets into the package.
+* Two builds for different platforms saving flutter_scene's generated asset manifest at once no longer drop each other's entries.
 
 ## 0.24.3
 
