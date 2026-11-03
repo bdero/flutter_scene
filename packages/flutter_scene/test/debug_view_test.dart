@@ -370,7 +370,7 @@ void main() {
       }
     });
 
-    test('the engine bundle wraps its fragment entries', () {
+    test('the engine bundle wraps its entries', () {
       final root = Directory.systemTemp.createTempSync('debug_views_wrap_');
       addTearDown(() => root.deleteSync(recursive: true));
       final wrapped = wrapDebugViewsManifest({
@@ -383,18 +383,19 @@ void main() {
           'file': 'shaders/flutter_scene_unskinned.vert',
         },
       }, root.uri);
-      expect(
-        (wrapped['UnskinnedVertex'] as Map)['file'],
-        'shaders/flutter_scene_unskinned.vert',
-      );
-      final wrapperPath =
-          (wrapped['StandardFragment'] as Map)['file'] as String;
+      String file(String key) => (wrapped[key] as Map)['file'] as String;
+      String wrapper(String key) =>
+          File.fromUri(root.uri.resolve(file(key))).readAsStringSync();
       // A wrapper named like its original would include itself.
-      expect(wrapperPath.split('/').last, isNot('flutter_scene_standard.frag'));
+      expect(file('StandardFragment'), isNot('flutter_scene_standard.frag'));
       expect(
-        File.fromUri(root.uri.resolve(wrapperPath)).readAsStringSync(),
+        wrapper('StandardFragment'),
         '#define FLUTTER_SCENE_DEBUG_VIEWS\n'
         '#include <flutter_scene_standard.frag>\n',
+      );
+      expect(
+        wrapper('UnskinnedVertex'),
+        '#include <flutter_scene_unskinned.vert>\n',
       );
     });
   });

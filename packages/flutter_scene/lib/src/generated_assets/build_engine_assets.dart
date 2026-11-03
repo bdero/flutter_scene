@@ -31,12 +31,12 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:hooks/hooks.dart';
 
 import '../fmat/build_materials.dart'
     show MaterialAssetMode, buildBundledPhysicalMaterials;
+import '../fmat/framework_shaders.dart';
 import '../fmat/target_shader_bundle.dart';
 import '../importer/build_cache.dart';
 import 'engine_identity.dart';
@@ -99,7 +99,8 @@ Future<void> _build({
   required BuildOutputBuilder buildOutput,
   required bool debugViews,
 }) async {
-  final root = await _flutterSceneRoot();
+  // flutter_scene's own root, the parent of its shader include directory.
+  final root = (await engineShaderIncludeDirectory(buildInput)).resolve('../');
   await _buildBaseShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
@@ -116,20 +117,6 @@ Future<void> _build({
     fileVariant: await engineIdentity(),
     debugViews: debugViews,
   );
-}
-
-/// flutter_scene's package root. There is no top-level `flutter_scene.dart`
-/// library, so this resolves through `build_hooks.dart` (which always exists).
-Future<Uri> _flutterSceneRoot() async {
-  final lib = await Isolate.resolvePackageUri(
-    Uri.parse('package:flutter_scene/build_hooks.dart'),
-  );
-  if (lib == null) {
-    throw Exception(
-      'flutter_scene: could not resolve the flutter_scene package location.',
-    );
-  }
-  return lib.resolve('../');
 }
 
 Future<void> _buildBaseShaderBundle({
@@ -228,42 +215,26 @@ Future<void> _buildBaseShaderBundle({
     return;
   }
 
-  // The compiler resolves a manifest entry's `file` against its own working
-  // directory, the building package's root. That is flutter_scene's own root
-  // for its own hook; an app's hook building these needs the entries rebased to
-  // absolute paths first.
-  var manifestPath = _baseBundleManifest;
-  if (buildInput.packageRoot != sourceRoot || debugViews) {
-    var manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
-        .cast<String, Object?>();
-    if (buildInput.packageRoot != sourceRoot) {
-      manifest = rebaseShaderBundleManifest(
-        manifest,
-        sourceRoot,
-        packageRoot: buildInput.packageRoot,
-      );
-    }
-    if (debugViews) {
-      manifest = wrapDebugViewsManifest(manifest, buildInput.packageRoot);
-    }
-    manifestPath = 'build/flutter_scene_engine/base.shaderbundle.json';
-    final manifestOut = File.fromUri(
-      buildInput.packageRoot.resolve(manifestPath),
-    );
-    guardGeneratedWrite(manifestOut.uri, () {
-      manifestOut.parent.createSync(recursive: true);
-    });
-    writeGeneratedString(
-      manifestOut.uri,
-      const JsonEncoder.withIndent('  ').convert(manifest),
-    );
+  // The compiler resolves a manifest entry's `file` against its working
+  // directory, which it only reads: flutter_scene's own root, or the directory
+  // of the debug-view wrappers.
+  var manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
+      .cast<String, Object?>();
+  var entryRoot = sourceRoot;
+  if (debugViews) {
+    entryRoot = hookIntermediateDirectory(buildInput, 'debug_views');
+    manifest = wrapDebugViewsManifest(manifest, entryRoot);
   }
+  buildOutput.dependencies.add(manifestFile.uri);
 
   stdout.writeln('flutter_scene: compiling the engine shader bundle');
-  await buildTargetShaderBundleJson(
+  await buildTargetShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
-    manifestFileName: manifestPath,
+    bundleName: 'base',
+    manifest: manifest,
+    entryRoot: entryRoot,
+    manifestDirectory: shaders,
     includeDirectories: [shaders],
     glesLanguageVersion: engineGlesLanguageVersion,
     assetMode: TargetShaderBundleAssetMode.generatedTree,
@@ -273,95 +244,28 @@ Future<void> _buildBaseShaderBundle({
   );
 }
 
-/// The directory, relative to the building package's root, holding the
-/// fragment wrappers that compile the debug views in.
-const String _debugViewsWrapperDir = 'build/flutter_scene_engine/debug_views/';
-
-/// Points every fragment entry of [manifest] at a wrapper that defines
-/// `FLUTTER_SCENE_DEBUG_VIEWS` and includes the original by name, written under
-/// [packageRoot]. The compiler takes no defines per bundle, and the original
-/// resolves through the shaders directory on the include path. A wrapper keeps
-/// a different name from its original, or the include would find the wrapper
-/// itself.
+/// Points every entry of [manifest] at a wrapper written into [directory],
+/// which entries then resolve against. A fragment wrapper defines
+/// `FLUTTER_SCENE_DEBUG_VIEWS`; every wrapper includes its original by name,
+/// found through the shaders directory on the include path, since the compiler
+/// takes no defines per bundle. A wrapper keeps a different name from its
+/// original, or the include would find the wrapper itself.
 Map<String, Object?> wrapDebugViewsManifest(
   Map<String, Object?> manifest,
-  Uri packageRoot,
+  Uri directory,
 ) {
   final wrapped = <String, Object?>{};
   for (final MapEntry(:key, :value) in manifest.entries) {
     final entry = (value as Map).cast<String, Object?>();
-    if (entry['type'] != 'fragment') {
-      wrapped[key] = entry;
-      continue;
-    }
     final original = (entry['file'] as String).split('/').last;
-    final stem = original.substring(0, original.lastIndexOf('.'));
-    final wrapperPath = '$_debugViewsWrapperDir${stem}_debug_views.frag';
-    final wrapper = File.fromUri(packageRoot.resolve(wrapperPath));
-    guardGeneratedWrite(wrapper.uri, () {
-      wrapper.parent.createSync(recursive: true);
-    });
-    writeGeneratedString(
-      wrapper.uri,
-      '#define FLUTTER_SCENE_DEBUG_VIEWS\n#include <$original>\n',
+    final dot = original.lastIndexOf('.');
+    final wrapperName =
+        '${original.substring(0, dot)}_debug_views${original.substring(dot)}';
+    File.fromUri(directory.resolve(wrapperName)).writeAsStringSync(
+      '${entry['type'] == 'fragment' ? '#define FLUTTER_SCENE_DEBUG_VIEWS\n' : ''}'
+      '#include <$original>\n',
     );
-    wrapped[key] = {...entry, 'file': wrapperPath};
+    wrapped[key] = {...entry, 'file': wrapperName};
   }
   return wrapped;
-}
-
-/// Rewrites a shader-bundle manifest's `file` entries so they resolve from
-/// [packageRoot], for a hook whose working directory is a different package
-/// from the [sourceRoot] holding the sources.
-///
-/// Entries stay relative, because they have two consumers that want opposite
-/// things from an absolute path. The compiler opens the value as a path, so it
-/// would need the host's own separators, while `collectShaderBundleDependencies`
-/// feeds it to `Uri.resolve`, where a Windows path's drive letter parses as a
-/// scheme. A relative path with posix separators is correct for both on every
-/// platform. Falls back to a file URI when no relative path exists, which on
-/// Windows means the two roots are on different drives.
-Map<String, Object?> rebaseShaderBundleManifest(
-  Map<String, Object?> manifest,
-  Uri sourceRoot, {
-  required Uri packageRoot,
-}) => <String, Object?>{
-  for (final MapEntry(:key, :value) in manifest.entries)
-    key: {
-      ...(value as Map).cast<String, Object?>(),
-      'file': _relativeFile(
-        sourceRoot.resolve(value['file'] as String),
-        packageRoot,
-      ),
-    },
-};
-
-String _relativeFile(Uri file, Uri from) {
-  final target = file.pathSegments;
-  final base = from.pathSegments.where((s) => s.isNotEmpty).toList();
-  // Only a genuinely different root has no relative path. Sharing no first
-  // directory is an ordinary posix layout (a workdir and a pub cache under
-  // different top-level directories) that walks up fine.
-  if (file.scheme != from.scheme || _drive(target) != _drive(base)) {
-    return file.toString();
-  }
-  var common = 0;
-  while (common < base.length &&
-      common < target.length - 1 &&
-      base[common] == target[common]) {
-    common++;
-  }
-  return [
-    ...List.filled(base.length - common, '..'),
-    ...target.sublist(common),
-  ].join('/');
-}
-
-/// The `C:` of a Windows file URI's segments, or null for a posix path.
-String? _drive(List<String> segments) {
-  final first = segments.where((s) => s.isNotEmpty).firstOrNull;
-  if (first == null || first.length != 2 || !first.endsWith(':')) return null;
-  final letter = first.codeUnitAt(0) | 0x20;
-  if (letter < 0x61 || letter > 0x7a) return null;
-  return String.fromCharCode(letter);
 }

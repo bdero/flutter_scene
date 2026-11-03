@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:data_assets/data_assets.dart';
 import 'package:flutter_gpu_shaders/build.dart';
+import 'package:flutter_gpu_shaders/environment.dart' show findImpellerC;
 import 'package:hooks/hooks.dart';
 
 import '../generated_assets/engine_identity.dart';
@@ -73,6 +75,60 @@ Future<void> buildTargetShaderBundleJson({
   String? stamp,
   String? fileVariant,
 }) async {
+  const suffix = '.shaderbundle.json';
+  final fileName = Uri(path: manifestFileName).pathSegments.last;
+  if (!fileName.endsWith(suffix) || fileName.length == suffix.length) {
+    throw Exception(
+      'Shader bundle manifest file names must end with "$suffix": '
+      '$manifestFileName',
+    );
+  }
+  final manifestUri = buildInput.packageRoot.resolve(manifestFileName);
+  final manifest =
+      (jsonDecode(File.fromUri(manifestUri).readAsStringSync()) as Map)
+          .cast<String, Object?>();
+  buildOutput.dependencies.add(manifestUri);
+  await buildTargetShaderBundle(
+    buildInput: buildInput,
+    buildOutput: buildOutput,
+    bundleName: fileName.substring(0, fileName.length - suffix.length),
+    manifest: manifest,
+    entryRoot: buildInput.packageRoot,
+    manifestDirectory: manifestUri.resolve('./'),
+    includeDirectories: includeDirectories,
+    assetMode: assetMode,
+    dataAssetName: dataAssetName,
+    glesLanguageVersion: glesLanguageVersion,
+    copyToGeneratedTree: copyToGeneratedTree,
+    pruneGeneratedTree: pruneGeneratedTree,
+    owner: owner,
+    stamp: stamp,
+    fileVariant: fileVariant,
+  );
+}
+
+/// [buildTargetShaderBundleJson] over an in-memory [manifest], whose entry
+/// `file` paths resolve against [entryRoot]. The compiler runs there and only
+/// reads it. [manifestDirectory] heads the include path and defaults to
+/// [entryRoot].
+Future<void> buildTargetShaderBundle({
+  required BuildInput buildInput,
+  required BuildOutputBuilder buildOutput,
+  required String bundleName,
+  required Map<String, Object?> manifest,
+  required Uri entryRoot,
+  Uri? manifestDirectory,
+  List<Uri> includeDirectories = const [],
+  TargetShaderBundleAssetMode assetMode =
+      TargetShaderBundleAssetMode.generatedTree,
+  String? dataAssetName,
+  int? glesLanguageVersion,
+  bool copyToGeneratedTree = true,
+  bool pruneGeneratedTree = true,
+  String? owner,
+  String? stamp,
+  String? fileVariant,
+}) async {
   // ignore: deprecated_member_use_from_same_package
   if (assetMode == TargetShaderBundleAssetMode.legacyOnly) {
     throwRemovedAssetMode(
@@ -87,33 +143,41 @@ Future<void> buildTargetShaderBundleJson({
       'TargetShaderBundleAssetMode.generatedTree',
     );
   }
+  final output = File.fromUri(shaderBundleIntermediate(buildInput, bundleName));
   final emitDataAssets =
-      buildInput.config.buildDataAssets &&
       assetMode == TargetShaderBundleAssetMode.dataAssetsRequired;
-  final result = await buildShaderBundleJson(
+  void registerDataAsset() => registerShaderBundleDataAsset(
     buildInput: buildInput,
     buildOutput: buildOutput,
-    manifestFileName: manifestFileName,
-    // flutter_scene's own shaders/ goes last, so a raw shader can
-    // `#include <scene_inputs.glsl>` (or the noise library) without the caller
-    // resolving the package, and a same-named file of the caller's still wins.
+    outputBundleFile: output.uri,
+    legacyAssetKey: '$bundleName.shaderbundle',
+    assetMode: ShaderBundleAssetMode.dataAssetsRequired,
+    dataAssetName: dataAssetName,
+  );
+  // Throws the toolchain's explanation before anything compiles.
+  if (emitDataAssets && !buildInput.config.buildDataAssets) registerDataAsset();
+
+  // Compiled beside the shipped name, never trimmed in place, so a failed
+  // compile leaves the last good bundle and the trim never reads its own output.
+  final compiled = Uri.file('${output.path}.untrimmed');
+  await _compileShaderBundle(
+    buildInput: buildInput,
+    buildOutput: buildOutput,
+    manifest: manifest,
+    entryRoot: entryRoot,
+    manifestDirectory: manifestDirectory ?? entryRoot,
+    outputFile: compiled,
     includeDirectories: [
       ...includeDirectories,
+      // flutter_scene's own shaders/ goes last, so a raw shader can
+      // `#include <scene_inputs.glsl>` (or the noise library) without the
+      // caller resolving the package, and a same-named file of the caller's
+      // still wins.
       await engineShaderIncludeDirectory(buildInput),
     ],
-    assetMode: switch (assetMode) {
-      TargetShaderBundleAssetMode.generatedTree =>
-        ShaderBundleAssetMode.legacyOnly,
-      TargetShaderBundleAssetMode.dataAssetsRequired =>
-        ShaderBundleAssetMode.dataAssetsRequired,
-      // Rejected above, before anything is compiled.
-      _ => ShaderBundleAssetMode.legacyOnly,
-    },
-    dataAssetName: dataAssetName,
     glesLanguageVersion: glesLanguageVersion,
   );
-  final output = File.fromUri(result.outputFile);
-  final untrimmed = output.readAsBytesSync();
+  final untrimmed = File.fromUri(compiled).readAsBytesSync();
   final backends = shaderBundleBackendsForBuild(buildInput);
   final bytes = trimShaderBundle(untrimmed, backends);
   output.writeAsBytesSync(bytes);
@@ -131,16 +195,11 @@ Future<void> buildTargetShaderBundleJson({
   } else if (wgsl.existsSync()) {
     wgsl.deleteSync();
   }
+  if (emitDataAssets) registerDataAsset();
 
   if (!copyToGeneratedTree) return;
 
-  final bundleFileName = result.outputFile.pathSegments.last;
-  final id = bundleFileName.endsWith('.shaderbundle')
-      ? bundleFileName.substring(
-          0,
-          bundleFileName.length - '.shaderbundle'.length,
-        )
-      : bundleFileName;
+  final id = bundleName;
   if (emitDataAssets) {
     if (!pruneGeneratedTree) return;
     // A tree left by an earlier build would ship the same bundle twice.
@@ -193,6 +252,107 @@ Future<void> buildTargetShaderBundleJson({
     );
   }
   tree.save();
+}
+
+/// A directory named [name] for this hook run's intermediates, the files that
+/// never ship.
+///
+/// Inside the hook's own output directory, under the building app's
+/// `.dart_tool/`, and never the package root. For a pub-cache dependency that
+/// root is shared by every project on the machine, so builds running at once
+/// would rewrite one another's inputs (on Windows, failing outright while the
+/// other build's compiler has the file mapped). The invoker serializes runs
+/// that share an output directory.
+Uri hookIntermediateDirectory(BuildInput buildInput, String name) {
+  final directory = Directory.fromUri(
+    buildInput.outputDirectory.resolve('$name/'),
+  )..createSync(recursive: true);
+  return directory.uri;
+}
+
+/// Where [buildTargetShaderBundle] writes the trimmed [bundleName] bundle.
+Uri shaderBundleIntermediate(BuildInput buildInput, String bundleName) =>
+    hookIntermediateDirectory(
+      buildInput,
+      'shaderbundles',
+    ).resolve('$bundleName.shaderbundle');
+
+/// Runs `impellerc` over [manifest] into [outputFile] and declares the sources
+/// it read as dependencies.
+///
+/// The compile flutter_gpu_shaders' `buildShaderBundleJson` does, which can
+/// only write under the package root.
+Future<void> _compileShaderBundle({
+  required BuildInput buildInput,
+  required BuildOutputBuilder buildOutput,
+  required Map<String, Object?> manifest,
+  required Uri entryRoot,
+  required Uri manifestDirectory,
+  required Uri outputFile,
+  required List<Uri> includeDirectories,
+  int? glesLanguageVersion,
+}) async {
+  final impellerc = await findImpellerC();
+  final depfile = File('${outputFile.toFilePath()}.d');
+  if (depfile.existsSync()) depfile.deleteSync();
+  final useDepfile = await _impellercWritesDepfile(impellerc);
+  final result = await Process.run(
+    impellerc.toFilePath(),
+    shaderBundleImpellercArguments(
+      outputBundleFilePath: outputFile,
+      manifestJson: jsonEncode(manifest),
+      manifestDirectory: manifestDirectory,
+      shaderLibDirectory: impellerc.resolve('./shader_lib'),
+      includeDirectories: includeDirectories,
+      depfilePath: useDepfile ? depfile.uri : null,
+      glesLanguageVersion: glesLanguageVersion,
+    ),
+    workingDirectory: entryRoot.toFilePath(),
+  );
+  if (result.exitCode != 0) {
+    throw Exception(
+      'Failed to build shader bundle: ${result.stderr}\n${result.stdout}',
+    );
+  }
+  final dependencies = [
+    // The compiler is versioned with the engine, so a new one recompiles.
+    impellerc,
+    for (final entry in manifest.values)
+      if (entry case {'file': final String file}) entryRoot.resolve(file),
+    if (useDepfile && depfile.existsSync())
+      ...parseImpellerCDepfileDependencies(
+        depfile.readAsStringSync(),
+        relativeTo: entryRoot,
+      ),
+  ];
+  // Generated sources are rewritten on every run, so depending on them would
+  // rerun the hook on every build. Whatever generated them declares the real
+  // sources.
+  final generated = [
+    buildInput.outputDirectoryShared,
+    buildInput.packageRoot.resolve('build/'),
+  ].map(_comparablePath).toList();
+  buildOutput.dependencies.addAll(
+    dependencies.where((uri) {
+      final path = _comparablePath(uri);
+      return !generated.any(path.startsWith);
+    }),
+  );
+}
+
+String _comparablePath(Uri uri) {
+  final path = uri.toFilePath(windows: false);
+  return Platform.isWindows ? path.toLowerCase() : path;
+}
+
+final Map<Uri, bool> _depfileSupport = {};
+
+Future<bool> _impellercWritesDepfile(Uri impellerc) async {
+  if (_depfileSupport[impellerc] case final known?) return known;
+  final help = await Process.run(impellerc.toFilePath(), ['--help']);
+  return _depfileSupport[impellerc] =
+      help.exitCode == 0 &&
+      impellerCHelpSupportsDepfile('${help.stdout}\n${help.stderr}');
 }
 
 /// Whether [buildInput] writes WGSL sidecars: the WebGPU opt-in is on and the
