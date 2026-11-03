@@ -155,5 +155,7 @@ void main() {
         ),
       ),
     );
-  });
+    // A read-only attribute does not stop files being created in a Windows
+    // directory, so there is no chmod to stand in for.
+  }, skip: Platform.isWindows ? 'needs POSIX permissions' : null);
 }

@@ -302,13 +302,20 @@ void main() {
   );
 
   test('the runtime reads back only the target it runs on', () {
+    // The running target among others, whichever host runs the test.
+    final targets = {
+      'metalDesktop',
+      'openglEs',
+      'metalIos',
+      currentShaderTarget,
+    };
     final index = GeneratedAssetIndex([
       GeneratedAssetSource(
         keyPrefix: 'packages/flutter_scene/$generatedAssetsEntry',
         manifest: GeneratedAssetManifest(
           package: 'flutter_scene',
           entries: [
-            for (final target in ['metalDesktop', 'openglEs', 'metalIos'])
+            for (final target in targets)
               GeneratedAssetEntry(
                 family: GeneratedAssetFamily.shaderBundle,
                 id: 'base',
@@ -338,7 +345,7 @@ void main() {
     );
     expect(
       index.targetsOf(GeneratedAssetFamily.shaderBundle, 'base'),
-      containsAll(['metalDesktop', 'openglEs', 'metalIos']),
+      containsAll(targets),
       reason: 'a diagnostic still needs to name what was built',
     );
   });
