@@ -451,11 +451,21 @@ final class GeneratedAssetTree {
           if (!isGeneratedFileName(name)) continue;
           final relative = '$prefix$name';
           if (referenced.contains(relative)) continue;
-          if (variantsOfReferenced.contains(generatedNameWithoutTag(name)) &&
+          // A temporary file is another build's write in flight, unless it is
+          // old enough to be left by a build that died.
+          final inFlight = name.endsWith('.tmp');
+          if ((inFlight ||
+                  variantsOfReferenced.contains(
+                    generatedNameWithoutTag(name),
+                  )) &&
               file.statSync().modified.isAfter(keepAfter)) {
             continue;
           }
-          file.deleteSync();
+          try {
+            file.deleteSync();
+          } on PathNotFoundException {
+            // Another build's sweep got there first.
+          }
         }
       }
     }
