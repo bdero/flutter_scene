@@ -297,4 +297,18 @@ void main() {
     expect(File.fromUri(iosFile).existsSync(), isTrue);
     expect(File.fromUri(androidFile).existsSync(), isTrue);
   });
+
+  test('saving leaves another build\'s write in flight alone', () {
+    final tree = GeneratedAssetTree.open(package.uri, 'app');
+    final output = tree.fileUri(
+      GeneratedAssetFamily.shaderBundle,
+      nameId: 'base',
+      extension: '.shaderbundle',
+    );
+    // What writeGeneratedBytes holds just before its rename.
+    final inFlight = File('${output.toFilePath()}.1234.abcd.tmp')
+      ..writeAsBytesSync([0]);
+    tree.save();
+    expect(inFlight.existsSync(), isTrue);
+  });
 }
