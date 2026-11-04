@@ -130,6 +130,12 @@ class _EditorHomeState extends State<_EditorHome> {
   // TODO(path-provider): resolve through path_provider if this app ever
   // targets more than macOS; only macos/ scaffolding is committed today.
   Directory _settingsDirectory() {
+    // Windows has no HOME; local (not roaming) app data, since managed SDKs
+    // live here.
+    final localAppData = Platform.environment['LOCALAPPDATA'];
+    if (Platform.isWindows && localAppData != null) {
+      return Directory('$localAppData/FlutterSceneEditor');
+    }
     final home = Platform.environment['HOME'] ?? '.';
     return Directory('$home/Library/Application Support/FlutterSceneEditor');
   }
@@ -164,9 +170,9 @@ class _EditorHomeState extends State<_EditorHome> {
     );
     _gizmoPreferences.addListener(_persistGizmoPreferences);
     unawaited(
-      EditorBuildInfo.load(
-        'packages/flutter_scene_editor_app/editor_build_info.json',
-      ).then((info) {
+      EditorBuildInfo.load('editor_build_info/editor_build_info.json').then((
+        info,
+      ) {
         if (mounted) setState(() => _buildInfo = info);
       }),
     );
@@ -610,6 +616,71 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   Future<void> _newProject() async {
+    final recommended = await _matchingInstallation();
+    if (!mounted) return;
+    final revision = _buildInfo.frameworkRevision;
+    final managedId = revision == null
+        ? null
+        : 'managed-${ManagedCheckoutPaths.shortRevision(revision)}';
+    final managedRegistered = _settings.flutterInstallations.any(
+      (installation) => installation.id == managedId,
+    );
+    final choice = await showNewProjectDialog(
+      context,
+      installations: _settings.flutterInstallations,
+      initialInstallation: recommended ?? _settings.selectedInstallation,
+      recommended: recommended,
+      installManaged: _buildInfo.isKnown && !managedRegistered
+          ? () => _managedCheckouts.create(_buildInfo)
+          : null,
+      onInstallationUsed: _useProjectInstallation,
+      managedVersion: _buildInfo.frameworkVersion,
+      flutterSceneVersion: _buildInfo.flutterSceneVersion,
+    );
+    if (choice == null) return;
+    if (choice.useExisting) return _wrapExistingProject();
+    final project = choice.project!;
+    _setProject(project);
+    unawaited(_openProjectScene(project));
+  }
+
+  /// The first healthy installation matching the editor's Flutter revision,
+  /// the selected one preferred, or null when none matches.
+  Future<FlutterInstallation?> _matchingInstallation() async {
+    if (!_buildInfo.isKnown) return null;
+    final selected = _settings.selectedInstallation;
+    for (final candidate in [
+      ?selected,
+      ..._settings.flutterInstallations.where((c) => c.id != selected?.id),
+    ]) {
+      final validation = await _inspector.validate(candidate, _buildInfo);
+      if (validation.severity == InstallationSeverity.ok) return candidate;
+    }
+    return null;
+  }
+
+  /// Registers the installation New Project creates an app with (a managed
+  /// SDK it just installed is new), selecting it when none is selected so the
+  /// app can build right away.
+  void _useProjectInstallation(FlutterInstallation installation) {
+    final registered = _settings.flutterInstallations.any(
+      (candidate) => candidate.id == installation.id,
+    );
+    final select = _settings.selectedInstallation == null;
+    if (registered && !select) return;
+    if (!registered) {
+      _inspector.invalidate(installation.flutterBin);
+      _settings.flutterInstallations.add(installation);
+    }
+    if (select) _settings.selectedInstallationId = installation.id;
+    _persistSettings();
+    if (select) _onInstallationSelectionChanged();
+    if (mounted) setState(() {});
+  }
+
+  /// Wraps an existing Flutter app (a directory with a pubspec) in an
+  /// fproject.
+  Future<void> _wrapExistingProject() async {
     final directory = await getDirectoryPath();
     if (directory == null) return;
     try {
