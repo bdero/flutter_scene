@@ -226,9 +226,9 @@ Map<int, String> _entryInputs(String wgsl) {
 Map<int, String> _vertexOutputs(String wgsl) {
   final returned = _vertexReturn.firstMatch(wgsl)?.group(1);
   if (returned == null) return const {};
-  final body = RegExp('struct\\s+$returned\\s*\\{([^}]*)\\}')
-      .firstMatch(wgsl)
-      ?.group(1);
+  final body = RegExp(
+    'struct\\s+$returned\\s*\\{([^}]*)\\}',
+  ).firstMatch(wgsl)?.group(1);
   return body == null ? const {} : _varyings(body);
 }
 
