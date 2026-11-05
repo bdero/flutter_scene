@@ -165,9 +165,35 @@ void main() {
         expect(tracker.frameLimit(2), 1);
         now += GpuSubmissionTracker.tightenedMicros;
         expect(tracker.frameLimit(2), 2);
+        frameTaking(14000);
         now += GpuSubmissionTracker.retryMicros;
-        slowFrames(GpuSubmissionTracker.slowFramesToTighten);
+        slowFrames(GpuSubmissionTracker.slowFramesToTighten - 1);
+        expect(tracker.frameLimit(2), 2, reason: 'a fast frame started over');
+        slowFrames(1);
         expect(tracker.frameLimit(2), 1);
+      });
+
+      test('a frame queued behind another is timed from when it can start', () {
+        // Encoding every 10 ms against 25 ms of GPU work per frame, two in
+        // flight: each completes 25 ms after the one before, though up to
+        // 45 ms after its own encoding ended.
+        final first = tracker.record();
+        tracker.endFrame();
+        now += 10000;
+        var queued = tracker.record();
+        tracker.endFrame();
+        now += 15000;
+        tracker.complete(first);
+        for (var i = 0; i < 20; i++) {
+          now += 5000;
+          final next = tracker.record();
+          tracker.endFrame();
+          now += 20000;
+          tracker.complete(queued);
+          expect(tracker.lastFrameMicros, 25000);
+          queued = next;
+        }
+        expect(tracker.frameLimit(2), 2);
       });
 
       test('an explicit 1 or 0 is left alone', () {

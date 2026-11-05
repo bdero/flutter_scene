@@ -26,7 +26,7 @@
 * A `ShaderMaterial` or `.fmat` material with a vertex shader no longer breaks the line segments, billboards, and Gaussian splats it draws.
 * Builds that share one flutter_scene in the pub cache (two projects, worktrees, or an app and its tests) no longer fail with `errno = 1224` on Windows or ship each other's half-written shaders. The build hook writes its intermediates into the building app's `.dart_tool/` and only its generated assets into the package.
 * Two builds for different platforms saving flutter_scene's generated assets at once no longer drop each other's manifest entries or delete each other's files mid-write.
-* A scene the GPU has room for no longer drops to half its frame rate on phones. `Scene.maxGpuFramesInFlight` now defaults to 2, and tightens to 1 by itself while frames keep taking the GPU over 33 ms, so a saturated GPU still doesn't stall the UI thread. A Vulkan OnePlus scene went from 30 to 60 fps.
+* `Scene.maxGpuFramesInFlight` defaults to 2, so a phone scene the GPU has room for no longer locks at half frame rate (30 to 60 fps on a Vulkan OnePlus). A limit of 2 or more, including an explicit 2, tightens to 1 while frames stay slow.
 
 ## 0.24.3
 

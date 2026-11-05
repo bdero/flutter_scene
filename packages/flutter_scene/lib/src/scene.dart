@@ -675,18 +675,15 @@ base class Scene implements SceneGraph {
   /// advances on a paced frame.
   ///
   /// The default of 2 lets the GPU finish one frame while the next is queued.
-  /// A limit of 1 looks cheaper but can halve the frame rate of a scene the GPU
-  /// has room for: phone GPUs run a governor that lowers the clock until the
-  /// GPU looks about 85% busy, so a frame usually finishes just inside its
-  /// vsync, and any encoding time pushes it past. The skipped frame leaves the
-  /// GPU idle, the clock drops further, and each frame then really takes nearly
-  /// two vsyncs, which keeps the scene at half the rate.
+  /// A limit of 1 can halve the frame rate of a scene the GPU has room for,
+  /// since a phone GPU's governor clocks it down until each frame barely fits
+  /// its vsync, and a frame held back then misses the next one.
   ///
-  /// While frames keep taking the GPU over 33 ms it may not be keeping up, and
-  /// queuing more would block this thread, so the limit tightens to 1 and tries
-  /// the full limit again about once a second. Set 1 to always pace at one
-  /// frame, or 0 to always encode. Only screen views pace; render-to-texture
-  /// views always render.
+  /// At 2 or more, while frames keep completing over 33 ms after the GPU can
+  /// start them, the limit tightens to 1 so queuing does not block this
+  /// thread, and tries the full limit again about once a second. Set 1 to
+  /// always pace at one frame, or 0 to always encode. Only screen views pace;
+  /// render-to-texture views always render.
   /// {@category Rendering}
   int maxGpuFramesInFlight = 2;
 
@@ -699,7 +696,8 @@ base class Scene implements SceneGraph {
   RenderView? _sharedShadowAnchor;
 
   /// Frames a screen view has presented from its previous image because the
-  /// GPU was [maxGpuFramesInFlight] frames behind. A diagnostic counter.
+  /// GPU was behind by the frame limit [maxGpuFramesInFlight] sets. A
+  /// diagnostic counter.
   /// {@category Rendering}
   int get pacedFrameCount => _pacedFrameCount;
   int _pacedFrameCount = 0;
@@ -730,7 +728,8 @@ base class Scene implements SceneGraph {
 
   /// Notifies when the scene wants painting again outside any repaint the
   /// app drives: a screen view held its previous image because the GPU was
-  /// [maxGpuFramesInFlight] frames behind, and that work has now finished.
+  /// behind by the frame limit [maxGpuFramesInFlight] sets, and that work has
+  /// now finished.
   /// [SceneView] listens. A custom painter that repaints only on demand
   /// should pass this as its `repaint`, or the held frame never shows.
   /// {@category Rendering}

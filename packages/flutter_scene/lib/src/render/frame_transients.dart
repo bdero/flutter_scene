@@ -48,13 +48,20 @@ class GpuSubmissionTracker {
   final List<int> _frameEndMicros = [];
   int _measuredThrough = 0;
 
-  /// How long the GPU took on the most recently finished frame, from the end
-  /// of its encoding to its completion, in microseconds. 0 until one finishes.
+  /// The completion latency of the most recently finished frame, in
+  /// microseconds, from when the GPU could start it (the end of its encoding,
+  /// or the previous frame's completion if later) to when its completion
+  /// reached this thread. 0 until one finishes.
+  @visibleForTesting
   int get lastFrameMicros => _lastFrameMicros;
   int _lastFrameMicros = 0;
+  int _lastCompletionMicros = 0;
 
-  /// A frame the GPU takes longer than this on means it may not be keeping up,
-  /// rather than that a governor has clocked it down to fit the frame rate.
+  /// A frame slower than this means the GPU may not be keeping up, rather
+  /// than that a governor has clocked it down to fit the frame rate.
+  // TODO(gpu-pacing): These constants were tuned on one Adreno and one Apple
+  // GPU at 60 Hz. Derive the threshold from the display refresh interval and
+  // validate on Mali, GLES, and Windows.
   static const int slowFrameMicros = 33333;
 
   /// Slow frames in a row before [frameLimit] tightens, so one hitch doesn't.
@@ -72,9 +79,9 @@ class GpuSubmissionTracker {
   /// The frames that may be in flight now, given a limit of [maximum].
   ///
   /// A GPU that stays slow gets one frame at a time, so queuing doesn't block
-  /// the thread encoding. Having less to do can itself keep it slow, since its
-  /// governor then lowers the clock, so the whole limit gets a try every so
-  /// often: the extra work brings the clock back up if the GPU has room.
+  /// the thread encoding. Less work can itself keep it slow, since its
+  /// governor then lowers the clock, so the whole limit gets a retry every so
+  /// often, and the extra work brings the clock back up if the GPU has room.
   int frameLimit(int maximum) {
     if (maximum < 2) return maximum;
     final now = _nowMicros();
@@ -175,11 +182,21 @@ class GpuSubmissionTracker {
   void complete(int id) {
     _pending.remove(id);
     final done = completedThrough;
+    // Only the newest frame this completion finishes is measured; the GPU
+    // starts a queued frame once the one before it completes.
+    var newest = -1;
     for (var i = 0; i < _frameEnds.length; i++) {
       final end = _frameEnds[i];
-      if (end <= _measuredThrough || end > done) continue;
-      _measuredThrough = end;
-      _lastFrameMicros = _nowMicros() - _frameEndMicros[i];
+      if (end > _measuredThrough && end <= done) newest = i;
+    }
+    if (newest >= 0) {
+      final now = _nowMicros();
+      _measuredThrough = _frameEnds[newest];
+      final start = _frameEndMicros[newest] > _lastCompletionMicros
+          ? _frameEndMicros[newest]
+          : _lastCompletionMicros;
+      _lastFrameMicros = now - start;
+      _lastCompletionMicros = now;
       _slowFrames = _lastFrameMicros > slowFrameMicros ? _slowFrames + 1 : 0;
     }
     for (final listener in List.of(_onCompleted)) {
