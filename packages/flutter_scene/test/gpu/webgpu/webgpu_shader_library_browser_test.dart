@@ -167,6 +167,22 @@ void main() {
     expect(library['TestFragment'], isNotNull);
   });
 
+  test(
+    'a shader first looked up after a reload compiles the new source',
+    () async {
+      final errors = <FlutterErrorDetails>[];
+      final held = FlutterError.onError;
+      FlutterError.onError = errors.add;
+      addTearDown(() => FlutterError.onError = held);
+      final library = await webGpuShaderLibraryFromSidecar(
+        _sidecar(vertex: 'fn broken( {'),
+      );
+      await webGpuReloadShaderLibrary(library, _sidecar());
+      await webGpuShaderChecked(library['TestVertex']!);
+      expect(errors, isEmpty);
+    },
+  );
+
   test('every shader of a real sidecar compiles', () async {
     if (_sidecarUrl.isEmpty) {
       markTestSkipped('Set FLUTTER_SCENE_SIDECAR_URL to a served sidecar.');
