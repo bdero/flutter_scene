@@ -43,6 +43,7 @@ class SmokeScene {
     this.setup, {
     this.preload,
     this.warmupFrames = 0,
+    this.requiredFrames = 1,
     this.fullCoverage = false,
     this.colorPassCounters,
     this.maxDepthConflictPixels,
@@ -65,6 +66,11 @@ class SmokeScene {
   /// time because every temporal blend here clamps its rate exponent at a
   /// 60 Hz cadence, and the smoke lanes render well below that.
   final int warmupFrames;
+
+  /// Frames every lane renders before the capture, for a scene that changes
+  /// after its first frame. Unlike [warmupFrames], this holds on the Android
+  /// lanes, which otherwise settle one frame.
+  final int requiredFrames;
 
   /// Whether drawn content reaches the corners, meaning they are geometry or
   /// glow (bloom over the transparent background) rather than the clear color.
@@ -2561,9 +2567,6 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadWeightSumModel),
-  // Nine unit cubes ahead of the camera and twenty-seven behind it. The
-  // frame shows the nine; the counters have to say the other twenty-seven
-  // were culled, which is what a rejected BVH subtree never reported.
   SmokeScene('primitive_assignment', () {
     // Each node draws its first frame as a red or tall blue box, then assigns
     // one field of its primitive. The harness counts the pixels only the
@@ -2604,7 +2607,10 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         target: vm.Vector3(0, 0.6, 0),
       ),
     );
-  }),
+  }, requiredFrames: 2),
+  // Nine unit cubes ahead of the camera and twenty-seven behind it. The
+  // frame shows the nine; the counters have to say the other twenty-seven
+  // were culled, which is what a rejected BVH subtree never reported.
   SmokeScene('bvh_culled', () {
     final scene = Scene();
     var index = 0;
