@@ -1,5 +1,7 @@
 ## 0.24.4
 
+* A shader library on the WebGPU web backend loads its WGSL sidecar alone, without downloading the shader bundle.
+* A shader library on the WebGPU web backend compiles each shader when it is first used, so a page no longer waits at load on shaders it never draws.
 * glTF imports read `EXT_texture_webp` textures, so a model whose textures are only WebP loads instead of failing.
 * glTF imports honor `KHR_node_visibility`, so a node marked hidden imports hidden along with its subtree.
 * glTF imports play `KHR_animation_pointer` animations of node visibility, light color, intensity, range, and cone angles, material factors, and texture transforms. A pointer the engine can't drive warns and is skipped.
@@ -26,6 +28,7 @@
 * A `ShaderMaterial` or `.fmat` material with a vertex shader no longer breaks the line segments, billboards, and Gaussian splats it draws.
 * Builds that share one flutter_scene in the pub cache (two projects, worktrees, or an app and its tests) no longer fail with `errno = 1224` on Windows or ship each other's half-written shaders. The build hook writes its intermediates into the building app's `.dart_tool/` and only its generated assets into the package.
 * Two builds for different platforms saving flutter_scene's generated assets at once no longer drop each other's manifest entries or delete each other's files mid-write.
+* Assigning `MeshPrimitive.material` or `MeshPrimitive.geometry` on a node already in a scene changes what it draws from the next frame. The assignment was ignored until the node left and rejoined a scene or got a new `Mesh`.
 
 ## 0.24.3
 

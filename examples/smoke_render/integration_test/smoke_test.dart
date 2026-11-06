@@ -111,7 +111,7 @@ void main() {
       // A converging feature (the irradiance field, a temporal resolve) has
       // nothing to show in one frame, so its scene asks for more.
       final settleFrames = isAndroid
-          ? 1
+          ? smoke.requiredFrames
           : (smoke.warmupFrames > baseFrames ? smoke.warmupFrames : baseFrames);
       final boundary =
           smokeSceneKey.currentContext!.findRenderObject()
@@ -235,6 +235,38 @@ void main() {
           0,
           reason: 'a draw after the full geometry bind kept its depth bias',
         );
+      }
+      if (smoke.id == 'primitive_assignment') {
+        // Red is only the replaced material, and blue above the green box's
+        // top is only the replaced tall geometry.
+        var red = 0, green = 0, tallBlue = 0, top = image.height;
+        for (var y = 0; y < image.height; y++) {
+          for (var x = 0; x < image.width; x++) {
+            final p = (y * image.width + x) * 4;
+            final r = rgba.getUint8(p), g = rgba.getUint8(p + 1);
+            final b = rgba.getUint8(p + 2);
+            if (r > 100 && g < r ~/ 2 && b < r ~/ 2) red++;
+            if (g > 100 && r < g ~/ 2 && b < g ~/ 2) {
+              green++;
+              if (y < top) top = y;
+            }
+          }
+        }
+        for (var y = 0; y < top - 2; y++) {
+          for (var x = 0; x < image.width; x++) {
+            final p = (y * image.width + x) * 4;
+            final r = rgba.getUint8(p), g = rgba.getUint8(p + 1);
+            if (rgba.getUint8(p + 2) > 100 && r < 80 && g < 120) tallBlue++;
+          }
+        }
+        // ignore: avoid_print
+        print(
+          'SMOKE primitive_assignment: '
+          'red=$red green=$green tallBlue=$tallBlue',
+        );
+        expect(red, 0, reason: 'an assigned material did not draw');
+        expect(green, greaterThan(100), reason: 'an assigned material drew');
+        expect(tallBlue, 0, reason: 'an assigned geometry did not draw');
       }
       if (smoke.id == 'coverage_cutouts') {
         // The magenta layer of the self-overlapping masked mesh is the only
