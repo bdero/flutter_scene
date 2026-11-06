@@ -671,23 +671,33 @@ base class Scene implements SceneGraph {
   /// that thread for the backlog (the queue is serialized with the raster
   /// thread's own submissions), so a GPU-bound scene stalls the UI thread
   /// and everything else on it. Pacing instead re-presents the last frame
-  /// once [maxGpuFramesInFlight] frames are still running; the scene updates
-  /// at the rate the GPU finishes frames, which it did anyway. Scene time
-  /// still advances on a paced frame.
+  /// once [maxGpuFramesInFlight] frames are still running. Scene time still
+  /// advances on a paced frame.
   ///
-  /// The default of 1 keeps the UI thread free and costs about a tenth of
-  /// GPU throughput on a saturated GPU. 2 keeps the throughput but only
-  /// halves the stall on drivers with shallow queues. Set to 0 to always
-  /// encode. Only screen views pace; render-to-texture views always render.
+  /// The default of 2 lets the GPU finish one frame while the next is queued.
+  /// A limit of 1 can halve the frame rate of a scene the GPU has room for,
+  /// since a phone GPU's governor clocks it down until each frame barely fits
+  /// its vsync, and a frame held back then misses the next one.
+  ///
+  /// At 2 or more, while frames keep completing over 33 ms after the GPU can
+  /// start them, the limit tightens to 1 so queuing does not block this
+  /// thread, and tries the full limit again about once a second. Set 1 to
+  /// always pace at one frame, or 0 to always encode. Only screen views pace;
+  /// render-to-texture views always render.
   /// {@category Rendering}
-  int maxGpuFramesInFlight = 1;
+  int maxGpuFramesInFlight = 2;
+
+  /// The limit in effect this frame. See [maxGpuFramesInFlight].
+  int get _gpuFrameLimit =>
+      rendererSubmissions.frameLimit(maxGpuFramesInFlight);
 
   // The frame's shared spot and point shadow tiles while render() runs.
   SharedShadowAtlas? _sharedShadowAtlas;
   RenderView? _sharedShadowAnchor;
 
   /// Frames a screen view has presented from its previous image because the
-  /// GPU was [maxGpuFramesInFlight] frames behind. A diagnostic counter.
+  /// GPU was behind by the frame limit [maxGpuFramesInFlight] sets. A
+  /// diagnostic counter.
   /// {@category Rendering}
   int get pacedFrameCount => _pacedFrameCount;
   int _pacedFrameCount = 0;
@@ -718,7 +728,8 @@ base class Scene implements SceneGraph {
 
   /// Notifies when the scene wants painting again outside any repaint the
   /// app drives: a screen view held its previous image because the GPU was
-  /// [maxGpuFramesInFlight] frames behind, and that work has now finished.
+  /// behind by the frame limit [maxGpuFramesInFlight] sets, and that work has
+  /// now finished.
   /// [SceneView] listens. A custom painter that repaints only on demand
   /// should pass this as its `repaint`, or the held frame never shows.
   /// {@category Rendering}
@@ -735,7 +746,7 @@ base class Scene implements SceneGraph {
   }
 
   void _onPaceRelease() {
-    if (rendererSubmissions.framesInFlight >= maxGpuFramesInFlight) return;
+    if (rendererSubmissions.framesInFlight >= _gpuFrameLimit) return;
     rendererSubmissions.removeCompletionListener(_onPaceRelease);
     _paceHeld = false;
     _repaintRequested.notify();
@@ -2278,7 +2289,7 @@ base class Scene implements SceneGraph {
         _hasPresentedFrame &&
         _pendingGraphCapture == null &&
         views.any((view) => view.target == null) &&
-        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight;
+        rendererSubmissions.priorFramesInFlight >= _gpuFrameLimit;
     // When every screen view can re-present, the frame holds before any
     // per-frame upload: on Vulkan each texture upload is a synchronous submit
     // that waits for the GPU backlog, which pacing exists to avoid.
@@ -2918,7 +2929,7 @@ base class Scene implements SceneGraph {
         previous != null &&
         previous.width == pixelSize.width.toInt() &&
         previous.height == pixelSize.height.toInt() &&
-        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight) {
+        rendererSubmissions.priorFramesInFlight >= _gpuFrameLimit) {
       _pacedFrameCount++;
       _holdPace();
       final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
