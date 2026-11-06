@@ -1,5 +1,6 @@
 ## 0.24.4
 
+* A refreshing `SkyEnvironment` on the cube radiance layout prefilters one face per frame instead of six. A re-bake takes 56 frames instead of 16.
 * `BloomSettings.levels` sets how many levels the bloom chain blurs through (3 to 6). Fewer levels take fewer passes and give a tighter glow at the same brightness.
 * Crossfading clips no longer dips a node's rotation toward its bind pose.
 * Shadow passes cull the instances of an `InstancedMesh` with `cullInstances` against each light's volume, instead of drawing them all.
