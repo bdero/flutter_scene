@@ -111,7 +111,7 @@ void main() {
       // A converging feature (the irradiance field, a temporal resolve) has
       // nothing to show in one frame, so its scene asks for more.
       final settleFrames = isAndroid
-          ? 1
+          ? smoke.requiredFrames
           : (smoke.warmupFrames > baseFrames ? smoke.warmupFrames : baseFrames);
       final boundary =
           smokeSceneKey.currentContext!.findRenderObject()
