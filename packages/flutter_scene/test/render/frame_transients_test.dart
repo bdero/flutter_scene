@@ -441,6 +441,35 @@ void main() {
       expect(pool.bufferCount, lessThanOrEqualTo(1));
     });
 
+    test('emplaceTyped places a typed list like its byte view', () {
+      final data = Float32List.fromList([for (var i = 0; i < 25; i++) i + 0.5]);
+      final tracker = GpuSubmissionTracker();
+      final arena = TransientArena(tracker, alignment: 16);
+      final pool = ImmediatePoolTransients(tracker);
+
+      final typed = arena.emplaceTyped(data);
+      final bytes = arena.emplace(ByteData.sublistView(data));
+      expect(typed.lengthInBytes, data.lengthInBytes);
+      expect(bytes.lengthInBytes, data.lengthInBytes);
+      expect(bytes.offsetInBytes % 16, 0);
+      expect(pool.emplaceTyped(data).lengthInBytes, data.lengthInBytes);
+    });
+
+    test('immediate vertex pool recycles typed buffers', () {
+      final tracker = GpuSubmissionTracker();
+      final pool = ImmediatePoolTransients(tracker, vertexData: true);
+      final data = Float32List(100);
+
+      final first = pool.emplaceTyped(data);
+      final id = tracker.record();
+      pool.beginFrame();
+      tracker.complete(id);
+      final second = pool.emplaceTyped(data);
+
+      expect(identical(second.buffer, first.buffer), isTrue);
+      expect(pool.bufferCount, 1);
+    });
+
     test('single flush per block: staged bytes upload on seal', () {
       final tracker = GpuSubmissionTracker();
       final arena = TransientArena(
