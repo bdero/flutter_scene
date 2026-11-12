@@ -10,6 +10,7 @@
 @TestOn('browser')
 library;
 
+import 'dart:js_interop';
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/web/_gpu.dart' as gpu;
@@ -33,16 +34,29 @@ void main() {
     final data = Float32List.fromList([for (var i = 0; i < 100; i++) i * 0.25]);
     final gl = (gpu.gpuContext as WebGlContext).gl;
 
+    // The upload leaves the pool buffer bound to ARRAY_BUFFER.
+    Float32List readBack() {
+      final out = JSFloat32Array.withLength(data.length);
+      gl.getBufferSubData(web.WebGL2RenderingContext.ARRAY_BUFFER, 0, out);
+      return out.toDart;
+    }
+
     final view = pool.emplaceTyped(data);
     expect(view.lengthInBytes, data.lengthInBytes);
     expect(view.offsetInBytes, 0);
+    expect(readBack(), data);
     expect(gl.getError(), web.WebGL2RenderingContext.NO_ERROR);
 
     final id = tracker.record();
     pool.beginFrame();
     tracker.complete(id);
+    for (var i = 0; i < data.length; i++) {
+      data[i] = -data[i];
+    }
     final recycled = pool.emplaceTyped(data);
     expect(identical(recycled.buffer, view.buffer), isTrue);
     expect(pool.bufferCount, 1);
+    expect(readBack(), data);
+    expect(gl.getError(), web.WebGL2RenderingContext.NO_ERROR);
   });
 }
