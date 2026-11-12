@@ -425,25 +425,35 @@ gpu.RenderPipeline? cachedRenderPipeline(
 final Set<(gpu.Shader, gpu.Shader, int)> _rejectedPipelines = {};
 
 // A sliced warm-up's build budget: while set, new pipelines stop building
-// once builds have taken this long, and the draws that need the rest are
-// skipped and counted, so the warm-up yields and tries them next slice.
+// once the slice has run this long, and the draws that need the rest are
+// skipped and counted, so the warm-up yields and tries them next slice. The
+// clock is wall time because a backend compiles a pipeline when a pass first
+// binds it, not when it is created.
 Duration? _buildBudget;
 final Stopwatch _buildClock = Stopwatch();
 int _deferredBuilds = 0;
+bool _builtThisSlice = false;
+// The last slice deferred before building anything (its other work used the
+// budget), so this one builds at least one pipeline.
+bool _starved = false;
 
-/// Runs [body] with new pipeline builds capped at [budget] of build time;
-/// draws past it are skipped and counted in [deferredPipelineBuilds].
+/// Runs [body] with new pipeline builds stopped once it has run for [budget];
+/// draws past it are skipped and counted in [deferredPipelineBuilds]. A slice
+/// after one that built nothing builds at least one.
 @internal
 T withPipelineBuildBudget<T>(Duration budget, T Function() body) {
   _buildBudget = budget;
   _buildClock
-    ..stop()
-    ..reset();
+    ..reset()
+    ..start();
   _deferredBuilds = 0;
+  _builtThisSlice = false;
   try {
     return body();
   } finally {
     _buildBudget = null;
+    _buildClock.stop();
+    _starved = _deferredBuilds > 0 && !_builtThisSlice;
   }
 }
 
@@ -455,6 +465,7 @@ bool _deferBuild((gpu.Shader, gpu.Shader, int) key) {
   final budget = _buildBudget;
   if (budget == null || _pipelineCache.containsKey(key)) return false;
   if (_buildClock.elapsed < budget) return false;
+  if (_starved && !_builtThisSlice) return false;
   _deferredBuilds++;
   return true;
 }
@@ -482,13 +493,12 @@ gpu.RenderPipeline resolvePipeline(
   final stopwatch = kDebugMode || profileRendering
       ? (Stopwatch()..start())
       : null;
-  if (_buildBudget != null) _buildClock.start();
+  if (_buildBudget != null) _builtThisSlice = true;
   final pipeline = gpu.gpuContext.createRenderPipeline(
     vertexShader,
     fragmentShader,
     vertexLayout: vertexLayout?.toGpuLayout(),
   );
-  _buildClock.stop();
   if (stopwatch != null) {
     stopwatch.stop();
     // A backend pipeline build is synchronous and lands mid-frame the first
