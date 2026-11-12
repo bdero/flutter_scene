@@ -219,8 +219,12 @@ class SceneView extends StatefulWidget {
   /// example with a new [camera]).
   ///
   /// It can change over the view's life, to pause a view that is hidden, say.
-  /// Turning it back on continues the elapsed time from where it stopped, and
-  /// the first [onTick] after that reports a zero delta.
+  /// Turning it back on continues the view's elapsed time from where it
+  /// stopped, and the first [onTick] after that reports a zero delta.
+  ///
+  /// The scene's own step is separate. [Scene.render] advances components and
+  /// animations by the wall time since it last ran, the time spent off
+  /// included, unless the app calls [Scene.update] itself.
   final bool autoTick;
 
   /// Logical-to-physical pixel multiplier for the offscreen render target,

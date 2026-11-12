@@ -326,6 +326,45 @@ void main() {
     expect(count, inInclusiveRange(58, 62));
   });
 
+  testWidgets('a view that starts with autoTick off ticks once it is on', (
+    tester,
+  ) async {
+    final scene = _tryScene();
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    var now = DateTime(2026);
+    final ticks = <(Duration, double)>[];
+    Widget view({required bool autoTick}) => _sized(
+      SceneView(
+        scene,
+        camera: PerspectiveCamera(),
+        autoTick: autoTick,
+        clock: Clock(() => now),
+        onTick: (elapsed, deltaSeconds) => ticks.add((elapsed, deltaSeconds)),
+      ),
+    );
+
+    await tester.pumpWidget(view(autoTick: false));
+    now = now.add(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 5));
+    expect(ticks, isEmpty);
+
+    await tester.pumpWidget(view(autoTick: true));
+    for (var i = 0; i < 3; i++) {
+      now = now.add(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(tester.takeException(), isNull);
+    // The clock starts at zero, whatever time passed before the first tick.
+    expect(ticks, hasLength(3));
+    expect(ticks.first, (Duration.zero, 0.0));
+    expect(ticks[1].$1, const Duration(milliseconds: 16));
+    expect(ticks[1].$2, closeTo(0.016, 0.001));
+    expect(ticks[2].$1, const Duration(milliseconds: 32));
+  });
+
   testWidgets('disposes cleanly (no ticker leak)', (tester) async {
     final scene = _tryScene();
     if (scene == null) {
