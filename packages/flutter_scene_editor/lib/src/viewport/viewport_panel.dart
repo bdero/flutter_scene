@@ -1104,6 +1104,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                     ),
                                 ],
                                 onTick: _onTick,
+                                // Pipelines build on the UI thread on first
+                                // draw, a multi-second stall on Windows, so
+                                // build them before the scene shows.
+                                warmUp: true,
+                                warmUpExtraNodes: _ctrl.warmUpNodes,
                               ),
                             ),
                           ),
