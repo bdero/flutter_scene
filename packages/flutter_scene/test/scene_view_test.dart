@@ -237,6 +237,95 @@ void main() {
     expect(tickCount, 0);
   });
 
+  testWidgets('turning autoTick back on continues the clock', (tester) async {
+    final scene = _tryScene();
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    var now = DateTime(2026);
+    final ticks = <(Duration, double)>[];
+    Widget view({required bool autoTick}) => _sized(
+      SceneView(
+        scene,
+        camera: PerspectiveCamera(),
+        autoTick: autoTick,
+        clock: Clock(() => now),
+        onTick: (elapsed, deltaSeconds) => ticks.add((elapsed, deltaSeconds)),
+      ),
+    );
+    Future<void> frame() async {
+      now = now.add(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    await tester.pumpWidget(view(autoTick: true));
+    for (var i = 0; i < 4; i++) {
+      await frame();
+    }
+    final elapsedAtPause = ticks.last.$1;
+    expect(elapsedAtPause, greaterThan(Duration.zero));
+
+    // Ten seconds with the ticker off, as when an app pauses a hidden view.
+    await tester.pumpWidget(view(autoTick: false));
+    ticks.clear();
+    now = now.add(const Duration(seconds: 10));
+    await tester.pump(const Duration(seconds: 10));
+    expect(ticks, isEmpty);
+
+    await tester.pumpWidget(view(autoTick: true));
+    for (var i = 0; i < 3; i++) {
+      await frame();
+    }
+    expect(tester.takeException(), isNull);
+    expect(ticks, hasLength(3));
+    // The first tick continues from where the clock stopped, and the time
+    // spent off is not reported as one long step.
+    expect(ticks.first.$1, elapsedAtPause);
+    expect(ticks.first.$2, 0);
+    expect(ticks[1].$1, elapsedAtPause + const Duration(milliseconds: 16));
+    expect(ticks[1].$2, closeTo(0.016, 0.001));
+    expect(ticks[2].$1, elapsedAtPause + const Duration(milliseconds: 32));
+  });
+
+  testWidgets('turning autoTick back on keeps maxFrameRate pacing', (
+    tester,
+  ) async {
+    final scene = _tryScene();
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    var count = 0;
+    Widget view({required bool autoTick}) => _sized(
+      SceneView(
+        scene,
+        camera: PerspectiveCamera(),
+        autoTick: autoTick,
+        maxFrameRate: 60,
+        onTick: (_, __) => count++,
+      ),
+    );
+
+    // Two seconds on, so the next frame's deadline sits two seconds into the
+    // ticker's time.
+    await tester.pumpWidget(view(autoTick: true));
+    for (var i = 0; i < 240; i++) {
+      await tester.pump(const Duration(microseconds: 8333));
+    }
+    await tester.pumpWidget(view(autoTick: false));
+    await tester.pump(const Duration(seconds: 1));
+
+    // One second back on at 120 Hz renders about sixty frames.
+    count = 0;
+    await tester.pumpWidget(view(autoTick: true));
+    for (var i = 0; i < 120; i++) {
+      await tester.pump(const Duration(microseconds: 8333));
+    }
+    expect(tester.takeException(), isNull);
+    expect(count, inInclusiveRange(58, 62));
+  });
+
   testWidgets('disposes cleanly (no ticker leak)', (tester) async {
     final scene = _tryScene();
     if (scene == null) {

@@ -30,6 +30,7 @@
 * Two builds for different platforms saving flutter_scene's generated assets at once no longer drop each other's manifest entries or delete each other's files mid-write.
 * Assigning `MeshPrimitive.material` or `MeshPrimitive.geometry` on a node already in a scene changes what it draws from the next frame. The assignment was ignored until the node left and rejoined a scene or got a new `Mesh`.
 * Instanced draws and billboards on the WebGL2 backend no longer copy their instance data byte by byte in WebAssembly builds.
+* Turning `SceneView.autoTick` off and back on keeps the view's clock going from where it stopped. It threw in debug builds; in release builds the elapsed time started over, and a view with `maxFrameRate` stayed frozen until the new ticker passed the old deadline.
 
 ## 0.24.3
 
