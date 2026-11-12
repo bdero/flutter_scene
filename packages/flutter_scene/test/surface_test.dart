@@ -1,5 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/external_bytes.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/gpu/gpu.dart' show PixelFormat;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/render_graph.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/texture/texture_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/gpu_available.dart';
@@ -61,6 +69,22 @@ void main() {
       }
       final secondA = surface.getNextSwapchainColorTexture(a);
       expect(identical(firstA, secondA), isFalse);
+    });
+
+    test('every ring and pool texture is stated to the VM at its size', () {
+      final surface = Surface();
+      final ring = surface.getNextSwapchainColorTexture(a);
+      final pooled = surface.transientTexturePool().acquire(
+        const TransientTextureDescriptor.color(
+          width: 64,
+          height: 32,
+          format: PixelFormat.r16g16b16a16Float,
+        ),
+      );
+      for (final texture in [ring, pooled]) {
+        expect(debugStatedExternalBytes(texture), gpuTextureBytes(texture));
+        expect(debugStatedExternalBytes(texture), greaterThan(0));
+      }
     });
   }, skip: gpu ? false : 'Requires a GPU device.');
 }

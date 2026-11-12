@@ -41,6 +41,9 @@ dependencies:
   collection: ^1.19.0
   crypto: ^3.0.0
   data_assets: ^0.20.0
+  # Native only: states the render targets a scene holds to the VM as
+  # external memory.
+  ffi: ^2.1.0
   # Reader for the bundled GPU shim's shader-bundle flatbuffer.
   flat_buffers: ^25.9.23
   flutter:
