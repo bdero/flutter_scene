@@ -183,8 +183,9 @@ class Texture2D implements TextureSource {
 
   /// Builds a texture from a decoded [image].
   ///
-  /// The mip chain is built on a background isolate, so a large image does not
-  /// hold up the caller's frames while it downsamples.
+  /// On native platforms the mip chain is built on a background isolate, so a
+  /// large image does not hold up the caller's frames while it downsamples.
+  /// The web has no isolates and builds it on the calling thread.
   ///
   /// Set [opaque] when every pixel of [image] is fully opaque. A texture that
   /// then needs no mip chain wraps the image's own GPU texture instead of
