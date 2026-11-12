@@ -1,6 +1,7 @@
 ## 0.24.4
 
 * `Scene.warmUp` takes `extraNodes` (and `SceneView` takes `warmUpExtraNodes`), drawn only in the warm-up frames, so content added later compiles its pipelines before it first shows instead of stalling that frame.
+* A sliced `Scene.warmUp` (`sliceBudget`, and `SceneView(warmUp: true)`) yields between slow pipeline builds and after the first sky bake. Its budget timed only creating each pipeline, while the backend compiles one when a pass first binds it, so it built everything in its first slice and blocked for the whole compile.
 * A shader library on the WebGPU web backend loads its WGSL sidecar alone, without downloading the shader bundle.
 * A shader library on the WebGPU web backend compiles each shader when it is first used, so a page no longer waits at load on shaders it never draws.
 * glTF imports read `EXT_texture_webp` textures, so a model whose textures are only WebP loads instead of failing.
