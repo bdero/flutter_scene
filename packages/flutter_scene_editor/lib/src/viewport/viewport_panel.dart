@@ -12,6 +12,7 @@ import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../controller/editor_controller.dart';
+import '../inspector/material_preview.dart' show MaterialPreview;
 import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
 import 'component_gizmos.dart';
@@ -139,6 +140,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _gizmoPrefs.addListener(_onControllerChanged);
     widget.uiHandle?.attachTool(_readToolMode, _writeToolMode);
     widget.cameraHandle?.attach(_camera, _cameraMoved);
+    // Selecting a node shows its material preview, which draws a different
+    // lit variant than this viewport.
+    unawaited(MaterialPreview.warmUp());
   }
 
   @override
