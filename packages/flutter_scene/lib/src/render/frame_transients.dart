@@ -425,8 +425,19 @@ class TransientArena implements FrameTransients {
   }
 
   @override
-  gpu.BufferView emplaceTyped(TypedData data) =>
-      emplace(data is ByteData ? data : ByteData.sublistView(data));
+  gpu.BufferView emplaceTyped(TypedData data) => emplace(_bytesOf(data));
+
+  // A byte view of [data], memoized for the last list. Non-instanced draws
+  // pack into one reused scratch list, so consecutive draws share the view.
+  ByteData _bytesOf(TypedData data) {
+    if (data is ByteData) return data;
+    if (identical(data, _lastTyped)) return _lastTypedBytes!;
+    _lastTyped = data;
+    return _lastTypedBytes = ByteData.sublistView(data);
+  }
+
+  TypedData? _lastTyped;
+  ByteData? _lastTypedBytes;
 
   @override
   gpu.BufferView emplace(ByteData bytes) {

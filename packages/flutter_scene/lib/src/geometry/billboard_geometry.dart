@@ -293,12 +293,12 @@ class BillboardGeometry extends Geometry {
 
     // Slot 1: the live per-instance attributes.
     if (_instanceCount > 0) {
-      final liveBytes = ByteData.sublistView(
+      final live = Float32List.sublistView(
         _instanceData,
         0,
         _instanceCount * floatsPerInstance,
       );
-      pass.bindVertexBuffer(instanceTransients.emplace(liveBytes), slot: 1);
+      pass.bindVertexBuffer(instanceTransients.emplaceTyped(live), slot: 1);
     }
 
     final frameInfo = _frameInfoScratch..fillRange(0, 48, 0.0);

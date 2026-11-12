@@ -178,9 +178,13 @@ final class WebGlContext extends GpuContext {
   /// The GL store is hinted STATIC_DRAW, which suits geometry written once at
   /// creation. A geometry uploaded repeatedly (CPU morph blending re-uploads
   /// on every weight change) allocates fresh buffers per upload rather than
-  /// rewriting these, so each one is still written once.
+  /// rewriting these. The renderer's instance-data pool does rewrite them,
+  /// once per frame.
   // TODO(web-buffers): Reuse a geometry's buffers when it re-uploads at the
   // same size, instead of allocating a new pair and dropping the old one.
+  // TODO(web-buffers): Hint the instance pool's buffers DYNAMIC_DRAW. Needs a
+  // usage flag through createGeometryBuffers; measure on ANGLE's D3D11
+  // backend, where the hint affects how buffers are stored.
   DeviceBuffer createTypedDeviceBuffer(int sizeInBytes, {required bool index}) {
     return WebGlDeviceBuffer._initializeTyped(
       this,
