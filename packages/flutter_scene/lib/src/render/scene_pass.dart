@@ -403,6 +403,7 @@ class ScenePass extends RenderGraphPass {
       orthographic: projection.orthographic,
       time: _time,
       planarReflectionsSuppressed: _suppressPlanarReflections,
+      surfaceDebugViews: _debugView?.drawsSurfaceViews ?? false,
     );
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();

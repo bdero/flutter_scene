@@ -1092,6 +1092,7 @@ class Lighting {
     this.orthographic = false,
     this.time = 0.0,
     this.planarReflectionsSuppressed = false,
+    this.surfaceDebugViews = false,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity();
 
   /// The image-based-lighting environment in effect for this draw.
@@ -1308,4 +1309,9 @@ class Lighting {
   /// materials bind no capture and fall back to their base look so captures
   /// never recurse.
   final bool planarReflectionsSuppressed;
+
+  /// Whether a surface debug view may show on this draw, so a material draws
+  /// with its shader built with the views (see [Material.fragmentShaderForLighting]).
+  @internal
+  final bool surfaceDebugViews;
 }
