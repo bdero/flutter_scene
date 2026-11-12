@@ -2085,12 +2085,19 @@ base class Scene implements SceneGraph {
   /// [allShadingTiers] to compile both now, so turning one of those features
   /// on or off later does not stall a frame on its first draw. It roughly
   /// doubles the lit pipelines warm-up compiles.
+  ///
+  /// [extraNodes] draw in the warm-up frames as if the scene held them, so
+  /// content added later (a spawned prefab, an editor's new primitive)
+  /// compiles now. Each frame attaches them in front of the first view's
+  /// camera and detaches them before it ends, so they never show in a visible
+  /// frame. Pass nodes no scene holds.
   /// {@category Assets and loading}
   Future<void> warmUp(
     List<RenderView> views, {
     bool includeOffscreen = false,
     Duration? sliceBudget,
     bool allShadingTiers = false,
+    List<Node> extraNodes = const [],
   }) async {
     _checkNotDisposed('warmUp');
     await initializeStaticResources();
@@ -2118,6 +2125,13 @@ base class Scene implements SceneGraph {
       // paced frame encodes nothing, so pacing is off while they encode.
       final framesInFlight = maxGpuFramesInFlight;
       if (allShadingTiers) maxGpuFramesInFlight = 0;
+      final holder = extraNodes.isEmpty
+          ? null
+          : (Node(
+              name: 'warm-up',
+              localTransform: _warmUpPlacement(views.first.camera),
+            )..addAll(extraNodes));
+      if (holder != null) add(holder);
       try {
         // With allShadingTiers, the frame encodes once under each lit tier
         // (one of them is the frame's own), so a later feature toggle that
@@ -2136,6 +2150,10 @@ base class Scene implements SceneGraph {
           );
         }
       } finally {
+        if (holder != null) {
+          remove(holder);
+          extraNodes.forEach(holder.remove);
+        }
         shadingTierOverride = null;
         maxGpuFramesInFlight = framesInFlight;
         _warmUpIncludeOffscreen = false;
@@ -2163,6 +2181,17 @@ base class Scene implements SceneGraph {
   }
 
   bool _warmUpIncludeOffscreen = false;
+
+  // Just past the camera's near plane on its view axis, so every pass that
+  // culls to the view draws warm-up's extra nodes.
+  static Matrix4 _warmUpPlacement(Camera camera) {
+    final near = switch (camera.projection) {
+      PerspectiveProjection(:final near) => near,
+      OrthographicProjection(:final near) => near,
+      _ => 0.0,
+    };
+    return Matrix4.translation(camera.position + camera.forward * (near + 2.0));
+  }
 
   /// Renders a list of [views] of this scene onto [canvas].
   ///

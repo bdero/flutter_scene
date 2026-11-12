@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 import 'package:flutter_scene/src/widgets/declarative.dart';
 import 'package:flutter_scene/src/render_view.dart';
@@ -114,6 +115,7 @@ class SceneView extends StatefulWidget {
     this.revealMinDuration = Duration.zero,
     this.warmUp = false,
     this.warmUpAllShadingTiers = false,
+    this.warmUpExtraNodes = const [],
     this.debugWidgetInput = false,
     this.children = const [],
   }) : environment = null,
@@ -161,6 +163,7 @@ class SceneView extends StatefulWidget {
     this.revealMinDuration = Duration.zero,
     this.warmUp = false,
     this.warmUpAllShadingTiers = false,
+    this.warmUpExtraNodes = const [],
     this.debugWidgetInput = false,
     this.children = const [],
   }) : scene = null,
@@ -294,6 +297,11 @@ class SceneView extends StatefulWidget {
   /// occlusion or another tier-switching feature on or off later does not
   /// stall a frame. Lengthens warm-up.
   final bool warmUpAllShadingTiers;
+
+  /// With [warmUp], nodes the scene does not hold yet whose pipelines to
+  /// compile too (see [Scene.warmUp]'s `extraNodes`), such as content the app
+  /// adds after the reveal.
+  final List<Node> warmUpExtraNodes;
 
   /// Resolves the camera for a single-view frame.
   ///
@@ -565,6 +573,7 @@ class _SceneViewState extends State<SceneView>
         _warmUpViews(),
         sliceBudget: const Duration(milliseconds: 50),
         allShadingTiers: widget.warmUpAllShadingTiers,
+        extraNodes: widget.warmUpExtraNodes,
       );
       if (!mounted || generation != _revealGeneration) return;
     }
