@@ -150,7 +150,9 @@ Future<void> _buildBaseShaderBundle({
   final stampBuffer = StringBuffer(
     await shaderBundleStamp(
       buildInput,
-      'engine bundle=base debug_views=$debugViews',
+      // Names the views' layout, so a bundle with them compiled into every
+      // entry is rebuilt with twins.
+      'engine bundle=base debug_views=${debugViews ? 'twins' : false}',
     ),
   );
   for (final file in sources) {
