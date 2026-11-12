@@ -21,6 +21,11 @@ const String generatedAssetsDirectory = 'flutter_scene_generated';
 /// The manifest file name inside [generatedAssetsDirectory].
 const String generatedManifestFileName = 'manifest.json';
 
+/// Appended to an engine bundle entry's name for its twin built with the
+/// surface debug views, which a material draws with only while a view is
+/// active.
+const String debugViewsEntrySuffix = 'DebugViews';
+
 /// The one `flutter.assets` entry an app needs to ship the generated tree.
 ///
 /// Flutter's directory entries are not recursive, so the tree is flat and one

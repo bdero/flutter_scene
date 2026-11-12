@@ -223,7 +223,7 @@ Future<void> _buildBaseShaderBundle({
   var entryRoot = sourceRoot;
   if (debugViews) {
     entryRoot = hookIntermediateDirectory(buildInput, 'debug_views');
-    manifest = wrapDebugViewsManifest(manifest, entryRoot);
+    manifest = wrapDebugViewsManifest(manifest, entryRoot, shaders);
   }
   buildOutput.dependencies.add(manifestFile.uri);
 
@@ -245,27 +245,64 @@ Future<void> _buildBaseShaderBundle({
 }
 
 /// Points every entry of [manifest] at a wrapper written into [directory],
-/// which entries then resolve against. A fragment wrapper defines
-/// `FLUTTER_SCENE_DEBUG_VIEWS`; every wrapper includes its original by name,
-/// found through the shaders directory on the include path, since the compiler
-/// takes no defines per bundle. A wrapper keeps a different name from its
-/// original, or the include would find the wrapper itself.
+/// which entries then resolve against, and adds a twin of each fragment entry
+/// that draws the surface debug views, named with [debugViewsEntrySuffix] and
+/// defining `FLUTTER_SCENE_DEBUG_VIEWS`. A material draws with the twin only
+/// while a view is active, so the views cost nothing to compile until then.
+///
+/// Every wrapper includes its original by name, found through [shaders] on the
+/// include path, since the compiler takes no defines per bundle. A wrapper
+/// keeps a different name from its original, or the include would find the
+/// wrapper itself.
 Map<String, Object?> wrapDebugViewsManifest(
   Map<String, Object?> manifest,
   Uri directory,
+  Uri shaders,
 ) {
   final wrapped = <String, Object?>{};
   for (final MapEntry(:key, :value) in manifest.entries) {
     final entry = (value as Map).cast<String, Object?>();
     final original = (entry['file'] as String).split('/').last;
     final dot = original.lastIndexOf('.');
-    final wrapperName =
-        '${original.substring(0, dot)}_debug_views${original.substring(dot)}';
-    File.fromUri(directory.resolve(wrapperName)).writeAsStringSync(
-      '${entry['type'] == 'fragment' ? '#define FLUTTER_SCENE_DEBUG_VIEWS\n' : ''}'
-      '#include <$original>\n',
-    );
-    wrapped[key] = {...entry, 'file': wrapperName};
+    String wrap(String suffix, String defines) {
+      final name =
+          '${original.substring(0, dot)}$suffix${original.substring(dot)}';
+      File.fromUri(
+        directory.resolve(name),
+      ).writeAsStringSync('$defines#include <$original>\n');
+      return name;
+    }
+
+    wrapped[key] = {...entry, 'file': wrap('_entry', '')};
+    if (entry['type'] == 'fragment' &&
+        _includesDebugViews(File.fromUri(shaders.resolve(original)), shaders)) {
+      wrapped['$key$debugViewsEntrySuffix'] = {
+        ...entry,
+        'file': wrap('_debug_views', '#define FLUTTER_SCENE_DEBUG_VIEWS\n'),
+      };
+    }
   }
   return wrapped;
+}
+
+final RegExp _include = RegExp(
+  r'^\s*#\s*include\s*[<"]([^>"]+)[>"]',
+  multiLine: true,
+);
+
+// Whether [file] includes the surface debug hook, directly or through its
+// includes, each resolved beside its includer and then in [shaders].
+bool _includesDebugViews(File file, Uri shaders, [Set<String>? seen]) {
+  seen ??= {};
+  if (!seen.add(file.absolute.path) || !file.existsSync()) return false;
+  for (final match in _include.allMatches(file.readAsStringSync())) {
+    final name = match.group(1)!;
+    if (name.split('/').last == 'material_debug.glsl') return true;
+    final beside = File.fromUri(file.uri.resolve(name));
+    final included = beside.existsSync()
+        ? beside
+        : File.fromUri(shaders.resolve(name));
+    if (_includesDebugViews(included, shaders, seen)) return true;
+  }
+  return false;
 }

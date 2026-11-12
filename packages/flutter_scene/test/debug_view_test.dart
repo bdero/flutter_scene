@@ -370,33 +370,49 @@ void main() {
       }
     });
 
-    test('the engine bundle wraps its entries', () {
+    test('the engine bundle twins the entries that draw the views', () {
       final root = Directory.systemTemp.createTempSync('debug_views_wrap_');
       addTearDown(() => root.deleteSync(recursive: true));
-      final wrapped = wrapDebugViewsManifest({
-        'StandardFragment': {
-          'type': 'fragment',
-          'file': 'shaders/flutter_scene_standard.frag',
+      final shaders = Directory('${root.path}/shaders')..createSync();
+      final wrappers = Directory('${root.path}/wrappers')..createSync();
+      void source(String name, String text) =>
+          File('${shaders.path}/$name').writeAsStringSync(text);
+      // The hook reaches the standard shader through a nested include, and the
+      // sky only mentions it in a comment.
+      source('lit.frag', '#include "surface.glsl"\nvoid main() {}\n');
+      source('surface.glsl', '#include <material_debug.glsl>\n');
+      source('material_debug.glsl', '');
+      source('sky.frag', '// No material_debug.glsl here.\nvoid main() {}\n');
+      source('mesh.vert', '#include <material_debug.glsl>\nvoid main() {}\n');
+
+      final wrapped = wrapDebugViewsManifest(
+        {
+          'StandardFragment': {'type': 'fragment', 'file': 'shaders/lit.frag'},
+          'SkyFragment': {'type': 'fragment', 'file': 'shaders/sky.frag'},
+          'UnskinnedVertex': {'type': 'vertex', 'file': 'shaders/mesh.vert'},
         },
-        'UnskinnedVertex': {
-          'type': 'vertex',
-          'file': 'shaders/flutter_scene_unskinned.vert',
-        },
-      }, root.uri);
+        wrappers.uri,
+        shaders.uri,
+      );
       String file(String key) => (wrapped[key] as Map)['file'] as String;
       String wrapper(String key) =>
-          File.fromUri(root.uri.resolve(file(key))).readAsStringSync();
+          File.fromUri(wrappers.uri.resolve(file(key))).readAsStringSync();
+
+      expect(wrapped.keys, {
+        'StandardFragment',
+        'StandardFragmentDebugViews',
+        'SkyFragment',
+        'UnskinnedVertex',
+      });
       // A wrapper named like its original would include itself.
-      expect(file('StandardFragment'), isNot('flutter_scene_standard.frag'));
+      expect(file('StandardFragment'), isNot('lit.frag'));
+      expect(wrapper('StandardFragment'), '#include <lit.frag>\n');
       expect(
-        wrapper('StandardFragment'),
-        '#define FLUTTER_SCENE_DEBUG_VIEWS\n'
-        '#include <flutter_scene_standard.frag>\n',
+        wrapper('StandardFragmentDebugViews'),
+        '#define FLUTTER_SCENE_DEBUG_VIEWS\n#include <lit.frag>\n',
       );
-      expect(
-        wrapper('UnskinnedVertex'),
-        '#include <flutter_scene_unskinned.vert>\n',
-      );
+      expect(wrapper('SkyFragment'), '#include <sky.frag>\n');
+      expect(wrapper('UnskinnedVertex'), '#include <mesh.vert>\n');
     });
   });
 
