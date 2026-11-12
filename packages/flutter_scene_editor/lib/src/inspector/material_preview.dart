@@ -21,16 +21,45 @@ class MaterialPreview extends StatefulWidget {
   final EditorController controller;
   final LocalId nodeId;
 
+  /// Compiles the pipelines a lit material's preview draws, once per run, so
+  /// the first preview does not stall the inspector.
+  static Future<void> warmUp() => _warmUp ??= _warmUpPreview();
+  static Future<void>? _warmUp;
+
+  static Future<void> _warmUpPreview() async {
+    await fs.Scene.initializeStaticResources();
+    // A plain scene configures the lit variant as the preview's own does.
+    final scene = fs.Scene();
+    try {
+      await scene.warmUp(
+        [fs.RenderView(camera: _previewCamera())],
+        sliceBudget: const Duration(milliseconds: 50),
+        extraNodes: [
+          fs.Node(
+            mesh: fs.Mesh(_previewSphere(), fs.PhysicallyBasedMaterial()),
+          ),
+        ],
+      );
+    } finally {
+      scene.dispose();
+    }
+  }
+
+  // Framed slightly off-axis so curvature and highlights read on the sphere.
+  static fs.PerspectiveCamera _previewCamera() => fs.PerspectiveCamera(
+    position: vm.Vector3(0.55, 0.45, 1.9),
+    target: vm.Vector3.zero(),
+  );
+
+  static fs.Geometry _previewSphere() =>
+      fs.SphereGeometry(radius: 0.62, segments: 48, rings: 24);
+
   @override
   State<MaterialPreview> createState() => _MaterialPreviewState();
 }
 
 class _MaterialPreviewState extends State<MaterialPreview> {
-  // Framed slightly off-axis so curvature and highlights read on the sphere.
-  final fs.PerspectiveCamera _camera = fs.PerspectiveCamera(
-    position: vm.Vector3(0.55, 0.45, 1.9),
-    target: vm.Vector3.zero(),
-  );
+  final fs.PerspectiveCamera _camera = MaterialPreview._previewCamera();
   fs.Geometry? _sphere;
 
   fs.Geometry? _ensureSphere() {
@@ -39,7 +68,7 @@ class _MaterialPreviewState extends State<MaterialPreview> {
       // Touches the base shader bundle, so this only succeeds once the scene's
       // static resources have loaded (always true by the time an inspector for
       // a realized node is shown).
-      _sphere = fs.SphereGeometry(radius: 0.62, segments: 48, rings: 24);
+      _sphere = MaterialPreview._previewSphere();
     } catch (_) {
       return null;
     }
