@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show internal, visibleForTesting;
+import 'package:flutter_scene/src/external_bytes.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -289,6 +290,7 @@ class TransientTexturePool {
         enableRenderTargetUsage: true,
         enableShaderReadUsage: descriptor.enableShaderReadUsage,
       );
+      statesExternalBytes(texture, gpuTextureBytes(texture));
       ring[_frame] = texture;
     }
     return texture;

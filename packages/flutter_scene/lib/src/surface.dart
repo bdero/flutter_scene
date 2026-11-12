@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_scene/src/external_bytes.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/texture/texture_registry.dart'
+    show gpuTextureBytes;
 
 /// Manages the swapchain color textures a [Scene] composites onto the
 /// Flutter canvas, plus the pools of transient render-graph attachments.
@@ -269,6 +272,7 @@ class _ViewSurface {
           enableShaderReadUsage: true,
         ),
       );
+      statesExternalBytes(colors.last, gpuTextureBytes(colors.last));
     }
     final result = colors[sized.cursor];
     sized.cursor = (sized.cursor + 1) % Surface._maxFramesInFlight;
