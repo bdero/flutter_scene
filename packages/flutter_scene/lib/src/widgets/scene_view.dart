@@ -217,6 +217,10 @@ class SceneView extends StatefulWidget {
   /// Leave `true` (the default) for animated content. Set `false` for a static
   /// scene that only needs to repaint when the app rebuilds the view (for
   /// example with a new [camera]).
+  ///
+  /// It can change over the view's life, to pause a view that is hidden, say.
+  /// Turning it back on continues the elapsed time from where it stopped, and
+  /// the first [onTick] after that reports a zero delta.
   final bool autoTick;
 
   /// Logical-to-physical pixel multiplier for the offscreen render target,
@@ -351,6 +355,11 @@ class _SceneViewState extends State<SceneView>
   // (and its first frame delta) from zero rather than from app launch.
   Duration _tickOrigin = Duration.zero;
 
+  // Set when `autoTick` turns the ticker back on. A restarted ticker counts
+  // from zero, so the next tick moves the origin to continue the clock from
+  // where it stopped, with no step for the time spent off.
+  bool _resumed = false;
+
   // Whether the scene is being drawn yet. While gated (see `_gated`) it stays
   // false until static resources and the `loading` group are ready, and the
   // loading widget shows instead. Ungated views reveal immediately, so this is
@@ -445,8 +454,16 @@ class _SceneViewState extends State<SceneView>
     super.didUpdateWidget(oldWidget);
     if (widget.maxFrameRate != oldWidget.maxFrameRate) _frameDue = null;
     if (widget.autoTick != oldWidget.autoTick) {
-      _ticker?.dispose();
-      _ticker = widget.autoTick ? (createTicker(_onTick)..start()) : null;
+      // One ticker for the state's life, stopped and restarted: the
+      // single-ticker mixin rejects a second.
+      if (widget.autoTick) {
+        (_ticker ??= createTicker(_onTick)).start();
+        _resumed = true;
+        // The deadline was in the stopped ticker's time.
+        _frameDue = null;
+      } else {
+        _ticker?.stop();
+      }
     }
     final oldScene = oldWidget.scene ?? _ownedScene;
     if (widget.scene == null) {
@@ -568,7 +585,13 @@ class _SceneViewState extends State<SceneView>
       // is a single frame, not the whole time spent on the loading screen.
       _tickOrigin = elapsed;
       _lastTickTime = now;
+      _resumed = false;
       return;
+    }
+    if (_resumed) {
+      _resumed = false;
+      _tickOrigin = elapsed - _elapsed.value;
+      _lastTickTime = now;
     }
     final rate = widget.maxFrameRate;
     if (rate != null && rate > 0) {

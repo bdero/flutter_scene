@@ -36,6 +36,7 @@
 * A color texture's CPU mip chain builds in about a third less time, through sRGB lookup tables that give the same bytes.
 * `RenderTexture.dispose` releases the render targets it holds and clears `texture`; they stayed until the target was collected.
 * On native, the render targets of a scene or `RenderTexture` count toward the Dart VM's external memory, so a scene dropped without `dispose` is collected as its GPU memory piles up. The collector saw only small wrappers and could leave gigabytes of dropped targets alive.
+* Turning `SceneView.autoTick` off and back on keeps the view's clock going from where it stopped. It threw in debug builds; in release builds the elapsed time started over, and a view with `maxFrameRate` stayed frozen until the new ticker passed the old deadline.
 
 ## 0.24.3
 
