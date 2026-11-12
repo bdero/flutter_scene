@@ -30,6 +30,7 @@
 * Two builds for different platforms saving flutter_scene's generated assets at once no longer drop each other's manifest entries or delete each other's files mid-write.
 * Assigning `MeshPrimitive.material` or `MeshPrimitive.geometry` on a node already in a scene changes what it draws from the next frame. The assignment was ignored until the node left and rejoined a scene or got a new `Mesh`.
 * Instanced draws and billboards on the WebGL2 backend no longer copy their instance data byte by byte in WebAssembly builds.
+* `Texture2D.fromImage` builds its mip chain on a background isolate, so loading a model's PNG and JPEG textures at runtime on native platforms no longer holds up frames while each one downsamples.
 
 ## 0.24.3
 

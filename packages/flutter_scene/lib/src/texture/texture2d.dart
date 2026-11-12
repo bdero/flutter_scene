@@ -9,6 +9,7 @@ import '../render/mip_sampling_probe.dart';
 import 'encoded_image.dart';
 import 'mip_upload_web.dart' if (dart.library.io) 'mip_upload_native.dart';
 import 'mipmap.dart';
+import 'mipmap_async.dart';
 
 /// Something a material can sample: it yields the GPU texture to sample for the
 /// current frame and the sampler to bind it with. Implemented by [Texture2D]
@@ -182,6 +183,9 @@ class Texture2D implements TextureSource {
 
   /// Builds a texture from a decoded [image].
   ///
+  /// The mip chain is built on a background isolate, so a large image does not
+  /// hold up the caller's frames while it downsamples.
+  ///
   /// Set [opaque] when every pixel of [image] is fully opaque. A texture that
   /// then needs no mip chain wraps the image's own GPU texture instead of
   /// reading it back and uploading it again. The wrapper keeps the image's
@@ -212,12 +216,20 @@ class Texture2D implements TextureSource {
     if (bytes == null) {
       throw Exception('Failed to read RGBA data from image.');
     }
-    return fromPixels(
-      bytes.buffer.asUint8List(),
-      image.width,
-      image.height,
-      content: content,
-      sampling: sampling,
+    final pixels = bytes.buffer.asUint8List();
+    final width = image.width;
+    final height = image.height;
+    final levels = sampling.mipmaps && mipChainsAreSampled
+        ? await generateMipChainAsync(pixels, width, height, content)
+        : <MipLevel>[MipLevel(width, height, pixels)];
+    return Texture2D._(
+      uploadMipLevels(
+        levels,
+        width,
+        height,
+        maxMipmapLevels: sampling.maxMipmapLevels,
+      ),
+      sampling.toSamplerOptions(),
     );
   }
 
