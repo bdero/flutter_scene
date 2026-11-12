@@ -1,5 +1,6 @@
 ## 0.24.4
 
+* A color texture's CPU mip chain builds in about a third less time, through sRGB lookup tables that give the same bytes.
 * A shader library on the WebGPU web backend loads its WGSL sidecar alone, without downloading the shader bundle.
 * A shader library on the WebGPU web backend compiles each shader when it is first used, so a page no longer waits at load on shaders it never draws.
 * glTF imports read `EXT_texture_webp` textures, so a model whose textures are only WebP loads instead of failing.

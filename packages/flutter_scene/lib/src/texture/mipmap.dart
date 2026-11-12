@@ -39,6 +39,9 @@ class MipLevel {
 ///
 /// Each level halves the previous (floored, min 1) until 1x1. The result is
 /// suitable for uploading level by level to a mipmapped texture.
+///
+/// Color converts sRGB to linear light and back through lookup tables, giving
+/// the bytes the exact `pow` conversion gives.
 List<MipLevel> generateMipChain(
   Uint8List pixels,
   int width,
@@ -96,6 +99,7 @@ int _clampDouble(int coordinate, int extent) {
   return doubled < extent ? doubled : extent - 1;
 }
 
+// Both sRGB conversions read from tables (see [_srgbByteOfLinear]).
 void _downsampleColor(
   Uint8List src,
   int sw,
@@ -119,12 +123,12 @@ void _downsampleColor(
       final o = (y * dw + x) * 4;
       for (var ch = 0; ch < 3; ch++) {
         final avg =
-            (_srgbToLinearTable[src[a + ch]] +
-                _srgbToLinearTable[src[b + ch]] +
-                _srgbToLinearTable[src[c + ch]] +
-                _srgbToLinearTable[src[d + ch]]) *
+            (_linearOfByte[src[a + ch]] +
+                _linearOfByte[src[b + ch]] +
+                _linearOfByte[src[c + ch]] +
+                _linearOfByte[src[d + ch]]) *
             0.25;
-        dst[o + ch] = _linearToSrgb(avg);
+        dst[o + ch] = _srgbByteOfLinear(avg);
       }
       dst[o + 3] =
           ((src[a + 3] + src[b + 3] + src[c + 3] + src[d + 3]) + 2) ~/ 4;
@@ -214,18 +218,77 @@ void _downsampleNormal(
   }
 }
 
-// sRGB decode of every possible byte, so the color path costs a table lookup
-// instead of a `pow` per channel per texel. Same values as _srgbToLinear.
-final Float64List _srgbToLinearTable = Float64List.fromList([
+// The sRGB byte of a linear value: a bucket table gives the byte at or below
+// it, the rounding edges walk it up, and a value within a relative 1e-9 of an
+// edge falls back to [_linearToSrgb], so the result is always its byte.
+int _srgbByteOfLinear(double linear) {
+  final edge = _linearAtByteEdge;
+  var byte = _byteBelowBucket[(linear * _buckets).toInt()];
+  while (byte < 255 && linear >= edge[byte + 1]) {
+    byte++;
+  }
+  if ((byte > 0 && linear <= _linearJustAboveEdge[byte]) ||
+      (byte < 255 && linear >= _linearJustBelowEdge[byte + 1])) {
+    return _linearToSrgb(linear);
+  }
+  return byte;
+}
+
+/// The linear values bounding the band around each sRGB rounding edge where
+/// the color chain falls back to `pow`, for tests: entry `byte - 1` holds the
+/// band around the edge between `byte - 1` and `byte`.
+List<({double below, double above})> get srgbEdgeFallbackBands => [
+  for (var byte = 1; byte < 256; byte++)
+    (below: _linearJustBelowEdge[byte], above: _linearJustAboveEdge[byte]),
+];
+
+const double _edgeMargin = 1e-9;
+
+const int _buckets = 4096;
+
+// The linear value of each sRGB byte, exactly what [_srgbToLinear] returns.
+final Float64List _linearOfByte = Float64List.fromList([
   for (var byte = 0; byte < 256; byte++) _srgbToLinear(byte),
 ]);
 
-double _srgbToLinear(int byte) {
-  final c = byte / 255.0;
-  return c <= 0.04045
-      ? c / 12.92
-      : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+// The linear value of the sRGB rounding edge below each byte, (byte - 0.5) /
+// 255; entry 0 is unused.
+final Float64List _linearAtByteEdge = Float64List.fromList([
+  0,
+  for (var byte = 1; byte < 256; byte++) _linearOfSrgb((byte - 0.5) / 255.0),
+]);
+
+final Float64List _linearJustBelowEdge = _scaledEdges(1 - _edgeMargin);
+
+final Float64List _linearJustAboveEdge = _scaledEdges(1 + _edgeMargin);
+
+// The byte at or below the lowest linear value of each of [_buckets] equal
+// buckets of [0, 1].
+final Uint8List _byteBelowBucket = _buildByteBelowBucket();
+
+Float64List _scaledEdges(double factor) => Float64List.fromList([
+  0,
+  for (var byte = 1; byte < 256; byte++) _linearAtByteEdge[byte] * factor,
+]);
+
+Uint8List _buildByteBelowBucket() {
+  final edge = _linearAtByteEdge;
+  final table = Uint8List(_buckets + 1);
+  var byte = 0;
+  for (var bucket = 0; bucket <= _buckets; bucket++) {
+    final low = bucket / _buckets;
+    while (byte < 255 && low >= edge[byte + 1]) {
+      byte++;
+    }
+    table[bucket] = byte;
+  }
+  return table;
 }
+
+double _srgbToLinear(int byte) => _linearOfSrgb(byte / 255.0);
+
+double _linearOfSrgb(double c) =>
+    c <= 0.04045 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
 
 int _linearToSrgb(double linear) {
   final c = linear <= 0.0031308
