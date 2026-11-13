@@ -1,8 +1,5 @@
 ## 0.24.4
 
-* A color texture's CPU mip chain builds in about a third less time, through sRGB lookup tables that give the same bytes.
-* `RenderTexture.dispose` releases the render targets it holds and clears `texture`; they stayed until the target was collected.
-* On native, the render targets of a scene or `RenderTexture` count toward the Dart VM's external memory, so a scene dropped without `dispose` is collected as its GPU memory piles up. The collector saw only small wrappers and could leave gigabytes of dropped targets alive.
 * A shader library on the WebGPU web backend loads its WGSL sidecar alone, without downloading the shader bundle.
 * A shader library on the WebGPU web backend compiles each shader when it is first used, so a page no longer waits at load on shaders it never draws.
 * glTF imports read `EXT_texture_webp` textures, so a model whose textures are only WebP loads instead of failing.
@@ -34,6 +31,9 @@
 * Assigning `MeshPrimitive.material` or `MeshPrimitive.geometry` on a node already in a scene changes what it draws from the next frame. The assignment was ignored until the node left and rejoined a scene or got a new `Mesh`.
 * Instanced draws and billboards on the WebGL2 backend no longer copy their instance data byte by byte in WebAssembly builds.
 * `Scene.maxGpuFramesInFlight` defaults to 2 on iOS and macOS, so a scene the GPU has room for no longer drops to half its frame rate there. Other platforms keep 1, where a second frame slows the rest of the app.
+* A color texture's CPU mip chain builds in about a third less time, through sRGB lookup tables that give the same bytes.
+* `RenderTexture.dispose` releases the render targets it holds and clears `texture`; they stayed until the target was collected.
+* On native, the render targets of a scene or `RenderTexture` count toward the Dart VM's external memory, so a scene dropped without `dispose` is collected as its GPU memory piles up. The collector saw only small wrappers and could leave gigabytes of dropped targets alive.
 
 ## 0.24.3
 
