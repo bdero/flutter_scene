@@ -16,11 +16,6 @@ import 'package:flutter_scene/src/render/transients_execution_native.dart'
 /// have completed, regardless of the order in which individual command
 /// buffers finish.
 class GpuSubmissionTracker {
-  /// [nowMicros] replaces the clock frame times are measured with, for tests.
-  GpuSubmissionTracker({int Function()? nowMicros})
-    : _nowMicros = nowMicros ?? (Stopwatch()..start()).elapsedMicrosecondsOf;
-
-  final int Function() _nowMicros;
   int _lastId = 0;
   final SplayTreeSet<int> _pending = SplayTreeSet<int>();
   final List<void Function(int id)> _beforeSubmit = [];
@@ -44,47 +39,6 @@ class GpuSubmissionTracker {
   final List<int> _frameEnds = [];
   // The display frame each of [_frameEnds] rendered for.
   final List<Object?> _frameKeys = [];
-  // When each of [_frameEnds] finished encoding.
-  final List<int> _frameEndMicros = [];
-  int _measuredThrough = 0;
-
-  /// How long the GPU took on the most recently finished frame, from the end
-  /// of its encoding to its completion, in microseconds. 0 until one finishes.
-  int get lastFrameMicros => _lastFrameMicros;
-  int _lastFrameMicros = 0;
-
-  /// A frame the GPU takes longer than this on means it may not be keeping up,
-  /// rather than that a governor has clocked it down to fit the frame rate.
-  static const int slowFrameMicros = 33333;
-
-  /// Slow frames in a row before [frameLimit] tightens, so one hitch doesn't.
-  static const int slowFramesToTighten = 4;
-
-  /// How long [frameLimit] stays tightened, and then how long it tries the
-  /// whole limit again before it may tighten again.
-  static const int tightenedMicros = 1000000;
-  static const int retryMicros = 250000;
-
-  int _slowFrames = 0;
-  int _tightenedUntil = 0;
-  int _retryUntil = 0;
-
-  /// The frames that may be in flight now, given a limit of [maximum].
-  ///
-  /// A GPU that stays slow gets one frame at a time, so queuing doesn't block
-  /// the thread encoding. Having less to do can itself keep it slow, since its
-  /// governor then lowers the clock, so the whole limit gets a try every so
-  /// often: the extra work brings the clock back up if the GPU has room.
-  int frameLimit(int maximum) {
-    if (maximum < 2) return maximum;
-    final now = _nowMicros();
-    if (now < _tightenedUntil) return 1;
-    if (_slowFrames < slowFramesToTighten || now < _retryUntil) return maximum;
-    _tightenedUntil = now + tightenedMicros;
-    _retryUntil = _tightenedUntil + retryMicros;
-    return 1;
-  }
-
   static const int _frameHistory = 8;
   Object? _displayFrame;
 
@@ -105,16 +59,13 @@ class GpuSubmissionTracker {
         _frameKeys.isNotEmpty &&
         _frameKeys.last == _displayFrame) {
       _frameEnds.last = _lastId;
-      _frameEndMicros.last = _nowMicros();
       return;
     }
     _frameEnds.add(_lastId);
     _frameKeys.add(_displayFrame);
-    _frameEndMicros.add(_nowMicros());
     if (_frameEnds.length > _frameHistory) {
       _frameEnds.removeAt(0);
       _frameKeys.removeAt(0);
-      _frameEndMicros.removeAt(0);
     }
   }
 
@@ -174,22 +125,10 @@ class GpuSubmissionTracker {
   @visibleForTesting
   void complete(int id) {
     _pending.remove(id);
-    final done = completedThrough;
-    for (var i = 0; i < _frameEnds.length; i++) {
-      final end = _frameEnds[i];
-      if (end <= _measuredThrough || end > done) continue;
-      _measuredThrough = end;
-      _lastFrameMicros = _nowMicros() - _frameEndMicros[i];
-      _slowFrames = _lastFrameMicros > slowFrameMicros ? _slowFrames + 1 : 0;
-    }
     for (final listener in List.of(_onCompleted)) {
       listener();
     }
   }
-}
-
-extension on Stopwatch {
-  int elapsedMicrosecondsOf() => elapsedMicroseconds;
 }
 
 /// The tracker for every command buffer the renderer submits.
