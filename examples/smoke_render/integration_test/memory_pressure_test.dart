@@ -320,9 +320,17 @@ void main() {
       }
 
       await frames(30);
-      final warm = allocations();
+      var warm = allocations();
       await frames(60);
-      final grew = allocations() - warm;
+      var grew = allocations() - warm;
+      // With two frames in flight a pool reaches its peak the first time the
+      // GPU actually runs two behind, which can land after the warm-up. A
+      // per-frame allocation keeps growing, so it fails the second window.
+      if (grew > 0) {
+        warm = allocations();
+        await frames(60);
+        grew = allocations() - warm;
+      }
       if (grew > 0) offenders.add('${smoke.id} (+$grew)');
     }
     expect(
