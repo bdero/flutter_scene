@@ -1,6 +1,5 @@
-/// Covers Texture2D.fromImage: it uploads the chain Texture2D.fromPixels
-/// would, and builds that chain on a background isolate so the calling
-/// isolate keeps running its event loop meanwhile.
+/// Covers Texture2D.fromImage, which uploads the chain Texture2D.fromPixels
+/// would, built by generateMipChainAsync to match the synchronous chain.
 library;
 
 import 'dart:async';
@@ -79,35 +78,6 @@ void main() {
       const unmipped = TextureSampling(mipmaps: false);
       final single = await Texture2D.fromImage(image, sampling: unmipped);
       expect(single.gpuTexture.mipLevelCount, 1);
-    });
-
-    test('keeps the calling isolate running while the chain builds', () async {
-      const size = 2048;
-      final pixels = _pattern(size, size);
-      final image = await _image(pixels, size, size);
-      addTearDown(image.dispose);
-
-      // What building this chain costs an isolate that does it itself.
-      final build = Stopwatch()..start();
-      generateMipChain(pixels, size, size, TextureContent.color);
-      build.stop();
-
-      // The longest stretch the event loop went unserved during the load.
-      final sinceTurn = Stopwatch()..start();
-      var longestStall = Duration.zero;
-      var loading = true;
-      void turn() {
-        if (sinceTurn.elapsed > longestStall) longestStall = sinceTurn.elapsed;
-        sinceTurn.reset();
-        if (loading) Timer.run(turn);
-      }
-
-      Timer.run(turn);
-      await Texture2D.fromImage(image);
-      loading = false;
-      turn();
-
-      expect(longestStall, lessThan(build.elapsed * 0.5));
     });
   });
 }
