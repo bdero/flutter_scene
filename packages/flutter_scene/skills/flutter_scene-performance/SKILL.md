@@ -57,7 +57,7 @@ Percentiles clean but the **worst** frame is tens to hundreds of milliseconds, a
 - **Warm through the real builders.** The pipeline key includes the vertex layout, so a placeholder sphere warms a different pipeline than the real mesh. Build the actual tower/effect/overlay through its normal code path.
 - **Keep warmup draws brief.** One frame compiles the pipeline. A material that samples scene depth also forces the full-resolution depth prepass while it is live, so a lingering warmup shows up as raster cost.
 - **Do not trust repeat measurements.** GPU drivers cache compiled shaders across runs, so the second profiling session hits caches the first did not. First-run cost is what a fresh install pays.
-- **Mind Windows ANGLE (`D3D11 fxc`) compile cost on `.fmat` shaders.** On Windows (native ANGLE and Chrome/Edge WebGL2), first-draw `linkProgram` translates GLES to HLSL and runs `fxc` synchronously. Combining `shading_model: lit` with multi-step loops or `<noise.glsl>` gradient/cellular lookup tables can stretch a single `.fmat` first-draw stall to seconds; move pure FX/transparent shaders to `shading_model: unlit`, and prefer `NoiseValue*`/`NoiseHash*` (table-free) or baked textures inside loops.
+- **Mind `fxc` on Windows.** Windows (native and WebGL2) compiles each shader through ANGLE and Direct3D's `fxc` on its first draw, and a `lit` `.fmat` looping over `<noise.glsl>` table noise can stall for seconds. Use `shading_model: unlit` for effect materials, and `NoiseValue*`/`NoiseHash*` or a baked texture in loops.
 
 ## More depth
 
