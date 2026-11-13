@@ -20,7 +20,8 @@ final class WebGlShaderLibrary extends ShaderLibrary {
   }) : _shaders = shaders ?? {},
        _assetName = assetName;
 
-  /// The bundle entries not compiled yet; each compiles when first looked up.
+  /// The bundle entries, each compiled when first looked up. Libraries of one
+  /// asset share this map.
   final Map<String, fb.BackendShader> _entries;
   final Map<String, WebGlShader> _shaders;
   final String? _assetName;
@@ -43,7 +44,7 @@ final class WebGlShaderLibrary extends ShaderLibrary {
   Shader? operator [](String name) => _shaders[name] ?? _compiled(name);
 
   WebGlShader? _compiled(String name) {
-    final backend = _entries.remove(name);
+    final backend = _entries[name];
     if (backend == null) return null;
     final shader = _buildFromBackend(backend);
     final assetName = _assetName;
@@ -59,24 +60,27 @@ final class WebGlShaderLibrary extends ShaderLibrary {
   /// Load a `.shaderbundle` asset, revalidated so a browser cache
   /// never pairs an old bundle with new Dart code.
   static Future<ShaderLibrary?> _loadFromAsset(String assetName) async {
-    final data = await loadGeneratedAsset(assetName);
-    final library = _loadFromBytes(data, assetName: assetName);
-    _entriesByAsset[assetName] = library._entries;
+    final fresh = _entriesOf(await loadGeneratedAsset(assetName));
+    final entries = (_entriesByAsset[assetName] ??= {})
+      ..clear()
+      ..addAll(fresh);
     _shadersByAsset.putIfAbsent(assetName, () => []);
-    return library;
+    return WebGlShaderLibrary._(entries, assetName: assetName);
   }
 
-  static WebGlShaderLibrary _loadFromBytes(ByteData data, {String? assetName}) {
-    final bytes = data.buffer.asUint8List(
-      data.offsetInBytes,
-      data.lengthInBytes,
+  static WebGlShaderLibrary _loadFromBytes(ByteData data) =>
+      WebGlShaderLibrary._(_entriesOf(data));
+
+  /// The `opengl_es` entries of the bundle in [data], by name.
+  static Map<String, fb.BackendShader> _entriesOf(ByteData data) {
+    final bundle = fb.ShaderBundle(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
     );
-    final bundle = fb.ShaderBundle(bytes);
-    return WebGlShaderLibrary._({
+    return {
       for (final entry in bundle.shaders ?? const <fb.Shader>[])
         if ((entry.name, entry.openglEs) case (final name?, final backend?))
           name: backend,
-    }, assetName: assetName);
+    };
   }
 
   static WebGlShader _buildFromBackend(fb.BackendShader backend) {
@@ -239,22 +243,14 @@ Future<void> _reinitializeShaderLibraryAsync(String assetKey) async {
   // so it stays registered even when empty.
   tracked.removeWhere((entry) => entry.shader.target == null);
 
-  final data = await loadGeneratedAsset(assetKey);
-  final bundle = fb.ShaderBundle(
-    data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+  final entries = WebGlShaderLibrary._entriesOf(
+    await loadGeneratedAsset(assetKey),
   );
   WebGlShaderLibrary._entriesByAsset[assetKey]
     ?..clear()
-    ..addAll({
-      for (final entry in bundle.shaders ?? const <fb.Shader>[])
-        if ((entry.name, entry.openglEs) case (final name?, final backend?))
-          name: backend,
-    });
+    ..addAll(entries);
   var recompiled = 0;
-  for (final entry in bundle.shaders ?? const <fb.Shader>[]) {
-    final name = entry.name;
-    final backend = entry.openglEs;
-    if (name == null || backend == null) continue;
+  for (final MapEntry(key: name, value: backend) in entries.entries) {
     for (final record in tracked) {
       if (record.name != name) continue;
       final shader = record.shader.target;
@@ -279,18 +275,13 @@ Future<String?> _reinitializeShaderLibraryFromBytesAsync(
 ) async {
   try {
     registerShaderLibrarySource(library, ShaderLibrarySource(bytes: bytes));
-    final bundle = fb.ShaderBundle(
-      bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
-    );
-    for (final entry in bundle.shaders ?? const <fb.Shader>[]) {
-      final name = entry.name;
-      final backend = entry.openglEs;
-      if (name == null || backend == null) continue;
-      final existing = library.webGl._shaders[name];
+    final webGl = library.webGl;
+    for (final MapEntry(key: name, value: backend)
+        in WebGlShaderLibrary._entriesOf(bytes).entries) {
+      webGl._entries[name] = backend;
+      final existing = webGl._shaders[name];
       if (existing != null) {
         WebGlShaderLibrary._populateFromBackend(existing, backend);
-      } else {
-        library.webGl._entries[name] = backend;
       }
     }
     return null;
