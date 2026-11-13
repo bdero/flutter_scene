@@ -20,6 +20,9 @@ final Expando<_StatedBytes> _stated = Expando();
 void statesExternalBytes(Object owner, int bytes) {
   if (bytes <= 0 || _stated[owner] != null) return;
   final stated = _stated[owner] = _StatedBytes(bytes);
+  // Only a finalizer attachment can state external size; nullptr frees nothing.
+  // TODO(gpu-release): detach once GpuHost.releaseTexture frees native memory.
+  // It frees nothing yet, so the bytes rightly stay stated until collection.
   _finalizer.attach(stated, nullptr, externalSize: bytes);
 }
 

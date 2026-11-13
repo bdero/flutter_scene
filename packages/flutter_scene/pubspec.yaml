@@ -60,6 +60,8 @@ dependencies:
   # for HDR environment maps. WASM-safe (no dart:io/dart:html on its web graph).
   image: ^4.5.0
   logging: ^1.2.0
+  # Annotations for code the Flutter-free build hook also compiles.
+  meta: ^1.15.0
   vector_math: ^2.1.4
   # WebGL2 bindings for the web GPU backend.
   web: ^1.1.0

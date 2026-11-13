@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart' show visibleForTesting;
+
 /// What a texture's pixels represent, which controls how mip levels are
 /// downsampled so the result is correct (color must average in linear light,
 /// normals must be averaged as vectors and renormalized).
@@ -237,6 +239,7 @@ int _srgbByteOfLinear(double linear) {
 /// The linear values bounding the band around each sRGB rounding edge where
 /// the color chain falls back to `pow`, for tests: entry `byte - 1` holds the
 /// band around the edge between `byte - 1` and `byte`.
+@visibleForTesting
 List<({double below, double above})> get srgbEdgeFallbackBands => [
   for (var byte = 1; byte < 256; byte++)
     (below: _linearJustBelowEdge[byte], above: _linearJustAboveEdge[byte]),
