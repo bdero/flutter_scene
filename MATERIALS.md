@@ -565,6 +565,16 @@ software compiler (a device emulator, some headless CI) can run out of memory
 on it; a material that uses one or two functions stays small. Bake to a
 texture when a single field would do.
 
+On WebGL2 over Windows (ANGLE -> Direct3D 11 `fxc`), dynamic indexing into
+the gradient and cell-vector arrays (`NoiseSimplex*`, `NoisePerlin*`,
+`NoiseCellular*`, `NoiseCurl3`) inside multi-step loops can also stall
+`linkProgram` on first draw, especially when layered onto a
+`shading_model: lit` material's full lighting body. `NoiseValue2`/`NoiseValue3`
+and `NoiseHash2`/`NoiseHash3` use integer hashing with no constant tables
+(unused tables are stripped by dead-code elimination), and emissive or
+translucent effect `.fmat` materials that do not need engine lighting avoid
+both costs by using `shading_model: unlit` or sampling a `bakeNoiseTexture`.
+
 ---
 
 # Barycentric wireframes, `#include <wireframe.glsl>`
@@ -891,6 +901,16 @@ the end of any function that contains a loop. A mid-loop return compiles into
 a construct that crashes the Direct3D shader compiler outright, so the
 failure is an app crash on Windows, not an artifact. Accumulate into a local
 and return it once.
+
+**Keep table-indexed loops off `lit` shaders on Windows ANGLE.** Both
+native Windows ANGLE and WebGL2 in Windows browsers translate GLES to HLSL
+and run Direct3D's `fxc` compiler synchronously at pipeline build or
+`linkProgram` time. Stacking multi-iteration loops and indexed constant
+arrays (such as `<noise.glsl>` gradient or cellular tables) onto
+`shading_model: lit` multiplies `fxc` compile stalls on first use. Use
+`shading_model: unlit` for pure effect/transparent `.fmat` materials that
+supply their own shading, and replace per-step table-backed noise in loops
+with `NoiseValue*`/`NoiseHash*` or a baked texture.
 
 **Build bit masks with left shifts.** Right-shifting a uint whose high bit is
 set (`0xFFFFFFFFu >> n`) executes as a signed arithmetic shift on the
