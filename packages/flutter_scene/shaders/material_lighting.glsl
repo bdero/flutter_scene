@@ -20,6 +20,17 @@
 // never-taken reads where the code that used it is gone, so both tiers keep
 // one binding interface.
 
+// Each feature the lean tier drops has its own define, so a build can compile
+// out just the features a project never uses.
+#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#define FLUTTER_SCENE_NO_IRRADIANCE_FIELD
+#define FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
+#define FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
+#define FLUTTER_SCENE_NO_PARALLAX_REFLECTION
+#define FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
+#define FLUTTER_SCENE_NO_POINT_SHADOWS
+#endif
+
 // Distance fog (the FogInfo block + ApplyFog), applied to the final lit color.
 #include <fog.glsl>
 #include <octahedral.glsl>
@@ -421,13 +432,13 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   vec3 ao_bent_normal = vec3(0.0);
   float ao_bent_valid = 0.0;
   vec4 ssao_sample = vec4(1.0);
-#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#ifdef FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
   // Keeps ssao_texture declared (the engine binds it); never taken.
   if (frag_info.ssao_params.x > 1e30) {
     occlusion = texture(ssao_texture, vec2(0.0)).r;
   }
 #endif
-#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
   if (frag_info.ssao_params.x > 0.5) {
     highp vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
     // TODO(flutter_scene): the occlusion target is stored top-down like the
@@ -496,7 +507,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
           : 1.0;
 #endif
 #if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
-    !defined(FLUTTER_SCENE_LEAN_LIGHTING) && \
+    !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION) && \
     !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
   // Screen-space contact shadow for the sun, marched by the occlusion pass.
   // Applies whether or not a shadow map is active, grounding small contacts
@@ -644,7 +655,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     // lobe by its apparent half-angle, so a glossy surface reflects a bulb
     // rather than a point of unbounded radiance.
     float light_roughness = roughness;
-#ifndef FLUTTER_SCENE_LEAN_LIGHTING
+#ifndef FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
     if (type > 2.5) {
 #ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
       // TODO(custom-ambient-area-lights): the LTC tables ride brdf_lut, which
@@ -704,7 +715,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #endif
 #endif
     } else
-#endif  // FLUTTER_SCENE_LEAN_LIGHTING
+#endif  // FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
     {
     vec3 punctual_light_vector;
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
@@ -794,7 +805,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
         }
 #endif
       }
-#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
+#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && !defined(FLUTTER_SCENE_NO_POINT_SHADOWS)
       else if (type > 0.5 && l3.y > -0.5 &&
                frag_info.spot_shadow_params.x > 0.5) {
         // Point shadow, when this light's cube faces ride the shared atlas
@@ -850,7 +861,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   mat3 environment_transform = mat3(frag_info.environment_transform);
   vec3 env_normal = environment_transform *
                     (ao_bent_valid > 0.5 ? ao_bent_normal : normal);
-#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#ifdef FLUTTER_SCENE_NO_PARALLAX_REFLECTION
   vec3 env_reflection = environment_transform * reflection_normal;
 #else
   vec3 env_reflection =
@@ -888,7 +899,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                         env_reflection, roughness);
   // Cross-fade a secondary environment in (area transitions) when active. Both
   // share the bound layout, so the same samplers' _b pair is read.
-#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#ifdef FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
   const float env_blend = 0.0;
   // Keeps prefiltered_radiance_b bound to its own slot; never taken.
   if (frag_info.radiance_blend.x > 1e30) {
@@ -923,7 +934,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #endif
     prefiltered_color = mix(prefiltered_color, prefiltered_b, env_blend);
   }
-#endif  // FLUTTER_SCENE_LEAN_LIGHTING
+#endif  // FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
   // environment_intensity scales the image-based lighting; a bake carries its
   // own lightmap_intensity instead.
 #ifndef FLUTTER_SCENE_LIGHTMAP
@@ -946,7 +957,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // a camera-dependent normal makes it flicker like z-fighting. The field's
   // stored radiance already carries the environment intensity, so it is not
   // scaled again here.
-#ifndef FLUTTER_SCENE_LEAN_LIGHTING
+#ifndef FLUTTER_SCENE_NO_IRRADIANCE_FIELD
   float gi_coverage = IrradianceFieldCoverage(v_position);
   if (gi_coverage > 0.0) {
     highp vec3 gi = SampleIrradianceField(v_position, normal, camera_normal);
@@ -959,7 +970,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     transmitted_irradiance = mix(transmitted_irradiance, gi_back, gi_coverage);
 #endif
   }
-#endif  // FLUTTER_SCENE_LEAN_LIGHTING
+#endif  // FLUTTER_SCENE_NO_IRRADIANCE_FIELD
 #endif
 #endif  // FLUTTER_SCENE_CUSTOM_AMBIENT
 
@@ -1015,7 +1026,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // enabled; otherwise the specular lobe uses the same occlusion (the
   // historical behavior).
   float specular_occlusion;
-#ifndef FLUTTER_SCENE_LEAN_LIGHTING
+#ifndef FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
   if (frag_info.ssao_params.y > 1.5 && ao_bent_valid > 0.5) {
     specular_occlusion = ComputeBentConeOcclusion(
         ao_bent_normal, reflect(-camera_normal, normal), occlusion, roughness);
@@ -1047,7 +1058,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       (indirect_diffuse * diffuse_occlusion +
        indirect_specular * specular_occlusion) *
       ambient_shadow;
-#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
   // Screen-space bounce: the occlusion pass's gathered radiance lights the
   // diffuse lobe. Its own bitfield already resolved visibility, so only the
   // baked occlusion map applies.
