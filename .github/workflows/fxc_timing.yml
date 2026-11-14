@@ -8,7 +8,7 @@ on:
 jobs:
   time:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +28,7 @@ jobs:
           CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
           powershell -NoProfile -Command "(Get-Item 'C:\Program Files\Google\Chrome\Application\chrome.exe').VersionInfo.ProductVersion; (Get-CimInstance Win32_Processor).Name"
           RUNS=3 node time_link.mjs "$CHROME" results.json ${{ matrix.angle }} \
-            0.23.0 0.24.0 prod debugviews 2> chrome_stderr.log
+            f_full f_full_minus_ENVIRONMENT_BLEND f_full_minus_IRRADIANCE_FIELD f_full_minus_PARALLAX_REFLECTION f_full_minus_POINT_SHADOWS f_full_minus_RECT_AREA_LIGHTS f_full_minus_SCREEN_SPACE_OCCLUSION f_lean f_lean_plus_ENVIRONMENT_BLEND f_lean_plus_IRRADIANCE_FIELD f_lean_plus_PARALLAX_REFLECTION f_lean_plus_POINT_SHADOWS f_lean_plus_RECT_AREA_LIGHTS f_lean_plus_SCREEN_SPACE_OCCLUSION  2> chrome_stderr.log
       - name: Summary
         if: always()
         run: |
