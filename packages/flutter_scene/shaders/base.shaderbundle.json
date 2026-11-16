@@ -295,6 +295,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_copy.frag"
   },
+  "ExternalOutputFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_external_output.frag"
+  },
   "SmaaEdgesFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_smaa_edges.frag"
