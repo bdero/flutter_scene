@@ -1,6 +1,7 @@
 import 'package:flutter_scene_xr/src/features/anchors.dart';
 import 'package:flutter_scene_xr/src/features/depth.dart';
 import 'package:flutter_scene_xr/src/features/hit_test.dart';
+import 'package:flutter_scene_xr/src/features/layers.dart';
 import 'package:flutter_scene_xr/src/features/light_estimation.dart';
 import 'package:flutter_scene_xr/src/features/planes.dart';
 import 'package:flutter_scene_xr/src/xr_frame.dart';
@@ -117,7 +118,8 @@ class XrSessionRequest {
     ],
     this.domOverlayRoot,
     this.useProjectionLayers = false,
-  });
+    this.renderScale = 1.0,
+  }) : assert(renderScale > 0.0, 'renderScale must be positive');
 
   /// What kind of session.
   final XrSessionMode mode;
@@ -139,6 +141,10 @@ class XrSessionRequest {
   // TODO(xr-layers): the projection layer path is untested on a headset;
   // flip the default once it has been seen rendering on one.
   final bool useProjectionLayers;
+
+  /// The size of the eye images the session starts with, as a multiple of
+  /// the size the runtime recommends (see [XrSession.renderScale]).
+  final double renderScale;
 }
 
 /// A running XR session, the frame source a rig and scene loop consume.
@@ -146,7 +152,7 @@ class XrSessionRequest {
 /// The runtime owns the cadence. Each frame arrives on [frames] inside the
 /// runtime's own callback, so listeners render synchronously and return.
 /// Features ([hitTest], [anchors], [planes], [depthSensing],
-/// [lightEstimation]) are null when the runtime did not grant them.
+/// [lightEstimation], [layers]) are null when the runtime did not grant them.
 /// {@category Sessions}
 abstract class XrSession {
   /// What kind of session this is.
@@ -185,6 +191,27 @@ abstract class XrSession {
 
   /// Real-world lighting, when granted.
   XrLightEstimation? get lightEstimation;
+
+  /// Layers the runtime's compositor places itself, when granted
+  /// ([XrFeatures.layers]).
+  XrLayers? get layers;
+
+  /// The size of the eye images as a multiple of the size the runtime
+  /// recommends, 1.0 by default.
+  ///
+  /// Lower it to render fewer pixels when frames run long, or raise it
+  /// toward [maxRenderScale] for sharper images. A new value is clamped,
+  /// then applies from a following frame, whose views carry targets of the
+  /// new size. The runtime resamples the images onto the display either way,
+  /// which costs less than `RenderView.renderScale` resampling them into
+  /// full-size targets first.
+  double get renderScale;
+  set renderScale(double value);
+
+  /// The largest [renderScale] worth asking for, the display's own
+  /// resolution over the recommended one. 1.0 where the runtime does not
+  /// say.
+  double get maxRenderScale;
 
   /// Whether the session has ended.
   bool get isEnded;

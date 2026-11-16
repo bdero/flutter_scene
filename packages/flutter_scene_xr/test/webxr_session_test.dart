@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_scene/gpu.dart' as gpu show ExternalTargetHandleKind;
+import 'package:flutter_scene/scene.dart' show FrameCompletion;
 import 'package:flutter_scene_xr/flutter_scene_xr.dart';
 import 'package:flutter_scene_xr/src/webxr/webxr_backend.dart';
 import 'package:flutter_scene_xr/src/webxr/webxr_session.dart';
@@ -10,10 +11,21 @@ import 'package:vector_math/vector_math.dart';
 // A browser in miniature: one session at a time, reference spaces granted
 // from a list, frames pushed by the test.
 final class _FakeBackend implements WebXrBackend {
-  _FakeBackend({this.supported = true, this.grantedSpaces = const {}});
+  _FakeBackend({
+    this.supported = true,
+    this.grantedSpaces = const {},
+    this.layersSupported = false,
+    this.nativeScale = 1.0,
+  });
 
   final bool supported;
   final Set<XrReferenceSpaceType> grantedSpaces;
+
+  /// Whether sessions offer projection, quad and cylinder layers.
+  final bool layersSupported;
+
+  /// What sessions report as the native framebuffer scale.
+  final double nativeScale;
   _FakeSession? session;
   WebXrSessionInit? lastInit;
 
@@ -53,6 +65,13 @@ final class _FakeSession implements WebXrBackendSession {
   bool ended = false;
   bool madeCompatible = false;
   bool createdBaseLayer = false;
+
+  /// Every layer created, in order, with the scale it was asked for.
+  final List<_FakeLayer> createdLayers = [];
+
+  /// The layer lists handed to `setLayers`, the projection layer first.
+  final List<List<Object>> installedLayers = [];
+  final List<_FakeCompositionLayer> compositionLayers = [];
   final List<_FakeInputSource> sources = [];
   void Function()? _onInputSourcesChange;
   void Function(WebXrBackendInputSource, WebXrSelectKind, WebXrSelectPhase)?
@@ -100,16 +119,75 @@ final class _FakeSession implements WebXrBackendSession {
       backend.grantedSpaces.contains(type) ? _FakeSpace(type.name) : null;
 
   @override
-  bool get projectionLayersSupported => false;
+  bool get projectionLayersSupported => backend.layersSupported;
 
   @override
-  WebXrBackendLayer createBaseLayer() {
+  double get nativeScaleFactor => backend.nativeScale;
+
+  @override
+  WebXrBackendLayer createBaseLayer({double scale = 1.0}) {
     createdBaseLayer = true;
-    return _FakeLayer();
+    final layer = _FakeLayer(scale: scale);
+    createdLayers.add(layer);
+    return layer;
   }
 
   @override
-  WebXrBackendLayer createProjectionLayer() => throw UnimplementedError();
+  WebXrBackendLayer createProjectionLayer({double scale = 1.0}) {
+    final layer = _FakeLayer(scale: scale, projection: true);
+    createdLayers.add(layer);
+    return layer;
+  }
+
+  @override
+  bool get compositionLayersSupported => backend.layersSupported;
+
+  @override
+  WebXrBackendCompositionLayer createQuadLayer({
+    required WebXrBackendSpace space,
+    required XrPose pose,
+    required int pixelWidth,
+    required int pixelHeight,
+    required double width,
+    required double height,
+  }) {
+    final layer = _FakeCompositionLayer(
+      space: space as _FakeSpace,
+      pose: XrPose()..setFrom(pose),
+      pixelWidth: pixelWidth,
+      pixelHeight: pixelHeight,
+      shape: [width, height],
+    );
+    compositionLayers.add(layer);
+    return layer;
+  }
+
+  @override
+  WebXrBackendCompositionLayer createCylinderLayer({
+    required WebXrBackendSpace space,
+    required XrPose pose,
+    required int pixelWidth,
+    required int pixelHeight,
+    required double radius,
+    required double centralAngle,
+    required double aspectRatio,
+  }) {
+    final layer = _FakeCompositionLayer(
+      space: space as _FakeSpace,
+      pose: XrPose()..setFrom(pose),
+      pixelWidth: pixelWidth,
+      pixelHeight: pixelHeight,
+      shape: [radius, centralAngle, aspectRatio],
+    );
+    compositionLayers.add(layer);
+    return layer;
+  }
+
+  @override
+  void setLayers(
+    WebXrBackendLayer projection,
+    List<WebXrBackendCompositionLayer> layers,
+  ) => installedLayers.add([projection, ...layers]);
 
   @override
   int requestAnimationFrame(WebXrFrameCallback callback) {
@@ -156,6 +234,14 @@ final class _FakeSession implements WebXrBackendSession {
 // the test runs where no backend can wrap a framebuffer, which is the
 // inline-session shape; the viewport math is what this checks.
 final class _FakeLayer implements WebXrBackendLayer {
+  _FakeLayer({this.scale = 1.0, this.projection = false});
+
+  /// The scale the session created the layer at.
+  final double scale;
+
+  /// Whether this is a projection layer.
+  final bool projection;
+
   @override
   bool get presents => false;
 
@@ -165,17 +251,79 @@ final class _FakeLayer implements WebXrBackendLayer {
   @override
   WebXrViewTarget viewTarget(WebXrBackendView view) {
     final left = view.eye == XrEye.left;
+    final width = (2000 * scale).round();
+    final height = (1000 * scale).round();
     return WebXrViewTarget(
       handle: null,
       kind: gpu.ExternalTargetHandleKind.framebuffer,
-      width: 2000,
-      height: 1000,
-      x: left ? 0 : 1000,
+      width: width,
+      height: height,
+      x: left ? 0 : width ~/ 2,
       y: 0,
-      viewportWidth: 1000,
-      viewportHeight: 1000,
+      viewportWidth: width ~/ 2,
+      viewportHeight: height,
     );
   }
+}
+
+// A quad or cylinder layer that records what the session tells it. It has
+// no image to hand out, like a layer the browser has not composited yet.
+final class _FakeCompositionLayer implements WebXrBackendCompositionLayer {
+  _FakeCompositionLayer({
+    required this.space,
+    required this.pose,
+    required this.pixelWidth,
+    required this.pixelHeight,
+    required this.shape,
+  });
+
+  final _FakeSpace space;
+  final XrPose pose;
+  final int pixelWidth;
+  final int pixelHeight;
+
+  /// Width and height for a quad; radius, angle and aspect for a cylinder.
+  List<double> shape;
+  int poseUpdates = 0;
+  int subImageRequests = 0;
+  bool destroyed = false;
+
+  @override
+  bool needsRedraw = true;
+
+  @override
+  void setPose(XrPose value) {
+    pose.setFrom(value);
+    poseUpdates++;
+  }
+
+  @override
+  void setQuadSize(double width, double height) => shape = [width, height];
+
+  @override
+  void setCylinderShape(
+    double radius,
+    double centralAngle,
+    double aspectRatio,
+  ) => shape = [radius, centralAngle, aspectRatio];
+
+  @override
+  WebXrViewTarget subImage(WebXrBackendFrame frame) {
+    subImageRequests++;
+    return WebXrViewTarget(
+      handle: null,
+      kind: gpu.ExternalTargetHandleKind.texture,
+      width: pixelWidth,
+      height: pixelHeight,
+      x: 0,
+      y: 0,
+      viewportWidth: pixelWidth,
+      viewportHeight: pixelHeight,
+    );
+  }
+
+  @override
+  void destroy() => destroyed = true;
 }
 
 final class _FakeView implements WebXrBackendView {
@@ -569,6 +717,264 @@ void main() {
       expect(await session.ended, XrSessionEndReason.contextLost);
       expect(session.error, isA<StateError>());
       expect(backend.session!.ended, isTrue);
+    });
+  });
+  group('render scale', () {
+    test('the request sets the first layer\'s scale, clamped', () async {
+      final backend = _FakeBackend(
+        grantedSpaces: {XrReferenceSpaceType.localFloor},
+        nativeScale: 1.5,
+      );
+      final session = await WebXrRuntime(backend).requestSession(
+        const XrSessionRequest(
+          mode: XrSessionMode.immersiveVr,
+          renderScale: 4.0,
+        ),
+      );
+      expect(session.maxRenderScale, 1.5);
+      expect(session.renderScale, 1.5);
+      expect(backend.session!.createdLayers.single.scale, 1.5);
+    });
+
+    test('a new scale replaces the layer from the following frame', () async {
+      final backend = _FakeBackend(
+        grantedSpaces: {XrReferenceSpaceType.localFloor},
+      );
+      final session = await WebXrRuntime(
+        backend,
+      ).requestSession(const XrSessionRequest(mode: XrSessionMode.immersiveVr));
+      final fake = backend.session!;
+      // The fake reports the layer size through each view's viewport, which
+      // the session normalizes against it, so the layer in use shows in
+      // which one answered.
+      expect(fake.createdLayers, hasLength(1));
+      expect(session.renderScale, 1.0);
+
+      session.renderScale = 0.5;
+      expect(session.renderScale, 0.5);
+      // Nothing is created until a frame ends.
+      expect(fake.createdLayers, hasLength(1));
+      fake.tick(0, _stereo());
+      expect(fake.createdLayers, hasLength(2));
+      expect(fake.createdLayers.last.scale, 0.5);
+
+      // Unchanged scale, no further layers.
+      fake.tick(16, _stereo());
+      fake.tick(32, _stereo());
+      expect(fake.createdLayers, hasLength(2));
+
+      // Values out of range clamp, and nonsense is ignored.
+      session.renderScale = 0.0;
+      expect(session.renderScale, 0.1);
+      session.renderScale = 9.0;
+      expect(session.renderScale, 1.0);
+      session.renderScale = double.nan;
+      expect(session.renderScale, 1.0);
+    });
+  });
+
+  group('frame submission', () {
+    test('a frame hands its completion to the session', () async {
+      final backend = _FakeBackend(
+        grantedSpaces: {XrReferenceSpaceType.localFloor},
+      );
+      final session = await WebXrRuntime(
+        backend,
+      ).requestSession(const XrSessionRequest(mode: XrSessionMode.immersiveVr));
+      var submitted = 0;
+      session.frames.listen((frame) {
+        // Submitting is safe on a runtime that needs nothing from it.
+        frame.submit(FrameCompletion.skipped());
+        submitted++;
+      });
+      backend.session!.tick(0, _stereo());
+      backend.session!.tick(16, _stereo());
+      expect(submitted, 2);
+      expect(session.isEnded, isFalse);
+    });
+
+    test('a hand-built frame reports to its listener', () {
+      FrameCompletion? heard;
+      final frame = XrFrame(
+        predictedDisplayTime: Duration.zero,
+        views: const [],
+        referenceSpaceType: XrReferenceSpaceType.local,
+        onSubmit: (completion) => heard = completion,
+      );
+      final completion = FrameCompletion.skipped();
+      frame.submit(completion);
+      expect(heard, same(completion));
+    });
+  });
+
+  group('composition layers', () {
+    late _FakeBackend backend;
+    late XrSession session;
+
+    setUp(() async {
+      backend = _FakeBackend(
+        grantedSpaces: {
+          XrReferenceSpaceType.localFloor,
+          XrReferenceSpaceType.viewer,
+        },
+        layersSupported: true,
+      );
+      session = await WebXrRuntime(backend).requestSession(
+        const XrSessionRequest(
+          mode: XrSessionMode.immersiveVr,
+          optionalFeatures: [XrFeatures.layers],
+        ),
+      );
+    });
+
+    test('are absent unless the feature was granted', () async {
+      final plain = _FakeBackend(
+        grantedSpaces: {XrReferenceSpaceType.localFloor},
+      );
+      final other = await WebXrRuntime(plain).requestSession(
+        const XrSessionRequest(
+          mode: XrSessionMode.immersiveVr,
+          optionalFeatures: [XrFeatures.layers],
+        ),
+      );
+      expect(other.layers, isNull);
+      expect(plain.session!.createdLayers.single.projection, isFalse);
+    });
+
+    test('ride on a projection layer', () {
+      expect(session.layers, isNotNull);
+      expect(backend.session!.createdLayers.single.projection, isTrue);
+    });
+
+    test('a quad layer is created in the reference space and stacked', () {
+      final fake = backend.session!;
+      final quad = session.layers!.createQuadLayer(
+        pixelWidth: 1024,
+        pixelHeight: 512,
+        width: 1.0,
+        height: 0.5,
+        pose: XrPose(position: Vector3(0, 1.4, -1.2)),
+      );
+      final created = fake.compositionLayers.single;
+      expect(created.space.name, XrReferenceSpaceType.localFloor.name);
+      expect(created.pose.position, Vector3(0, 1.4, -1.2));
+      expect(created.shape, [1.0, 0.5]);
+      expect((created.pixelWidth, created.pixelHeight), (1024, 512));
+      expect(quad.needsRedraw, isTrue);
+      expect(session.layers!.layers, [quad]);
+      expect(fake.installedLayers.last, [fake.createdLayers.single, created]);
+    });
+
+    test('a head-locked cylinder sits in the viewer space', () {
+      final fake = backend.session!;
+      final cylinder = session.layers!.createCylinderLayer(
+        pixelWidth: 2048,
+        pixelHeight: 512,
+        radius: 2.0,
+        centralAngle: 1.2,
+        aspectRatio: 4.0,
+        space: XrLayerSpace.viewer,
+      );
+      final created = fake.compositionLayers.single;
+      expect(created.space.name, XrReferenceSpaceType.viewer.name);
+      expect(created.shape, [2.0, 1.2, 4.0]);
+      expect(cylinder.space, XrLayerSpace.viewer);
+    });
+
+    test('a moved or resized layer is sent on once, after the frame', () {
+      final fake = backend.session!;
+      final quad = session.layers!.createQuadLayer(
+        pixelWidth: 64,
+        pixelHeight: 64,
+        width: 1.0,
+        height: 1.0,
+      );
+      final created = fake.compositionLayers.single;
+      session.frames.listen((_) {});
+      fake.tick(0, _stereo());
+      expect(created.poseUpdates, 0);
+
+      quad.pose.position.setValues(0.5, 1.0, -2.0);
+      quad.width = 2.0;
+      expect(created.poseUpdates, 0);
+      fake.tick(16, _stereo());
+      expect(created.poseUpdates, 1);
+      expect(created.pose.position, Vector3(0.5, 1.0, -2.0));
+      expect(created.shape, [2.0, 1.0]);
+
+      fake.tick(32, _stereo());
+      expect(created.poseUpdates, 1);
+    });
+
+    test('hiding and disposing restack the layers', () {
+      final fake = backend.session!;
+      final layers = session.layers!;
+      final first = layers.createQuadLayer(
+        pixelWidth: 64,
+        pixelHeight: 64,
+        width: 1.0,
+        height: 1.0,
+      );
+      final second = layers.createQuadLayer(
+        pixelWidth: 64,
+        pixelHeight: 64,
+        width: 1.0,
+        height: 1.0,
+      );
+      final projection = fake.createdLayers.single;
+      final [a, b] = fake.compositionLayers;
+      expect(fake.installedLayers.last, [projection, a, b]);
+
+      first.visible = false;
+      expect(fake.installedLayers.last, [projection, b]);
+      first.visible = true;
+      expect(fake.installedLayers.last, [projection, a, b]);
+
+      second.dispose();
+      expect(b.destroyed, isTrue);
+      expect(layers.layers, [first]);
+      expect(fake.installedLayers.last, [projection, a]);
+      expect(second.needsRedraw, isFalse);
+    });
+
+    test('an image is only on offer inside a frame', () {
+      final fake = backend.session!;
+      final quad = session.layers!.createQuadLayer(
+        pixelWidth: 64,
+        pixelHeight: 64,
+        width: 1.0,
+        height: 1.0,
+      );
+      final created = fake.compositionLayers.single;
+      expect(quad.acquireTarget(), isNull);
+      expect(created.subImageRequests, 0);
+
+      Object? inFrame = 0;
+      session.frames.listen((_) => inFrame = quad.acquireTarget());
+      fake.tick(0, _stereo());
+      // The browser was asked, and had no image yet.
+      expect(created.subImageRequests, 1);
+      expect(inFrame, isNull);
+
+      quad.dispose();
+      fake.tick(16, _stereo());
+      expect(created.subImageRequests, 1);
+    });
+
+    test('a new render scale keeps the layers on the new projection', () {
+      final fake = backend.session!;
+      session.layers!.createQuadLayer(
+        pixelWidth: 64,
+        pixelHeight: 64,
+        width: 1.0,
+        height: 1.0,
+      );
+      final quad = fake.compositionLayers.single;
+      session.renderScale = 0.5;
+      fake.tick(0, _stereo());
+      expect(fake.createdLayers, hasLength(2));
+      expect(fake.createdLayers.last.projection, isTrue);
+      expect(fake.installedLayers.last, [fake.createdLayers.last, quad]);
     });
   });
 }
