@@ -2869,6 +2869,11 @@ base class Scene implements SceneGraph {
   /// runtime owns the cadence. [pixelRatio] is the view's logical size per
   /// target pixel, which only size-dependent projections and picking read.
   ///
+  /// A target built around a surface frame
+  /// ([ExternalRenderTarget.surfaceFrame]) is presented on the frame's last
+  /// GPU submission, or discarded when the frame is skipped or throws, so
+  /// the surface always gets its image back.
+  ///
   /// Returns at once. The result says whether the frame drew and completes
   /// when its GPU work has finished, which is when a runtime may release the
   /// targets. A frame whose shaders are still loading is skipped and the
@@ -2879,14 +2884,47 @@ base class Scene implements SceneGraph {
   }) {
     _checkNotDisposed('renderViewsToTargets');
     final views = <RenderView>[for (final group in groups) ...group.views];
+    // The distinct targets, in first-use order.
+    final targets = <ExternalRenderTarget>[];
     for (final view in views) {
-      if (view.externalTarget == null) {
-        throw ArgumentError(
-          'renderViewsToTargets needs an externalTarget on every view; use '
-          'renderViews or renderViewGroups for views drawn to a canvas.',
-        );
+      final target = view.externalTarget;
+      if (target != null && !targets.any((other) => identical(other, target))) {
+        targets.add(target);
       }
     }
+    try {
+      for (final view in views) {
+        if (view.externalTarget == null) {
+          throw ArgumentError(
+            'renderViewsToTargets needs an externalTarget on every view; use '
+            'renderViews or renderViewGroups for views drawn to a canvas.',
+          );
+        }
+      }
+      for (final target in targets) {
+        if (target.isSpent) {
+          throw StateError(
+            'An ExternalRenderTarget.surfaceFrame renders once; build a new '
+            'target around the next frame the surface vends.',
+          );
+        }
+      }
+      return _renderViewsToTargets(groups, views, targets, pixelRatio);
+    } finally {
+      // Whatever was not presented (a skipped frame, a throw) goes back to
+      // its surface.
+      for (final target in targets) {
+        target.discardSurfaceFrame();
+      }
+    }
+  }
+
+  FrameCompletion _renderViewsToTargets(
+    List<RenderViewGroup> groups,
+    List<RenderView> views,
+    List<ExternalRenderTarget> targets,
+    double pixelRatio,
+  ) {
     renderScene.recordRenderedViews(views);
     if (!isReadyToRender) {
       debugPrint('Flutter Scene is not ready to render. Skipping frame.');
@@ -2945,7 +2983,7 @@ base class Scene implements SceneGraph {
     }
 
     _endFrame();
-    return FrameCompletion.afterSubmissions();
+    return FrameCompletion.afterSubmissions(present: targets);
   }
 
   // The pixel rectangle of [view]'s external target that the view fills.

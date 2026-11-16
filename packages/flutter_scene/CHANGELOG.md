@@ -5,6 +5,7 @@
 * `RenderView.cullingFrustum` overrides the frustum a view culls against.
 * `Scene.renderViewsToTargets` renders views into caller-owned textures (`ExternalRenderTarget`) from any frame loop and returns a `FrameCompletion`. On the web, `wrapExternalColorTarget` wraps a WebGL framebuffer or texture from `nativeGraphicsContext`.
 * `ExternalRenderTarget.allocate` creates a target the package owns. On the web, `textureToPlatformImage` hands a texture to another WebGL context as an `ImageBitmap`.
+* `ExternalRenderTarget.surfaceFrame` leases an image from a `GpuSurface`. The scene presents it after the frame's last GPU work, or discards it when the frame is skipped or throws.
 * `WidgetHost` keeps a scene's `WidgetComponent`s live when it renders without a `SceneView`.
 * On the web, `Texture.asImage()` after a pass that set a scissor no longer drops the pixels outside it.
 * Two views with temporal anti-aliasing no longer share one history and reproject each other's frames.
