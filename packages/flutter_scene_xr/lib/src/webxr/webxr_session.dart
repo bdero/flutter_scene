@@ -1,14 +1,17 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_scene/gpu.dart'
     as gpu
     show ExternalTargetHandleKind, textureToPlatformImage;
-import 'package:flutter_scene/scene.dart' show ExternalRenderTarget;
+import 'package:flutter_scene/scene.dart'
+    show ExternalRenderTarget, FrameCompletion;
 import 'package:vector_math/vector_math.dart' show Matrix4, Ray, Vector3;
 
 import 'package:flutter_scene_xr/src/features/anchors.dart';
 import 'package:flutter_scene_xr/src/features/depth.dart';
 import 'package:flutter_scene_xr/src/features/hit_test.dart';
+import 'package:flutter_scene_xr/src/features/layers.dart';
 import 'package:flutter_scene_xr/src/features/light_estimation.dart';
 import 'package:flutter_scene_xr/src/features/planes.dart';
 import 'package:flutter_scene_xr/src/viewport_math.dart';
@@ -94,6 +97,9 @@ final class WebXrRuntime implements XrRuntime {
 final class WebXrSession implements XrSession {
   WebXrSession._(this._request, this._backend, this._requestedFeatures);
 
+  // The smallest render scale taken, a tenth of the recommended size.
+  static const double _minRenderScale = 0.1;
+
   final XrSessionRequest _request;
   final WebXrBackendSession _backend;
   final Set<String> _requestedFeatures;
@@ -105,7 +111,14 @@ final class WebXrSession implements XrSession {
       StreamController.broadcast(sync: true);
   final Completer<XrSessionEndReason> _ended = Completer();
 
-  late final WebXrBackendLayer _layer;
+  late WebXrBackendLayer _layer;
+  // A layer made for a new render scale, which the browser draws from on
+  // the frame after it was installed.
+  WebXrBackendLayer? _nextLayer;
+  bool _usesProjectionLayer = false;
+  double _renderScale = 1.0;
+  // The scale [_layer], or the one replacing it, was created at.
+  double _layerScale = 1.0;
   late final WebXrBackendSpace _referenceSpace;
   late final XrReferenceSpaceType _referenceSpaceType;
   late final Set<String> _features;
@@ -139,8 +152,11 @@ final class WebXrSession implements XrSession {
   _WebXrPlaneDetection? _planes;
   _WebXrDepthSensing? _depth;
   _WebXrLightEstimation? _light;
+  _WebXrLayers? _layers;
 
   WebXrBackendFrame? _currentFrame;
+  // Whether the frame's renderer reported it drew nothing.
+  bool _frameSkipped = false;
   int _frameNumber = 0;
   int? _rafHandle;
   bool _isEnded = false;
@@ -183,6 +199,21 @@ final class WebXrSession implements XrSession {
   XrLightEstimation? get lightEstimation => _light;
 
   @override
+  XrLayers? get layers => _layers;
+
+  @override
+  double get renderScale => _renderScale;
+
+  @override
+  set renderScale(double value) {
+    if (value.isNaN) return;
+    _renderScale = value.clamp(_minRenderScale, maxRenderScale);
+  }
+
+  @override
+  double get maxRenderScale => math.max(1.0, _backend.nativeScaleFactor);
+
+  @override
   bool get isEnded => _isEnded;
 
   @override
@@ -213,9 +244,17 @@ final class WebXrSession implements XrSession {
       await _abort(XrSessionEndReason.contextLost, error);
       throw StateError('The graphics context could not join the session.');
     }
-    _layer = _request.useProjectionLayers && _backend.projectionLayersSupported
-        ? _backend.createProjectionLayer()
-        : _backend.createBaseLayer();
+    _features = _backend.enabledFeatures ?? _requestedFeatures;
+    // Quad and cylinder layers stack on a projection layer; a base layer
+    // excludes them.
+    final wantsLayers = _features.contains(XrFeatures.layers);
+    _usesProjectionLayer =
+        (_request.useProjectionLayers || wantsLayers) &&
+        _backend.projectionLayersSupported;
+    renderScale = _request.renderScale;
+    _layerScale = _renderScale;
+    _layer = _createLayer(_renderScale);
+    _frame.onSubmit = _handleSubmit;
     WebXrBackendSpace? space;
     for (final type in _request.referenceSpaces) {
       space = await _backend.requestReferenceSpace(type);
@@ -231,7 +270,16 @@ final class WebXrSession implements XrSession {
         'The browser granted none of ${_request.referenceSpaces}.',
       );
     }
-    _features = _backend.enabledFeatures ?? _requestedFeatures;
+    if (wantsLayers &&
+        _usesProjectionLayer &&
+        _backend.compositionLayersSupported) {
+      // Head-locked layers sit in the viewer space, which a layer cannot
+      // wait for when it is created.
+      _viewerSpace ??= await _backend.requestReferenceSpace(
+        XrReferenceSpaceType.viewer,
+      );
+      _layers = _WebXrLayers(this);
+    }
     if (_features.contains(XrFeatures.hitTest)) {
       _hitTest = _WebXrHitTesting(this);
     }
@@ -262,12 +310,20 @@ final class WebXrSession implements XrSession {
     // Ask for the next frame first, so a listener failure cannot stall the
     // loop.
     _scheduleFrame();
+    final next = _nextLayer;
+    if (next != null) {
+      _layer = next;
+      _nextLayer = null;
+    }
     _currentFrame = frame;
     _frameNumber++;
+    _frameSkipped = false;
     try {
       _buildFrame(timeMilliseconds, frame);
       _frames.add(_frame);
       _presentFrame();
+      _layers?._push();
+      _applyRenderScale();
     } catch (error) {
       // Runtime data the frame cannot be built from fails the same way every
       // frame and would starve listeners silently (the next frame is already
@@ -283,11 +339,32 @@ final class WebXrSession implements XrSession {
   // render synchronously inside the frame callback, so the texture is final
   // here.
   void _presentFrame() {
-    if (!_presenting || _frameViews.isEmpty) return;
+    if (!_presenting || _frameViews.isEmpty || _frameSkipped) return;
     final target = _sharedTarget;
     if (target == null) return;
     final image = gpu.textureToPlatformImage(target.color);
     if (image != null) _layer.present(image);
+  }
+
+  // What the frame's renderer reported through XrFrame.submit. The browser
+  // takes a headset layer when the callback returns, so only the copy onto a
+  // canvas has anything to hold back.
+  void _handleSubmit(FrameCompletion completion) {
+    _frameSkipped = completion.skipped;
+  }
+
+  WebXrBackendLayer _createLayer(double scale) => _usesProjectionLayer
+      ? _backend.createProjectionLayer(scale: scale)
+      : _backend.createBaseLayer(scale: scale);
+
+  // Replaces the layer after the render scale changed. A layer that presents
+  // keeps its size, and the texture the session owns is scaled instead (see
+  // _wrapTarget).
+  void _applyRenderScale() {
+    if (_renderScale == _layerScale || _layer.presents) return;
+    _layerScale = _renderScale;
+    _nextLayer = _createLayer(_renderScale);
+    _layers?._install();
   }
 
   void _buildFrame(double timeMilliseconds, WebXrBackendFrame frame) {
@@ -355,14 +432,18 @@ final class WebXrSession implements XrSession {
         _presenting = false;
         return null;
       }
+      // The session owns this texture, so the render scale sizes it and
+      // the copy onto the canvas resamples.
+      final width = math.max(1, (target.width * _renderScale).round());
+      final height = math.max(1, (target.height * _renderScale).round());
       final shared = _sharedTarget;
       if (shared == null ||
           !_presenting ||
-          shared.width != target.width ||
-          shared.height != target.height) {
+          shared.width != width ||
+          shared.height != height) {
         _sharedTarget = ExternalRenderTarget.allocate(
-          width: target.width,
-          height: target.height,
+          width: width,
+          height: height,
         );
         _sharedHandle = null;
         _presenting = true;
@@ -551,6 +632,287 @@ final class WebXrSession implements XrSession {
         }
         return null;
     }
+  }
+}
+
+final class _WebXrLayers implements XrLayers {
+  _WebXrLayers(this._session);
+
+  final WebXrSession _session;
+  final List<_WebXrLayer> _all = [];
+
+  @override
+  List<XrCompositionLayer> get layers => List.unmodifiable(_all);
+
+  WebXrBackendSpace _spaceFor(XrLayerSpace space) => switch (space) {
+    XrLayerSpace.reference => _session._referenceSpace,
+    XrLayerSpace.viewer =>
+      _session._viewerSpace ??
+          (throw UnsupportedError(
+            'The runtime granted no viewer space for a head-locked layer.',
+          )),
+  };
+
+  static void _checkPixels(int width, int height) {
+    if (width <= 0 || height <= 0) {
+      throw ArgumentError('A layer image needs a positive pixel size.');
+    }
+  }
+
+  @override
+  XrQuadLayer createQuadLayer({
+    required int pixelWidth,
+    required int pixelHeight,
+    required double width,
+    required double height,
+    XrPose? pose,
+    XrLayerSpace space = XrLayerSpace.reference,
+  }) {
+    _checkPixels(pixelWidth, pixelHeight);
+    final at = XrPose();
+    if (pose != null) at.setFrom(pose);
+    final layer = _WebXrQuadLayer(
+      this,
+      _session._backend.createQuadLayer(
+        space: _spaceFor(space),
+        pose: at,
+        pixelWidth: pixelWidth,
+        pixelHeight: pixelHeight,
+        width: width,
+        height: height,
+      ),
+      space,
+      at,
+      pixelWidth,
+      pixelHeight,
+      width,
+      height,
+    );
+    _all.add(layer);
+    _install();
+    return layer;
+  }
+
+  @override
+  XrCylinderLayer createCylinderLayer({
+    required int pixelWidth,
+    required int pixelHeight,
+    required double radius,
+    required double centralAngle,
+    required double aspectRatio,
+    XrPose? pose,
+    XrLayerSpace space = XrLayerSpace.reference,
+  }) {
+    _checkPixels(pixelWidth, pixelHeight);
+    final at = XrPose();
+    if (pose != null) at.setFrom(pose);
+    final layer = _WebXrCylinderLayer(
+      this,
+      _session._backend.createCylinderLayer(
+        space: _spaceFor(space),
+        pose: at,
+        pixelWidth: pixelWidth,
+        pixelHeight: pixelHeight,
+        radius: radius,
+        centralAngle: centralAngle,
+        aspectRatio: aspectRatio,
+      ),
+      space,
+      at,
+      pixelWidth,
+      pixelHeight,
+      radius,
+      centralAngle,
+      aspectRatio,
+    );
+    _all.add(layer);
+    _install();
+    return layer;
+  }
+
+  // Hands the browser the projection layer with the visible layers over it.
+  void _install() =>
+      _session._backend.setLayers(_session._nextLayer ?? _session._layer, [
+        for (final layer in _all)
+          if (layer._visible) layer._backend,
+      ]);
+
+  void _push() {
+    for (final layer in _all) {
+      layer._push();
+    }
+  }
+
+  void _remove(_WebXrLayer layer) {
+    if (_all.remove(layer)) _install();
+  }
+}
+
+abstract base class _WebXrLayer implements XrCompositionLayer {
+  _WebXrLayer(
+    this._owner,
+    this._backend,
+    this.space,
+    this.pose,
+    this.pixelWidth,
+    this.pixelHeight,
+  ) {
+    _sentPose.setFrom(pose);
+  }
+
+  final _WebXrLayers _owner;
+  final WebXrBackendCompositionLayer _backend;
+
+  @override
+  final XrLayerSpace space;
+
+  @override
+  final XrPose pose;
+
+  @override
+  final int pixelWidth;
+
+  @override
+  final int pixelHeight;
+
+  // The pose the browser last heard, so an unmoved layer sends nothing.
+  final XrPose _sentPose = XrPose();
+  bool _visible = true;
+  bool _disposed = false;
+  ExternalRenderTarget? _target;
+  Object? _targetHandle;
+
+  @override
+  bool get visible => _visible;
+
+  @override
+  set visible(bool value) {
+    if (_disposed || value == _visible) return;
+    _visible = value;
+    _owner._install();
+  }
+
+  @override
+  bool get needsRedraw => !_disposed && _backend.needsRedraw;
+
+  @override
+  ExternalRenderTarget? acquireTarget() {
+    final frame = _owner._session._currentFrame;
+    if (_disposed || frame == null) return null;
+    final image = _backend.subImage(frame);
+    final handle = image.handle;
+    if (handle == null) return null;
+    final existing = _target;
+    if (existing != null &&
+        _targetHandle == handle &&
+        existing.width == image.width &&
+        existing.height == image.height) {
+      return existing;
+    }
+    _targetHandle = handle;
+    return _target = ExternalRenderTarget.platform(
+      handle,
+      width: image.width,
+      height: image.height,
+      kind: image.kind,
+    );
+  }
+
+  // Sends the pose and shape on when the app changed them.
+  void _push() {
+    if (_disposed) return;
+    final p = pose.position, q = pose.orientation;
+    final sp = _sentPose.position, sq = _sentPose.orientation;
+    if (p != sp || q.x != sq.x || q.y != sq.y || q.z != sq.z || q.w != sq.w) {
+      _sentPose.setFrom(pose);
+      _backend.setPose(pose);
+    }
+    _pushShape();
+  }
+
+  void _pushShape();
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _target = null;
+    _targetHandle = null;
+    _owner._remove(this);
+    _backend.destroy();
+  }
+}
+
+final class _WebXrQuadLayer extends _WebXrLayer implements XrQuadLayer {
+  _WebXrQuadLayer(
+    super._owner,
+    super._backend,
+    super.space,
+    super.pose,
+    super.pixelWidth,
+    super.pixelHeight,
+    this.width,
+    this.height,
+  ) : _sentWidth = width,
+      _sentHeight = height;
+
+  @override
+  double width;
+
+  @override
+  double height;
+
+  double _sentWidth;
+  double _sentHeight;
+
+  @override
+  void _pushShape() {
+    if (width == _sentWidth && height == _sentHeight) return;
+    _sentWidth = width;
+    _sentHeight = height;
+    _backend.setQuadSize(width, height);
+  }
+}
+
+final class _WebXrCylinderLayer extends _WebXrLayer implements XrCylinderLayer {
+  _WebXrCylinderLayer(
+    super._owner,
+    super._backend,
+    super.space,
+    super.pose,
+    super.pixelWidth,
+    super.pixelHeight,
+    this.radius,
+    this.centralAngle,
+    this.aspectRatio,
+  ) : _sentRadius = radius,
+      _sentAngle = centralAngle,
+      _sentAspect = aspectRatio;
+
+  @override
+  double radius;
+
+  @override
+  double centralAngle;
+
+  @override
+  double aspectRatio;
+
+  double _sentRadius;
+  double _sentAngle;
+  double _sentAspect;
+
+  @override
+  void _pushShape() {
+    if (radius == _sentRadius &&
+        centralAngle == _sentAngle &&
+        aspectRatio == _sentAspect) {
+      return;
+    }
+    _sentRadius = radius;
+    _sentAngle = centralAngle;
+    _sentAspect = aspectRatio;
+    _backend.setCylinderShape(radius, centralAngle, aspectRatio);
   }
 }
 

@@ -1,4 +1,5 @@
-import 'package:flutter_scene/scene.dart' show ExternalRenderTarget;
+import 'package:flutter_scene/scene.dart'
+    show ExternalRenderTarget, FrameCompletion;
 
 import 'package:flutter_scene_xr/src/xr_input_state.dart';
 import 'package:flutter_scene_xr/src/xr_pose.dart';
@@ -21,6 +22,7 @@ class XrFrame {
     this.viewerPose,
     this.target,
     this.inputSources = const [],
+    this.onSubmit,
   });
 
   /// When the runtime expects to show this frame, on the runtime's clock.
@@ -46,6 +48,22 @@ class XrFrame {
 
   /// The tracked controllers, hands and other inputs this frame.
   List<XrInputSourceState> inputSources;
+
+  /// What the runtime wants to hear from [submit], or null for a runtime
+  /// that needs nothing.
+  void Function(FrameCompletion completion)? onSubmit;
+
+  /// Tells the runtime what became of this frame, once its views have been
+  /// rendered or the frame was given up.
+  ///
+  /// Pass what `Scene.renderViewsToTargets` returned, or
+  /// `FrameCompletion.skipped()` for a frame that drew nothing. A runtime
+  /// that composites the images itself keeps showing its last frame after a
+  /// skip, and takes the targets back when `completion.whenGpuDone`
+  /// completes. `XrSceneLoop` calls this for every frame; a hand-written loop
+  /// should too. WebXR needs nothing more, since the browser takes the layer
+  /// when the frame callback returns.
+  void submit(FrameCompletion completion) => onSubmit?.call(completion);
 
   /// Whether there is anything to render this frame.
   bool get hasViews => views.isNotEmpty;

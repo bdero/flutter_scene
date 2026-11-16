@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:ui' show Color;
 
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
@@ -58,6 +59,15 @@ final class _FakeSession implements XrSession {
 
   @override
   XrLightEstimation? get lightEstimation => null;
+
+  @override
+  XrLayers? get layers => null;
+
+  @override
+  double renderScale = 1.0;
+
+  @override
+  double get maxRenderScale => 1.0;
 
   @override
   bool get isEnded => _ended.isCompleted;
@@ -121,21 +131,29 @@ void main() {
     final target = _target(128, 64);
     final ticks = <double>[];
     final renderedViews = <List<RenderView>>[];
+    const background = Color(0xFF102030);
     final loop = XrSceneLoop(
       scene: scene,
       rig: rig,
       session: session,
+      backgroundColor: background,
       onTick: (frame, dt) => ticks.add(dt),
       onBeforeRender: (frame, views) => renderedViews.add(List.of(views)),
     )..start();
 
+    final submitted = <FrameCompletion>[];
     session.push(
       stereoFrame(
         head: Vector3(0, 1.6, 0),
         target: target,
         time: const Duration(milliseconds: 1000),
-      ),
+      )..onSubmit = submitted.add,
     );
+    // The runtime heard what the renderer reported, and the loop's
+    // background went onto the frame's target.
+    expect(submitted.single, same(loop.lastCompletion));
+    expect(submitted.single.skipped, isFalse);
+    expect(target.backgroundColor, background);
     session.push(
       stereoFrame(
         head: Vector3(0, 1.6, 0.1),
@@ -174,9 +192,15 @@ void main() {
       session: session,
       onTick: (frame, dt) => ticks++,
     )..start();
-    session.push(stereoFrame(head: Vector3(0, 1.6, 0)));
+    FrameCompletion? submitted;
+    session.push(
+      stereoFrame(head: Vector3(0, 1.6, 0))
+        ..onSubmit = (completion) => submitted = completion,
+    );
     expect(ticks, 1);
     expect(loop.framesRendered, 0);
     expect(loop.lastCompletion!.skipped, isTrue);
+    // The runtime still hears that the frame drew nothing.
+    expect(submitted, same(loop.lastCompletion));
   }, skip: noGpu);
 }
