@@ -218,7 +218,28 @@ typedef _FrameLighting = ({
 typedef _GroupShared = ({
   Frustum? cullingFrustum,
   List<ShadowCascade>? cascades,
+  _GroupShadows? shadows,
 });
+
+// A render group's shadow atlas for one frame, rendered by whichever of its
+// views draws first and sampled by the rest.
+class _GroupShadows {
+  _GroupShadows(this.atlas, this.receiverCamera, this.receiverSize);
+
+  final SharedShadowAtlas atlas;
+
+  // A camera whose frustum contains every view's, bounding the receivers the
+  // cascades can shadow. Null when the atlas holds no cascades.
+  final Camera? receiverCamera;
+  final ui.Size receiverSize;
+
+  // What the first view decided, reused by the rest: the static caster
+  // plan, the cascades it samples through, and the receiver culling planes.
+  bool planned = false;
+  ShadowCachePlan? cachePlan;
+  List<ShadowCascade> effectiveCascades = const [];
+  List<List<Plane>>? receiverPlanes;
+}
 
 // A pinhole projection's clip range and widest half-angle tangents.
 typedef _PinholeClip = ({double near, double far, double tanX, double tanY});
@@ -3089,7 +3110,7 @@ base class Scene implements SceneGraph {
     final shared = <RenderView, _GroupShared>{};
     for (final group in groups) {
       if (group.views.length < 2) continue;
-      if (!group.sharedCulling && !group.sharedShadowFit) continue;
+      if (!group.sharedCulling && !group.sharedShadows) continue;
       final cameras = [for (final view in group.views) view.camera];
       final sizes = [for (final view in group.views) viewSizeOf(view)];
       if (sizes.any((size) => size.isEmpty)) continue;
@@ -3097,9 +3118,11 @@ base class Scene implements SceneGraph {
           ? combinedCullingFrustum(cameras, sizes)
           : null;
       List<ShadowCascade>? cascades;
+      Camera? combined;
       final light = lighting.lightComponent?.light;
-      if (group.sharedShadowFit && light != null && light.castsShadow) {
-        final combined = combinedViewCamera(cameras, sizes);
+      final castsDirectional = light != null && light.castsShadow;
+      if (group.sharedShadows && castsDirectional) {
+        combined = combinedViewCamera(cameras, sizes);
         if (combined != null) {
           // The combined projection ignores the aspect ratio, so any will do.
           cascades = light.computeCascades(
@@ -3109,9 +3132,34 @@ base class Scene implements SceneGraph {
           );
         }
       }
-      if (frustum == null && cascades == null) continue;
+      // One atlas serves the group when its cascades were fitted to every
+      // view, or when it holds only spot and point tiles, which fit any.
+      _GroupShadows? shadows;
+      final spotOrPointOnly =
+          !castsDirectional &&
+          (lighting.spotShadowFrame != null ||
+              lighting.pointShadowFrame != null);
+      if (group.sharedShadows &&
+          !debugDisableSharedShadowTiles &&
+          (cascades != null || spotOrPointOnly)) {
+        // The frame's own spot and point atlas already serves its anchor
+        // view, so a group holding the anchor joins it.
+        final frameAtlas = _sharedShadowAtlas;
+        final atlas =
+            spotOrPointOnly &&
+                frameAtlas != null &&
+                group.views.any((view) => identical(view, _sharedShadowAnchor))
+            ? frameAtlas
+            : SharedShadowAtlas(cameras.first.position);
+        shadows = _GroupShadows(atlas, combined, sizes.first);
+      }
+      if (frustum == null && cascades == null && shadows == null) continue;
       for (final view in group.views) {
-        shared[view] = (cullingFrustum: frustum, cascades: cascades);
+        shared[view] = (
+          cullingFrustum: frustum,
+          cascades: cascades,
+          shadows: shadows,
+        );
       }
     }
     return shared;
@@ -4015,22 +4063,45 @@ base class Scene implements SceneGraph {
     // coverage or content changes, and every consumer samples through the
     // cached matrices. Without static casters the cache is dropped and the
     // shadow pass renders everything per frame, exactly as before.
+    // The group's atlas applies when this view samples exactly what it
+    // holds: the group's cascades, or none on either side.
+    final groupCascades = groupShared?.cascades;
+    final groupShadows =
+        (groupCascades == null
+            ? cascades.isEmpty
+            : identical(cascades, groupCascades))
+        ? groupShared?.shadows
+        : null;
     ShadowCachePlan? shadowCachePlan;
     var effectiveCascades = cascades;
-    if (cascades.isNotEmpty &&
-        hasStaticShadowCasters &&
-        light != null &&
-        light.cacheStaticShadows) {
-      shadowCachePlan = (_directionalShadowCache ??= DirectionalShadowCache())
-          .plan(
-            light: light,
-            lightDirection: lightDirection ?? light.direction,
-            idealCascades: cascades,
-            staticSignature: staticShadowSignature,
-          );
-      effectiveCascades = shadowCachePlan.cascades;
+    if (groupShadows != null && groupShadows.planned) {
+      // A sibling view planned the group's tiles this frame. Its refreshes
+      // are that view's to render, so this one carries none.
+      final plan = groupShadows.cachePlan;
+      shadowCachePlan = plan == null
+          ? null
+          : ShadowCachePlan(plan.cascades, const [], plan.entries, plan.cache);
+      effectiveCascades = groupShadows.effectiveCascades;
     } else {
-      _directionalShadowCache = null;
+      if (cascades.isNotEmpty &&
+          hasStaticShadowCasters &&
+          light != null &&
+          light.cacheStaticShadows) {
+        shadowCachePlan = (_directionalShadowCache ??= DirectionalShadowCache())
+            .plan(
+              light: light,
+              lightDirection: lightDirection ?? light.direction,
+              idealCascades: cascades,
+              staticSignature: staticShadowSignature,
+            );
+        effectiveCascades = shadowCachePlan.cascades;
+      } else {
+        _directionalShadowCache = null;
+      }
+      groupShadows
+        ?..planned = true
+        ..cachePlan = shadowCachePlan
+        ..effectiveCascades = effectiveCascades;
     }
 
     // Baked shadow catchers refresh their footprint caches right after the
@@ -4055,36 +4126,55 @@ base class Scene implements SceneGraph {
     // into the receiver volume instead of skipping frames with planar
     // captures, and cull spot and point shadow tiles the same way.
     var cascadeReceiverPlanes = const <List<Plane>>[];
-    final receiverCullingAllowed =
-        !debugDisableShadowReceiverCulling &&
-        effectiveCascades.isNotEmpty &&
-        catcherBakes == null &&
-        !(capturePlanarReflections &&
-            !captureLinearColor &&
-            renderScene.planarReflectorComponents.isNotEmpty) &&
-        !_renderPasses.any(
-          (pass) => pass.enabled && pass.inputs.contains(RenderInput.shadowMap),
+    final sharedReceiverPlanes = groupShadows?.receiverPlanes;
+    if (sharedReceiverPlanes != null) {
+      cascadeReceiverPlanes = sharedReceiverPlanes;
+    } else {
+      // A shared atlas serves every view of its group, whichever of them
+      // captures the planar reflections.
+      final planarReaders = groupShadows != null
+          ? renderScene.planarReflectorComponents.isNotEmpty
+          : capturePlanarReflections &&
+                !captureLinearColor &&
+                renderScene.planarReflectorComponents.isNotEmpty;
+      final receiverCullingAllowed =
+          !debugDisableShadowReceiverCulling &&
+          effectiveCascades.isNotEmpty &&
+          catcherBakes == null &&
+          !planarReaders &&
+          !_renderPasses.any(
+            (pass) =>
+                pass.enabled && pass.inputs.contains(RenderInput.shadowMap),
+          );
+      if (receiverCullingAllowed) {
+        // Receivers past the last cascade never sample the atlas, so an
+        // infinite far plane can stop there. A group's receivers are bounded
+        // by the camera containing all of its views.
+        final receiverCamera = groupShadows?.receiverCamera ?? camera;
+        final receiverSize = groupShadows?.receiverSize ?? pixelSize;
+        final receiverFrustum = shadowReceiverFrustum(
+          finiteViewTransformOf(
+            receiverCamera,
+            receiverSize,
+            light!.shadowMaxDistance,
+          ),
+          receiverSize,
         );
-    if (receiverCullingAllowed) {
-      // Receivers past the last cascade never sample the atlas, so an
-      // infinite far plane can stop there.
-      final receiverFrustum = shadowReceiverFrustum(
-        finiteViewTransformOf(camera, pixelSize, light!.shadowMaxDistance),
-        pixelSize,
-      );
-      cascadeReceiverPlanes = [
-        for (final cascade in effectiveCascades)
-          shadowReceiverCullingPlanes(
-                receiverFrustum: receiverFrustum,
-                lightSpaceMatrix: cascade.lightSpaceMatrix,
-                margin: shadowReceiverMargin(
-                  light,
-                  cascade.boxSize,
-                  maxReceiverSoftness,
-                ),
-              ) ??
-              const <Plane>[],
-      ];
+        cascadeReceiverPlanes = [
+          for (final cascade in effectiveCascades)
+            shadowReceiverCullingPlanes(
+                  receiverFrustum: receiverFrustum,
+                  lightSpaceMatrix: cascade.lightSpaceMatrix,
+                  margin: shadowReceiverMargin(
+                    light,
+                    cascade.boxSize,
+                    maxReceiverSoftness,
+                  ),
+                ) ??
+                const <Plane>[],
+        ];
+      }
+      groupShadows?.receiverPlanes = cascadeReceiverPlanes;
     }
 
     final graph = RenderGraph();
@@ -4117,10 +4207,12 @@ base class Scene implements SceneGraph {
           pointShadows: pointShadowFrame,
           cachePlan: shadowCachePlan,
           shared:
-              cascades.isEmpty &&
-                  (view.target != null || identical(view, _sharedShadowAnchor))
-              ? _sharedShadowAtlas
-              : null,
+              groupShadows?.atlas ??
+              (cascades.isEmpty &&
+                      (view.target != null ||
+                          identical(view, _sharedShadowAnchor))
+                  ? _sharedShadowAtlas
+                  : null),
           // PostShadowInfo describes the directional cascades, so publish it
           // only when they exist (a spot-only atlas has no directional light).
           shadowUniform:

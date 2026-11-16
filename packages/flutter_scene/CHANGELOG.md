@@ -1,7 +1,7 @@
 ## 0.24.4
 
 * `OffAxisProjection` is a lens with four separate frustum edges (`fromAngles`, `fromMatrix`), the shape a headset gives for each eye.
-* `RenderViewGroup` and `Scene.renderViewGroups` render views together, culling once and fitting the shadow cascades once, so both eyes of a stereo pair shade identically.
+* `RenderViewGroup` and `Scene.renderViewGroups` render views together, culling once and fitting and rendering the shadows once, so both eyes of a stereo pair shade identically.
 * `RenderView.cullingFrustum` overrides the frustum a view culls against.
 * `Scene.renderViewsToTargets` renders views into caller-owned textures (`ExternalRenderTarget`) from any frame loop and returns a `FrameCompletion`. On the web, `wrapExternalColorTarget` wraps a WebGL framebuffer or texture from `nativeGraphicsContext`.
 * `ExternalRenderTarget.allocate` creates a target the package owns. On the web, `textureToPlatformImage` hands a texture to another WebGL context as an `ImageBitmap`.
