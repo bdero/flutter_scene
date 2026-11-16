@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter_scene/src/gpu/external_targets.dart' as targets;
@@ -31,21 +32,25 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 /// {@category Rendering}
 class ExternalRenderTarget {
   /// Wraps [color], a texture the caller created with render-target usage.
-  ExternalRenderTarget.texture(this.color) : surfaceFrame = null;
+  ExternalRenderTarget.texture(this.color, {this.backgroundColor})
+    : surfaceFrame = null;
 
   /// Allocates a color target of [width] by [height] pixels this package's
   /// backend owns, for a caller that has nowhere else to render (an emulated
   /// XR layer without a framebuffer, a capture). It is shader-readable, so
   /// `color.asImage()` draws it onto a canvas afterwards.
-  ExternalRenderTarget.allocate({required int width, required int height})
-    : surfaceFrame = null,
-      color = gpu.gpuContext.createTexture(
-        gpu.StorageMode.devicePrivate,
-        width,
-        height,
-        enableRenderTargetUsage: true,
-        enableShaderReadUsage: true,
-      );
+  ExternalRenderTarget.allocate({
+    required int width,
+    required int height,
+    this.backgroundColor,
+  }) : surfaceFrame = null,
+       color = gpu.gpuContext.createTexture(
+         gpu.StorageMode.devicePrivate,
+         width,
+         height,
+         enableRenderTargetUsage: true,
+         enableShaderReadUsage: true,
+       );
 
   /// Wraps a platform object the active backend can draw into, through
   /// `wrapExternalColorTarget` (see that function for what each backend
@@ -57,6 +62,7 @@ class ExternalRenderTarget {
     gpu.ExternalTargetHandleKind kind =
         gpu.ExternalTargetHandleKind.framebuffer,
     gpu.PixelFormat format = gpu.PixelFormat.r8g8b8a8UNormInt,
+    this.backgroundColor,
   }) : surfaceFrame = null,
        color = targets.wrapExternalColorTarget(
          handle,
@@ -82,9 +88,11 @@ class ExternalRenderTarget {
   ///   RenderViewGroup([RenderView(camera: eye, externalTarget: target)]),
   /// ]);
   /// ```
-  ExternalRenderTarget.surfaceFrame(gpu.GpuSurfaceFrame frame)
-    : surfaceFrame = frame,
-      color = frame.colorTexture;
+  ExternalRenderTarget.surfaceFrame(
+    gpu.GpuSurfaceFrame frame, {
+    this.backgroundColor,
+  }) : surfaceFrame = frame,
+       color = frame.colorTexture;
 
   /// The color texture views draw into.
   // TODO(xr-depth): take an optional depth texture too, written by a depth
@@ -96,11 +104,29 @@ class ExternalRenderTarget {
   /// keeps.
   final gpu.GpuSurfaceFrame? surfaceFrame;
 
+  /// A color composited under the finished image, or null to keep the
+  /// scene's own alpha.
+  ///
+  /// It sits behind everything the scene drew, untouched by lighting,
+  /// exposure or tone mapping, the way a widget behind a `SceneView` does.
+  /// An opaque color makes every pixel of the target opaque, which a runtime
+  /// that reads alpha as coverage needs when the scene has no skybox.
+  ui.Color? backgroundColor;
+
   /// The target's width in pixels.
   int get width => color.width;
 
   /// The target's height in pixels.
   int get height => color.height;
+
+  /// Whether [color] encodes sRGB on write (an sRGB swapchain format). The
+  /// scene then writes linear color and lets the attachment encode it, so
+  /// the stored image matches what a plain target of the same scene holds.
+  bool get encodesSrgb => switch (color.format) {
+    gpu.PixelFormat.r8g8b8a8UNormIntSRGB ||
+    gpu.PixelFormat.b8g8r8a8UNormIntSRGB => true,
+    _ => false,
+  };
 
   gpu.GpuPresentStatus? _presentStatus;
   bool _leaseEnded = false;

@@ -4,6 +4,7 @@ library;
 
 import 'dart:js_interop';
 import 'dart:typed_data';
+import 'dart:ui' show Color;
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/external_targets.dart';
@@ -234,6 +235,25 @@ void main() {
       );
       expect(target.isSpent, isTrue);
       expect(target.presentStatus, isNull);
+    });
+
+    test('reports an sRGB format and carries a background', () async {
+      await gpu.initializeGpuBackend();
+      final plain = ExternalRenderTarget.allocate(width: 4, height: 4);
+      expect(plain.encodesSrgb, isFalse);
+      expect(plain.backgroundColor, isNull);
+      expect(plain.isSpent, isFalse);
+      final srgb = ExternalRenderTarget.texture(
+        gpu.gpuContext.createTexture(
+          gpu.StorageMode.devicePrivate,
+          4,
+          4,
+          format: gpu.PixelFormat.r8g8b8a8UNormIntSRGB,
+        ),
+        backgroundColor: const Color(0xFF000000),
+      );
+      expect(srgb.encodesSrgb, isTrue);
+      expect(srgb.backgroundColor, const Color(0xFF000000));
     });
   });
 }
