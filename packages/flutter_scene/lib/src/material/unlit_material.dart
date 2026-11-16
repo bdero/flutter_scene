@@ -123,15 +123,18 @@ class UnlitMaterial extends Material {
       fragmentShader.cachedUniformSlot('TextureTransform'),
       transientsBuffer.emplace(ByteData.sublistView(transform)),
     );
+    final resolved = resolveTextureSource(baseColorTexture);
     pass.bindTexture(
       fragmentShader.cachedUniformSlot('base_color_texture'),
-      Material.whitePlaceholder(resolveTextureSource(baseColorTexture)),
-      sampler:
-          textureSourceSampler(baseColorTexture) ??
-          gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat,
-          ),
+      Material.whitePlaceholder(resolved),
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(baseColorTexture) ??
+            gpu.SamplerOptions(
+              widthAddressMode: gpu.SamplerAddressMode.repeat,
+              heightAddressMode: gpu.SamplerAddressMode.repeat,
+            ),
+      ),
     );
     // The unlit shader carries the FogInfo block (fog.glsl) too.
     EngineLightingUniforms.bindFog(

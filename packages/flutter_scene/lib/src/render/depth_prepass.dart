@@ -18,7 +18,8 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart'
     show Geometry, bindUnskinnedFrameInfo;
-import 'package:flutter_scene/src/material/material.dart' show Material;
+import 'package:flutter_scene/src/material/material.dart'
+    show Material, samplerOrPlaceholder;
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
@@ -604,12 +605,15 @@ class _DepthPrepassEncoder {
             .toDouble();
       // A surface fragment takes its roughness from Surface() instead.
       if (surfaceShader == null) {
+        final roughness = item.material.reflectionRoughnessTexture;
         _renderPass.bindTexture(
           fragmentShader.cachedUniformSlot('metallic_roughness_texture'),
-          Material.whitePlaceholder(item.material.reflectionRoughnessTexture),
-          sampler:
-              item.material.reflectionRoughnessTextureSampler ??
-              _roughnessSampler,
+          Material.whitePlaceholder(roughness),
+          sampler: samplerOrPlaceholder(
+            roughness,
+            item.material.reflectionRoughnessTextureSampler ??
+                _roughnessSampler,
+          ),
         );
       }
     }

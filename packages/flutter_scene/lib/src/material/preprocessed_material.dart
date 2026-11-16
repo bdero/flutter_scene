@@ -629,10 +629,14 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       transientsBuffer.emplace(ByteData.sublistView(values)),
     );
     final source = _depthMaskTexture;
+    final resolved = resolveTextureSource(source);
     pass.bindTexture(
       shader.cachedUniformSlot('mask_texture'),
-      Material.whitePlaceholder(resolveTextureSource(source)),
-      sampler: textureSourceSampler(source) ?? _depthMaskSampler,
+      Material.whitePlaceholder(resolved),
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(source) ?? _depthMaskSampler,
+      ),
     );
   }
 
