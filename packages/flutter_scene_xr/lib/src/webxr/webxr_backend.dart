@@ -85,11 +85,52 @@ abstract interface class WebXrBackendSession {
   /// Whether `XRWebGLBinding.createProjectionLayer` exists.
   bool get projectionLayersSupported;
 
-  /// Creates an `XRWebGLLayer` and installs it as the base layer.
-  WebXrBackendLayer createBaseLayer();
+  /// The scale at which the eye images match the display's own resolution
+  /// (`XRWebGLLayer.getNativeFramebufferScaleFactor`), 1.0 when unknown.
+  double get nativeScaleFactor;
 
-  /// Creates an `XRProjectionLayer` and installs it as the only layer.
-  WebXrBackendLayer createProjectionLayer();
+  /// Creates an `XRWebGLLayer` at [scale] times the recommended size
+  /// (`framebufferScaleFactor`) and installs it as the base layer, from the
+  /// next frame on.
+  WebXrBackendLayer createBaseLayer({double scale = 1.0});
+
+  /// Creates an `XRProjectionLayer` at [scale] times the recommended size
+  /// (`scaleFactor`) and installs it as the only layer, from the next frame
+  /// on.
+  WebXrBackendLayer createProjectionLayer({double scale = 1.0});
+
+  /// Whether quad and cylinder layers can be created, which takes the
+  /// `layers` feature and `XRWebGLBinding.createQuadLayer`.
+  bool get compositionLayersSupported;
+
+  /// `XRWebGLBinding.createQuadLayer`, [width] by [height] meters edge to
+  /// edge, at [pose] in [space].
+  WebXrBackendCompositionLayer createQuadLayer({
+    required WebXrBackendSpace space,
+    required XrPose pose,
+    required int pixelWidth,
+    required int pixelHeight,
+    required double width,
+    required double height,
+  });
+
+  /// `XRWebGLBinding.createCylinderLayer`.
+  WebXrBackendCompositionLayer createCylinderLayer({
+    required WebXrBackendSpace space,
+    required XrPose pose,
+    required int pixelWidth,
+    required int pixelHeight,
+    required double radius,
+    required double centralAngle,
+    required double aspectRatio,
+  });
+
+  /// `updateRenderState({layers})` with [projection] at the bottom and
+  /// [layers] over it in order, from the next frame on.
+  void setLayers(
+    WebXrBackendLayer projection,
+    List<WebXrBackendCompositionLayer> layers,
+  );
 
   /// `requestAnimationFrame`.
   int requestAnimationFrame(WebXrFrameCallback callback);
@@ -198,6 +239,28 @@ abstract interface class WebXrBackendLayer {
   /// Copies [image], the platform image of the frame's color target (an
   /// `ImageBitmap` on the web), onto the layer's surface.
   void present(Object image);
+}
+
+/// An `XRQuadLayer` or `XRCylinderLayer`.
+abstract interface class WebXrBackendCompositionLayer {
+  /// `needsRedraw`.
+  bool get needsRedraw;
+
+  /// Sets `transform`.
+  void setPose(XrPose pose);
+
+  /// Sets a quad's size in meters, edge to edge.
+  void setQuadSize(double width, double height);
+
+  /// Sets a cylinder's `radius`, `centralAngle` and `aspectRatio`.
+  void setCylinderShape(double radius, double centralAngle, double aspectRatio);
+
+  /// `XRWebGLBinding.getSubImage` for [frame], the texture this frame's
+  /// image is drawn into.
+  WebXrViewTarget subImage(WebXrBackendFrame frame);
+
+  /// `destroy`.
+  void destroy();
 }
 
 /// An `XRView`.

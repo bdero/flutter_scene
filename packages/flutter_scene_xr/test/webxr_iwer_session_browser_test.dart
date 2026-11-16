@@ -319,6 +319,36 @@ void main() {
     },
   );
 
+  test('a render scale resizes the frames the session owns', () async {
+    final session = await startSession(
+      const XrSessionRequest(
+        mode: XrSessionMode.immersiveVr,
+        referenceSpaces: [XrReferenceSpaceType.localFloor],
+        renderScale: 0.5,
+      ),
+    );
+    // The emulated layer is the window's size and has no framebuffer, so
+    // the session renders into its own texture and scales that.
+    expect(session.renderScale, 0.5);
+    expect(session.maxRenderScale, 1.0);
+    final half = await nextFrame(session);
+    final (halfWidth, halfHeight) = (half.targetWidth!, half.targetHeight!);
+
+    session.renderScale = 1.0;
+    final full = await nextFrame(session, skip: 1);
+    expect(full.targetWidth! / halfWidth, closeTo(2.0, 0.01));
+    expect(full.targetHeight! / halfHeight, closeTo(2.0, 0.01));
+    // The eyes keep their halves of the smaller image.
+    _expectRect(half.views[0].viewport, const Rect.fromLTWH(0, 0, 0.5, 1));
+    _expectRect(full.views[1].viewport, const Rect.fromLTWH(0.5, 0, 0.5, 1));
+
+    // Past the display's own resolution there is nothing to gain.
+    session.renderScale = 3.0;
+    expect(session.renderScale, 1.0);
+    // The emulated runtime has no layers module.
+    expect(session.layers, isNull);
+  });
+
   // Last in the file, since it uninstalls the runtime.
   test(
     'end() stops frames, removes the canvas, and uninstall withdraws support',

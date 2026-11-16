@@ -23,6 +23,38 @@ final loop = XrSceneLoop(
 await session.ended;
 ```
 
+## Render scale
+
+`XrSession.renderScale` sizes the eye images as a multiple of what the runtime recommends. Lower it when frames run long, or raise it toward `maxRenderScale` for a sharper image. A new value applies from a following frame, and `XrSessionRequest.renderScale` sets the size a session starts at.
+
+```dart
+session.renderScale = 0.8;
+```
+
+## Composition layers
+
+A panel of text drawn into the eye images is resampled twice and judders when the scene misses a frame. A composition layer is an image the runtime's compositor places in the world itself, at its own resolution, redrawn only when its content changes. `XrSession.layers` is non-null when the runtime granted them (request `XrFeatures.layers` on WebXR).
+
+```dart
+final panel = session.layers?.createQuadLayer(
+  pixelWidth: 1024,
+  pixelHeight: 512,
+  width: 1.0,
+  height: 0.5,
+  pose: XrPose(position: Vector3(0, 1.4, -1.2)),
+);
+session.frames.listen((frame) {
+  if (panel == null || !(panel.needsRedraw || contentChanged)) return;
+  final target = panel.acquireTarget();
+  if (target == null) return;
+  panelScene.renderViewsToTargets([
+    RenderViewGroup([RenderView(camera: flat, externalTarget: target)]),
+  ]);
+});
+```
+
+The image is whatever a scene renders, so a panel of Flutter widgets is a small scene holding one `WidgetComponent` under an orthographic camera.
+
 ## Running the example
 
 The `XR` page of the example app (`examples/flutter_app`) shows a small lit scene with an in-world widget panel and offers Enter VR and Enter AR when the browser supports them.
@@ -35,6 +67,8 @@ Immersive sessions need a user gesture to start and a secure context, so a `flut
 
 ## Testing
 
-The runtime is tested against an emulated headset, the Immersive Web Emulation Runtime (vendored under `third_party/iwer/`, MIT), installed over `navigator.xr` from a script. `flutter test --platform chrome` (add `--wasm` for dart2wasm) runs the browser tests in `test/`, which drive the real js_interop runtime through emulated sessions: frames, viewports, projections, poses, controllers, hands, AR features and session end. `flutter test` on the VM runs the contract and fake-backend tests. The rendering path is covered by the `webxr_emulated_*` scenes of `examples/smoke_render` on its web lane, which render through an emulated session and compare the frame to the same pair placed by hand.
+The runtime is tested against an emulated headset, the Immersive Web Emulation Runtime (vendored under `third_party/iwer/`, MIT), installed over `navigator.xr` from a script. `flutter test --platform chrome` (add `--wasm` for dart2wasm) runs the browser tests in `test/`, which drive the real js_interop runtime through emulated sessions: frames, viewports, projections, poses, controllers, hands, AR features and session end. `flutter test` on the VM runs the contract and fake-backend tests. The rendering path is covered by the `webxr_emulated_*` scenes of `examples/smoke_render` on its web lane, which render through an emulated session and compare the frame to the same pair placed by hand, at full and at half render scale.
+
+No emulator implements the WebXR layers module, so composition layers are tested against a fake browser only and still need a headset to be seen working.
 
 A headset remains a manual check; nothing here replaces one.

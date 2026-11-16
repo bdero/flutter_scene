@@ -80,6 +80,16 @@ JSArray<JSString> _strings(List<String> values) =>
 web.DOMPointInit _point(Vector3 v, double w) =>
     web.DOMPointInit(x: v.x, y: v.y, z: v.z, w: w);
 
+web.XRRigidTransform _rigidTransform(XrPose pose) => web.XRRigidTransform(
+  _point(pose.position, 1.0),
+  web.DOMPointInit(
+    x: pose.orientation.x,
+    y: pose.orientation.y,
+    z: pose.orientation.z,
+    w: pose.orientation.w,
+  ),
+);
+
 void _copyTransform(web.XRRigidTransform transform, XrPose out) {
   final p = transform.position;
   final o = transform.orientation;
@@ -163,6 +173,10 @@ final class JsWebXrSession implements WebXrBackendSession {
   WebXrFrameCallback? _frameCallback;
   JSFunction? _frameListener;
   _PresentationCanvas? _presentation;
+  XRWebGLBinding? _binding;
+
+  XRWebGLBinding get _layersBinding =>
+      _binding ??= XRWebGLBinding(_session, _gl);
 
   JSFunction _selectListener(WebXrSelectKind kind, WebXrSelectPhase phase) =>
       ((web.XRInputSourceEvent event) {
@@ -210,8 +224,18 @@ final class JsWebXrSession implements WebXrBackendSession {
   bool get projectionLayersSupported => globalContext.has('XRWebGLBinding');
 
   @override
-  WebXrBackendLayer createBaseLayer() {
-    var layer = _createWebGlLayer(_gl);
+  double get nativeScaleFactor {
+    try {
+      final factor = XRWebGLLayer.getNativeFramebufferScaleFactor(_session);
+      return factor.isFinite && factor > 0.0 ? factor : 1.0;
+    } catch (_) {
+      return 1.0;
+    }
+  }
+
+  @override
+  WebXrBackendLayer createBaseLayer({double scale = 1.0}) {
+    var layer = _createWebGlLayer(_gl, scale);
     _PresentationCanvas? presentation;
     if (layer.framebuffer == null) {
       // The layer draws to its context's canvas. The shim renders to an
@@ -220,7 +244,7 @@ final class JsWebXrSession implements WebXrBackendSession {
       // emulated runtime take this path; an immersive layer on a headset has a
       // framebuffer.
       presentation = _presentation ??= _PresentationCanvas();
-      layer = _createWebGlLayer(presentation.gl);
+      layer = _createWebGlLayer(presentation.gl, scale);
     }
     final state = XRRenderStateInit();
     state['baseLayer'] = layer;
@@ -232,28 +256,99 @@ final class JsWebXrSession implements WebXrBackendSession {
   // own transient, so the layer needs no depth attachment.
   // TODO(xr-depth): write the layer's depth (ignoreDepthValues false, a depth
   // copy pass) so the compositor can reproject.
-  XRWebGLLayer _createWebGlLayer(web.WebGL2RenderingContext gl) => XRWebGLLayer(
-    _session,
-    gl,
-    XRWebGLLayerInit(
-      antialias: false,
-      depth: false,
-      stencil: false,
-      alpha: true,
-      ignoreDepthValues: true,
-    ),
-  );
+  XRWebGLLayer _createWebGlLayer(web.WebGL2RenderingContext gl, double scale) =>
+      XRWebGLLayer(
+        _session,
+        gl,
+        XRWebGLLayerInit(
+          antialias: false,
+          depth: false,
+          stencil: false,
+          alpha: true,
+          ignoreDepthValues: true,
+          framebufferScaleFactor: scale,
+        ),
+      );
 
   @override
-  WebXrBackendLayer createProjectionLayer() {
-    final binding = XRWebGLBinding(_session, _gl);
+  WebXrBackendLayer createProjectionLayer({double scale = 1.0}) {
+    final binding = _layersBinding;
     final layer = binding.createProjectionLayer(
-      XRProjectionLayerInit(textureType: 'texture'),
+      XRProjectionLayerInit(textureType: 'texture', scaleFactor: scale),
     );
     final state = XRRenderStateInit();
     state['layers'] = [layer].toJS;
     _session.updateRenderState(state);
     return _JsProjectionLayer(binding, layer);
+  }
+
+  @override
+  bool get compositionLayersSupported {
+    final binding = globalContext.getProperty<JSObject?>('XRWebGLBinding'.toJS);
+    final prototype = binding?.getProperty<JSObject?>('prototype'.toJS);
+    return prototype != null && prototype.has('createQuadLayer');
+  }
+
+  // TODO(xr-layers): quad and cylinder layers are untested on a headset; no
+  // emulator implements the layers module.
+  JSObject _layerInit(
+    WebXrBackendSpace space,
+    XrPose pose,
+    int pixelWidth,
+    int pixelHeight,
+  ) => JSObject()
+    ..['space'] = (space as _JsSpace).space
+    ..['transform'] = _rigidTransform(pose)
+    ..['viewPixelWidth'] = pixelWidth.toJS
+    ..['viewPixelHeight'] = pixelHeight.toJS
+    ..['layout'] = 'mono'.toJS
+    ..['textureType'] = 'texture'.toJS;
+
+  @override
+  WebXrBackendCompositionLayer createQuadLayer({
+    required WebXrBackendSpace space,
+    required XrPose pose,
+    required int pixelWidth,
+    required int pixelHeight,
+    required double width,
+    required double height,
+  }) {
+    final binding = _layersBinding;
+    final init = _layerInit(space, pose, pixelWidth, pixelHeight)
+      ..['width'] = (width * _quadExtentScale).toJS
+      ..['height'] = (height * _quadExtentScale).toJS;
+    return _JsCompositionLayer(binding, binding.createQuadLayer(init));
+  }
+
+  @override
+  WebXrBackendCompositionLayer createCylinderLayer({
+    required WebXrBackendSpace space,
+    required XrPose pose,
+    required int pixelWidth,
+    required int pixelHeight,
+    required double radius,
+    required double centralAngle,
+    required double aspectRatio,
+  }) {
+    final binding = _layersBinding;
+    final init = _layerInit(space, pose, pixelWidth, pixelHeight)
+      ..['radius'] = radius.toJS
+      ..['centralAngle'] = centralAngle.toJS
+      ..['aspectRatio'] = aspectRatio.toJS;
+    return _JsCompositionLayer(binding, binding.createCylinderLayer(init));
+  }
+
+  @override
+  void setLayers(
+    WebXrBackendLayer projection,
+    List<WebXrBackendCompositionLayer> layers,
+  ) {
+    final state = XRRenderStateInit();
+    state['layers'] = <XRLayer>[
+      (projection as _JsProjectionLayer).layer,
+      for (final layer in layers) (layer as _JsCompositionLayer).layer,
+    ].toJS;
+    _session.updateRenderState(state);
   }
 
   @override
@@ -435,6 +530,78 @@ final class _JsProjectionLayer implements WebXrBackendLayer {
       viewportHeight: viewport.height,
     );
   }
+}
+
+// What a quad's size in meters is multiplied by for `XRQuadLayer.width` and
+// `height`. Shipping headset browsers place the quad's edges that far from
+// its center on each side, so the attributes are half the size.
+// TODO(xr-layers): confirm on a headset; the Layers draft only says "the
+// width and height of the layer in meters".
+const double _quadExtentScale = 0.5;
+
+final class _JsCompositionLayer implements WebXrBackendCompositionLayer {
+  _JsCompositionLayer(this.binding, this.layer);
+
+  final XRWebGLBinding binding;
+  final XRCompositionLayer layer;
+
+  @override
+  bool get needsRedraw => layer.needsRedraw;
+
+  @override
+  void setPose(XrPose pose) => layer.transform = _rigidTransform(pose);
+
+  @override
+  void setQuadSize(double width, double height) {
+    layer['width'] = (width * _quadExtentScale).toJS;
+    layer['height'] = (height * _quadExtentScale).toJS;
+  }
+
+  @override
+  void setCylinderShape(
+    double radius,
+    double centralAngle,
+    double aspectRatio,
+  ) {
+    layer['radius'] = radius.toJS;
+    layer['centralAngle'] = centralAngle.toJS;
+    layer['aspectRatio'] = aspectRatio.toJS;
+  }
+
+  @override
+  WebXrViewTarget subImage(WebXrBackendFrame frame) {
+    final XRWebGLSubImage sub;
+    try {
+      sub = binding.getSubImage(layer, (frame as _JsFrame).frame);
+    } catch (_) {
+      // A layer installed this frame is not composited until the next, and
+      // has no image before then.
+      return const WebXrViewTarget(
+        handle: null,
+        kind: gpu.ExternalTargetHandleKind.texture,
+        width: 0,
+        height: 0,
+        x: 0,
+        y: 0,
+        viewportWidth: 0,
+        viewportHeight: 0,
+      );
+    }
+    final viewport = sub.viewport;
+    return WebXrViewTarget(
+      handle: sub.colorTexture,
+      kind: gpu.ExternalTargetHandleKind.texture,
+      width: sub.colorTextureWidth,
+      height: sub.colorTextureHeight,
+      x: viewport.x,
+      y: viewport.y,
+      viewportWidth: viewport.width,
+      viewportHeight: viewport.height,
+    );
+  }
+
+  @override
+  void destroy() => layer.destroy();
 }
 
 final class _JsView implements WebXrBackendView {
@@ -690,15 +857,7 @@ final class _JsFrame implements WebXrBackendFrame {
     XrPose pose,
     WebXrBackendSpace space,
   ) async {
-    final transform = web.XRRigidTransform(
-      _point(pose.position, 1.0),
-      web.DOMPointInit(
-        x: pose.orientation.x,
-        y: pose.orientation.y,
-        z: pose.orientation.z,
-        w: pose.orientation.w,
-      ),
-    );
+    final transform = _rigidTransform(pose);
     try {
       return _JsAnchor(
         await frame.createAnchor(transform, (space as _JsSpace).space).toDart,

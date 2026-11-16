@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Color;
 
 import 'package:flutter_scene/scene.dart';
 
@@ -11,8 +12,9 @@ import 'package:flutter_scene_xr/src/xr_session.dart';
 ///
 /// Each frame, in order: the rig takes the frame's poses, [input] publishes
 /// the frame's controllers, [onTick] runs, the scene updates by the time
-/// between predicted display times, [onBeforeRender] runs, and the rig's
-/// views render into the frame's targets as one `RenderViewGroup`.
+/// between predicted display times, [onBeforeRender] runs, the rig's views
+/// render into the frame's targets as one `RenderViewGroup`, and the frame
+/// hears the result through `XrFrame.submit`.
 ///
 /// Nothing here paints a widget, so a scene with `WidgetComponent`s needs a
 /// `WidgetHost` (or a `SceneView` of the same scene) in the app's widget
@@ -27,6 +29,7 @@ class XrSceneLoop {
     this.input,
     this.pixelRatio = 1.0,
     this.maxDeltaSeconds = 0.1,
+    this.backgroundColor,
     this.onTick,
     this.onBeforeRender,
   });
@@ -50,6 +53,15 @@ class XrSceneLoop {
   /// The longest step `Scene.update` is given, so a pause does not become
   /// one giant tick.
   final double maxDeltaSeconds;
+
+  /// A color put behind the scene in every eye, or null to leave each
+  /// target's own (see `ExternalRenderTarget.backgroundColor`).
+  ///
+  /// An opaque session shows the scene's clear pixels as whatever the
+  /// runtime does with zero alpha, so a scene without a skybox usually wants
+  /// an opaque color here. Leave it null for passthrough, where clear pixels
+  /// are the world.
+  Color? backgroundColor;
 
   /// Runs after the rig and input took the frame, before the scene updates.
   void Function(XrFrame frame, double deltaSeconds)? onTick;
@@ -101,13 +113,21 @@ class XrSceneLoop {
     scene.update(deltaSeconds);
     onBeforeRender?.call(frame, views);
     if (!frame.hasTargets) {
-      _lastCompletion = FrameCompletion.skipped();
+      frame.submit(_lastCompletion = FrameCompletion.skipped());
       return;
     }
-    _lastCompletion = scene.renderViewsToTargets(
+    final background = backgroundColor;
+    if (background != null) {
+      for (final view in views) {
+        view.externalTarget?.backgroundColor = background;
+      }
+    }
+    final completion = scene.renderViewsToTargets(
       _groups ??= [RenderViewGroup(rig.views)],
       pixelRatio: pixelRatio,
     );
+    _lastCompletion = completion;
     _framesRendered++;
+    frame.submit(completion);
   }
 }

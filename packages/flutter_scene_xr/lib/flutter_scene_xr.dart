@@ -18,6 +18,13 @@ export 'src/features/hit_test.dart'
         XrHitTestSource,
         XrHitTestViewerOrigin,
         XrHitTesting;
+export 'src/features/layers.dart'
+    show
+        XrCompositionLayer,
+        XrCylinderLayer,
+        XrLayerSpace,
+        XrLayers,
+        XrQuadLayer;
 export 'src/features/light_estimation.dart'
     show XrLightEstimate, XrLightEstimation;
 export 'src/features/planes.dart'

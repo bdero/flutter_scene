@@ -148,6 +148,7 @@ extension type XRWebGLLayer._(JSObject _) implements XRLayer, JSObject {
   external int get framebufferWidth;
   external int get framebufferHeight;
   external web.XRViewport? getViewport(XRView view);
+  external static double getNativeFramebufferScaleFactor(XRSession session);
 }
 
 /// `XRWebGLBinding` (Layers module).
@@ -164,6 +165,17 @@ extension type XRWebGLBinding._(JSObject _) implements JSObject {
     XRProjectionLayer layer,
     XRView view,
   );
+  external XRCompositionLayer createQuadLayer(JSObject init);
+  external XRCompositionLayer createCylinderLayer(JSObject init);
+  external XRWebGLSubImage getSubImage(XRCompositionLayer layer, XRFrame frame);
+}
+
+/// `XRCompositionLayer` (Layers module), here an `XRQuadLayer` or an
+/// `XRCylinderLayer`. Their shape attributes are set by name.
+extension type XRCompositionLayer._(JSObject _) implements XRLayer, JSObject {
+  external bool get needsRedraw;
+  external set transform(web.XRRigidTransform value);
+  external void destroy();
 }
 
 /// `XRProjectionLayerInit`.
