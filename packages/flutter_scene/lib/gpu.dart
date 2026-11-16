@@ -34,6 +34,10 @@ export 'src/gpu/gpu.dart'
         Texture,
         PixelFormat,
         ExternalTargetHandleKind,
+        // What an ExternalRenderTarget.surfaceFrame leases and reports.
+        GpuSurface,
+        GpuSurfaceFrame,
+        GpuPresentStatus,
         SamplerOptions,
         MinMagFilter,
         MipFilter,

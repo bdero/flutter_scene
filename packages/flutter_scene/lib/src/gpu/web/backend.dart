@@ -134,6 +134,13 @@ abstract base class GpuContext {
     int layerCount = 1,
   });
   bool supportsTextureCompression(TextureCompressionFamily family);
+
+  /// Creates a surface whose presented frames Flutter draws as a `ui.Image`.
+  GpuImageSurface createImageSurface(
+    int width,
+    int height, {
+    PixelFormat? format,
+  }) => GpuImageSurface._(this, width, height, format ?? defaultColorFormat);
   CommandBuffer createCommandBuffer();
   RenderPipeline createRenderPipeline(
     Shader vertexShader,
