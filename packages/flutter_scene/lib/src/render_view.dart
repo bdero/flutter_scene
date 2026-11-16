@@ -124,13 +124,13 @@ class RenderView {
 ///
 /// A stereo pair is the common case. Its two views are 6 cm apart and see
 /// almost the same world, so the group culls against one frustum containing
-/// both ([sharedCulling], see [RenderView.cullingFrustum]) and fits the
-/// directional shadow cascades once from the same combined volume
-/// ([sharedShadowFit]), which also keeps the shadows identical between the
-/// eyes. Everything per view (post-processing, temporal history, the depth
-/// fit) stays per view. Views whose orientations differ by more than a few
-/// degrees fall back to per-view culling and fitting, since one frustum
-/// would then be far larger than either.
+/// both ([sharedCulling], see [RenderView.cullingFrustum]), and fits the
+/// directional shadow cascades once from the same combined volume and renders
+/// the shadow atlas once ([sharedShadows]), which also keeps the shadows
+/// identical between the eyes. Everything per view (post-processing, temporal
+/// history, the depth fit) stays per view. Views whose orientations differ by
+/// more than a few degrees fall back to per-view culling and shadows, since
+/// one frustum would then be far larger than either.
 ///
 /// A plain list of views passed to `Scene.renderViews` is one group per
 /// view, which is the split-screen behavior.
@@ -140,7 +140,7 @@ class RenderViewGroup {
   RenderViewGroup(
     this.views, {
     this.sharedCulling = true,
-    this.sharedShadowFit = true,
+    this.sharedShadows = true,
   }) : assert(views.isNotEmpty, 'A RenderViewGroup needs at least one view');
 
   /// The views, in the order they render.
@@ -149,6 +149,10 @@ class RenderViewGroup {
   /// Whether every view culls against one frustum containing them all.
   final bool sharedCulling;
 
-  /// Whether the directional shadow cascades are fitted once for the group.
-  final bool sharedShadowFit;
+  /// Whether the group's shadows are fitted and rendered once, by its first
+  /// view, and sampled by the rest.
+  ///
+  /// A material that displaces shadow casters relative to the camera sees
+  /// the first view's camera in every view's shadows.
+  final bool sharedShadows;
 }
