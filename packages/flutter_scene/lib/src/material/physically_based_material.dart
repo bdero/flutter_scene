@@ -1815,7 +1815,10 @@ class PhysicallyBasedMaterial extends Material {
       normal
           ? Material.normalPlaceholder(resolved)
           : Material.whitePlaceholder(resolved),
-      sampler: textureSourceSampler(source) ?? _repeatSampler,
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(source) ?? _repeatSampler,
+      ),
     );
   }
 
@@ -1866,10 +1869,14 @@ class PhysicallyBasedMaterial extends Material {
       shader.cachedUniformSlot('MaskInfo'),
       transientsBuffer.emplace(ByteData.sublistView(params)),
     );
+    final resolved = resolveTextureSource(baseColorTexture);
     pass.bindTexture(
       shader.cachedUniformSlot('mask_texture'),
-      Material.whitePlaceholder(resolveTextureSource(baseColorTexture)),
-      sampler: textureSourceSampler(baseColorTexture) ?? _repeatSampler,
+      Material.whitePlaceholder(resolved),
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(baseColorTexture) ?? _repeatSampler,
+      ),
     );
   }
 

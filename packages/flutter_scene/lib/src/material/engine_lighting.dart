@@ -667,7 +667,7 @@ class EngineLightingUniforms {
       pass.bindTexture(
         shader.cachedUniformSlot('ssao_texture'),
         Material.whitePlaceholder(lighting.ssaoMap),
-        sampler: _clampLinearSampler,
+        sampler: samplerOrPlaceholder(lighting.ssaoMap, _clampLinearSampler),
       );
     }
   }
@@ -707,7 +707,7 @@ class EngineLightingUniforms {
     pass.bindTexture(
       shader.cachedUniformSlot('ssao_texture'),
       Material.whitePlaceholder(lighting.ssaoMap),
-      sampler: _clampLinearSampler,
+      sampler: samplerOrPlaceholder(lighting.ssaoMap, _clampLinearSampler),
     );
   }
 
@@ -789,14 +789,20 @@ class EngineLightingUniforms {
       pass.bindTexture(
         shader.cachedUniformSlot('scene_opaque_color'),
         Material.whitePlaceholder(lighting.opaqueSceneColor),
-        sampler: _clampLinearSampler,
+        sampler: samplerOrPlaceholder(
+          lighting.opaqueSceneColor,
+          _clampLinearSampler,
+        ),
       );
     }
     if (sceneInputs.contains(RenderInput.filteredSceneColor)) {
       pass.bindTexture(
         shader.cachedUniformSlot('scene_filtered_color'),
         Material.whitePlaceholder(lighting.filteredSceneColor),
-        sampler: _clampLinearSampler,
+        sampler: samplerOrPlaceholder(
+          lighting.filteredSceneColor,
+          _clampLinearSampler,
+        ),
       );
     }
     if (sceneInputs.contains(RenderInput.depth)) {

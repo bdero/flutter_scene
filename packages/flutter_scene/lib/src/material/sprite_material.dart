@@ -122,10 +122,14 @@ class SpriteMaterial extends Material {
       fragmentShader.cachedUniformSlot('FragInfo'),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
     );
+    final resolved = resolveTextureSource(colorTexture);
     pass.bindTexture(
       fragmentShader.cachedUniformSlot('base_color_texture'),
-      Material.whitePlaceholder(resolveTextureSource(colorTexture)),
-      sampler: textureSourceSampler(colorTexture) ?? sampler,
+      Material.whitePlaceholder(resolved),
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(colorTexture) ?? sampler,
+      ),
     );
     // Always bound (a white placeholder when the prepass did not run) so the
     // sampler is never left dangling; the fade is disabled in that case.

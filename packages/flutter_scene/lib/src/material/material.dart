@@ -55,6 +55,23 @@ gpu.Texture? resolveTextureSource(TextureSource? source) =>
 gpu.SamplerOptions? textureSourceSampler(TextureSource? source) =>
     source?.sampledSampler;
 
+/// The sampler a shared placeholder texture binds with.
+///
+/// GLES keeps sampler state on the texture object, so a placeholder bound to
+/// several slots of one draw is sampled with whichever sampler was applied
+/// last. Point sampling reads its single texel exactly, so binding every
+/// placeholder this way keeps each slot's result independent of bind order.
+@internal
+final gpu.SamplerOptions placeholderSampler = gpu.SamplerOptions();
+
+/// [sampler], or [placeholderSampler] when [texture] is null and a
+/// placeholder fills the slot.
+@internal
+gpu.SamplerOptions samplerOrPlaceholder(
+  gpu.Texture? texture,
+  gpu.SamplerOptions sampler,
+) => texture == null ? placeholderSampler : sampler;
+
 /// Base class for shading a [MeshPrimitive].
 ///
 /// A material owns the fragment shader plus any per-material parameters
