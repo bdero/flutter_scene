@@ -131,7 +131,8 @@ void createGeneratedAssetsDirectory(
       directory.resolve(generatedAssetsGitignoreFileName),
     );
     if (gitignore.existsSync() &&
-        gitignore.readAsStringSync() == generatedAssetsGitignore) {
+        gitignore.readAsStringSync().replaceAll('\r\n', '\n') ==
+            generatedAssetsGitignore.replaceAll('\r\n', '\n')) {
       continue;
     }
     writeGeneratedString(gitignore.uri, generatedAssetsGitignore);
