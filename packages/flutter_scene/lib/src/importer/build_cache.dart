@@ -14,6 +14,8 @@ import 'dart:isolate';
 
 import 'package:hooks/hooks.dart';
 
+import '../generated_assets/lighting_features.dart';
+
 /// Bump when the hooks' generated output changes for the same inputs and the
 /// code that caused it is not covered by a generator fingerprint (see
 /// [sceneGeneratorFingerprint]), so outputs cached by an older flutter_scene
@@ -62,6 +64,7 @@ final class HookOptions {
     this.strictHashing = false,
     this.rebuildEverything = false,
     this.debugViews = false,
+    this.compiledOutLightingFeatures = const {},
   });
 
   /// Reads the options declared for the package [input] is building.
@@ -77,6 +80,10 @@ final class HookOptions {
     debugViews:
         input.userDefines['debug_views'] == true ||
         input.userDefines['flutter_scene_debug_views'] == true,
+    compiledOutLightingFeatures: parseCompiledOutLightingFeatures(
+      input.userDefines['lighting_features'] ??
+          input.userDefines['flutter_scene_lighting_features'],
+    ),
   );
 
   static bool _flag(BuildInput input, String define, String environment) =>
@@ -91,6 +98,11 @@ final class HookOptions {
 
   /// Compile the surface debug views into the engine's shaders and materials.
   final bool debugViews;
+
+  /// The lighting features compiled out of the engine's lit shaders and the
+  /// materials, from `lighting_features` (flutter_scene's own hook) or
+  /// `flutter_scene_lighting_features` (an app hook).
+  final Set<LightingFeature> compiledOutLightingFeatures;
 }
 
 /// Whether the cache is disabled via [kDisableBuildCacheEnv].

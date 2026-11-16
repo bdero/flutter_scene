@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/generated_assets/generated_assets.dart'
     show debugViewsEntrySuffix;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/generated_assets/lighting_features.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/dfg_lut.dart';
 import 'package:flutter_scene/src/material/dfg_lut_data.dart';
@@ -480,8 +481,9 @@ abstract class Material {
   // inside the first draw that uses it, so there is nothing to wait on; a
   // runtime tier switch costs that draw's frame unless warmUp compiled both
   // tiers (Scene.warmUp's allShadingTiers).
-  // TODO(lean-lighting-pruning): a hook user-define that leaves the full or
-  // the lean entries out of the bundle for apps that never need them.
+  // TODO(lean-lighting-pruning): leave the lean twins out of the bundle when
+  // `lighting_features` compiles out all six features, since the full entries
+  // are then identical.
   @internal
   bool usesLeanVariant(Lighting lighting) {
     final lean = _leanShaders;
@@ -491,7 +493,11 @@ abstract class Material {
     if (override != null) return override;
     if (!lighting.allowsLeanShading) return false;
     final env = drawEnvironment(lighting);
-    return env.parallaxBoxCenter == null || env.parallaxBoxHalfExtents == null;
+    return env.parallaxBoxCenter == null ||
+        env.parallaxBoxHalfExtents == null ||
+        compiledOutLightingFeatures.contains(
+          LightingFeature.parallaxReflection,
+        );
   }
 
   gpu.Shader? _radianceCubeFragmentShader;

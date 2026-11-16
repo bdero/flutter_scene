@@ -11,7 +11,7 @@ import 'package:flutter_scene/src/fmat/build_materials.dart'
 import 'package:flutter_scene/src/fmat/fmat.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/generated_assets/build_engine_assets.dart'
-    show wrapDebugViewsManifest;
+    show wrapEngineManifest;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/geometry/geometry.dart';
 // ignore: implementation_imports
@@ -385,7 +385,7 @@ void main() {
       source('sky.frag', '// No material_debug.glsl here.\nvoid main() {}\n');
       source('mesh.vert', '#include <material_debug.glsl>\nvoid main() {}\n');
 
-      final wrapped = wrapDebugViewsManifest(
+      final wrapped = wrapEngineManifest(
         {
           'StandardFragment': {'type': 'fragment', 'file': 'shaders/lit.frag'},
           'SkyFragment': {'type': 'fragment', 'file': 'shaders/sky.frag'},
@@ -393,6 +393,7 @@ void main() {
         },
         wrappers.uri,
         shaders.uri,
+        debugViews: true,
       );
       String file(String key) => (wrapped[key] as Map)['file'] as String;
       String wrapper(String key) =>
