@@ -3103,7 +3103,11 @@ base class Scene implements SceneGraph {
   // Renders [view] into the region of its external target. A view filling
   // the whole target at its native size renders straight into it; any other
   // renders into a ring texture of the region's size and copies into place,
-  // so views sharing one image never clear each other.
+  // so views sharing one image never clear each other. The copy is also
+  // where a background goes under the image and where an sRGB target gets
+  // linear color, so a target wanting either always takes it.
+  // TODO(xr-output-fold): fold the background and the sRGB decode into the
+  // last display step, so a full-size sRGB target renders without the copy.
   void _renderViewToExternal({
     required RenderView view,
     required int viewIndex,
@@ -3123,7 +3127,11 @@ base class Scene implements SceneGraph {
       math.max(1.0, (region.height * scale).ceilToDouble()),
     );
     final viewportSize = region.size / pixelRatio;
+    final background = target.backgroundColor;
+    final decodeSrgb = target.encodesSrgb;
     final direct =
+        background == null &&
+        !decodeSrgb &&
         region.left == 0 &&
         region.top == 0 &&
         region.width == target.width &&
@@ -3151,7 +3159,13 @@ base class Scene implements SceneGraph {
       groupShared: groupShared,
     );
     if (!direct) {
-      copyTextureToRegion(output, target.color, region);
+      copyTextureToRegion(
+        output,
+        target.color,
+        region,
+        background: background,
+        decodeSrgb: decodeSrgb,
+      );
     }
   }
 
