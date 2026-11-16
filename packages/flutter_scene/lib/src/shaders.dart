@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show internal, visibleForTesting;
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
+import 'package:flutter_scene/src/generated_assets/lighting_features.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/shader_interface.dart'
     show markEngineShaderLibrary;
@@ -66,6 +67,26 @@ Future<String?> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
 /// run before [Scene.initializeStaticResources] completes.
 @internal
 gpu.ShaderLibrary? get loadedBaseShaderLibrary => _baseShaderLibrary;
+
+/// The lighting features the loaded base bundle was built without (the
+/// `lighting_features` hook user-define), read from its marker entries. Empty
+/// until the bundle loads.
+@internal
+Set<LightingFeature> get compiledOutLightingFeatures {
+  final lib = _baseShaderLibrary;
+  if (lib == null) return const {};
+  if (!identical(lib, _compiledOutLibrary)) {
+    _compiledOutLibrary = lib;
+    _compiledOut = {
+      for (final f in LightingFeature.values)
+        if (lib[f.markerEntryName] != null) f,
+    };
+  }
+  return _compiledOut;
+}
+
+gpu.ShaderLibrary? _compiledOutLibrary;
+Set<LightingFeature> _compiledOut = const {};
 
 /// Asynchronously loads and caches the base shader bundle. Idempotent.
 /// Called by [Scene.initializeStaticResources] so the synchronous

@@ -12,6 +12,7 @@ import '../generated_assets/engine_identity.dart'
     show debugViewsVariantSuffix, engineIdentity;
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
+import '../generated_assets/lighting_features.dart';
 import '../generated_assets/wgsl_sidecar.dart' show wgslSidecarPathFor;
 import 'fmat.dart';
 import 'fmat_emitter.dart'
@@ -187,6 +188,10 @@ const _frameworkShaderFiles = <String>[
 /// defaults to the app's `flutter_scene_debug_views` hook user-define (a hook
 /// cannot read flutter_scene's own `debug_views`), so set both. Without it the
 /// materials draw through the fallback debug shader while a view is active.
+///
+/// The app's `flutter_scene_lighting_features` hook user-define compiles lit
+/// features out of the materials, like flutter_scene's own
+/// `lighting_features` does for the engine's shaders, so set both.
 Future<void> buildMaterials({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
@@ -203,6 +208,9 @@ Future<void> buildMaterials({
   discoveryRoot: discoveryRoot,
   assetMode: assetMode,
   debugViews: debugViews ?? HookOptions.of(buildInput).debugViews,
+  compiledOutLightingFeatures: HookOptions.of(
+    buildInput,
+  ).compiledOutLightingFeatures,
 );
 
 /// Builds flutter_scene's bundled physical material shaders.
@@ -220,6 +228,7 @@ Future<void> buildBundledPhysicalMaterials({
   bool pruneGeneratedTree = true,
   String? fileVariant,
   bool debugViews = false,
+  Set<LightingFeature> compiledOutLightingFeatures = const {},
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -242,6 +251,7 @@ Future<void> buildBundledPhysicalMaterials({
   pruneGeneratedTree: pruneGeneratedTree,
   fileVariant: fileVariant,
   debugViews: debugViews,
+  compiledOutLightingFeatures: compiledOutLightingFeatures,
 );
 
 Future<void> _buildMaterials({
@@ -258,6 +268,7 @@ Future<void> _buildMaterials({
   bool pruneGeneratedTree = true,
   String? fileVariant,
   bool debugViews = false,
+  Set<LightingFeature> compiledOutLightingFeatures = const {},
 }) async {
   // ignore: deprecated_member_use_from_same_package
   if (assetMode == MaterialAssetMode.legacyOnly) {
@@ -334,7 +345,8 @@ Future<void> _buildMaterials({
   // files instead of racing on one.
   final variant =
       '${fileVariant ?? await engineIdentity()}'
-      '${debugViews ? debugViewsVariantSuffix : ''}';
+      '${debugViews ? debugViewsVariantSuffix : ''}'
+      '${lightingFeaturesVariantSuffix(compiledOutLightingFeatures)}';
   final shippedBundleFile = tree == null
       ? bundleFile
       : File.fromUri(
@@ -386,6 +398,8 @@ Future<void> _buildMaterials({
       buildInput,
       'fmat package=$assetOwner bundle=$bundleName '
       'shadows=$generateShadowVariants debug_views=$debugViews '
+      'lighting_off='
+      '${describeCompiledOutLightingFeatures(compiledOutLightingFeatures)} '
       'lightmaps=${(lightmapVariantMaterials.toList()..sort()).join(',')}',
     ),
   );
@@ -481,6 +495,7 @@ Future<void> _buildMaterials({
             lightmapVariantMaterials.contains(entryName) &&
             compiled.material.shadingModel != FmatShadingModel.unlit,
         debugViews: debugViews,
+        compiledOutLightingFeatures: compiledOutLightingFeatures,
       );
       for (final variant in fragmentVariants.entries) {
         final variantEntryName = variant.key;
@@ -638,12 +653,17 @@ Map<String, String> emitFragmentShaderVariants(
   required bool generateShadowVariant,
   bool generateLightmapVariant = false,
   bool debugViews = false,
+  Set<LightingFeature> compiledOutLightingFeatures = const {},
 }) {
   final material = compiled.material;
   final entryName = material.name;
-  // The surface debug views are compiled into the shaded entries only; the
-  // depth surfaces never show them.
-  final base = [if (debugViews) kDebugViewsDefine];
+  // The surface debug views and the compiled-out lighting features apply to
+  // the shaded entries only; the depth surfaces never light anything.
+  final base = [
+    if (debugViews) kDebugViewsDefine,
+    for (final f in LightingFeature.values)
+      if (compiledOutLightingFeatures.contains(f)) f.define,
+  ];
   // The outermost axis, so a Lightmap entry still gets its Shadow and Cube
   // twins. Only materials expected to carry a bake generate it; it doubles
   // the entries of the ones that do.

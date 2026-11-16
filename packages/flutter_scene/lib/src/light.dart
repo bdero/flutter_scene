@@ -1,15 +1,18 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show internal;
+import 'package:flutter/foundation.dart' show debugPrint, internal, kDebugMode;
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/fog.dart';
+import 'package:flutter_scene/src/generated_assets/lighting_features.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
+import 'package:flutter_scene/src/shaders.dart'
+    show compiledOutLightingFeatures;
 import 'package:flutter_scene/src/render/punctual_lights.dart'
     show FroxelLighting;
 
@@ -1014,7 +1017,9 @@ class ShadowCascade {
 bool debugDisableLeanLighting = false;
 
 /// Whether a frame with these features may draw with the lean lit entries:
-/// every feature `FLUTTER_SCENE_LEAN_LIGHTING` compiles out must be off.
+/// every feature `FLUTTER_SCENE_LEAN_LIGHTING` compiles out must be off, or
+/// compiled out of the full entries too ([compiledOut]), in which case both
+/// tiers draw the same thing.
 @internal
 bool leanLightingAllowed({
   required bool irradianceField,
@@ -1022,14 +1027,41 @@ bool leanLightingAllowed({
   required bool environmentBlending,
   required bool ambientOcclusion,
   required int pointShadowTileCount,
-}) =>
-    shadingTierOverride ??
-    (!debugDisableLeanLighting &&
-        !irradianceField &&
-        rectAreaLightCount == 0 &&
-        !environmentBlending &&
-        !ambientOcclusion &&
-        pointShadowTileCount == 0);
+  Set<LightingFeature> compiledOut = const {},
+}) {
+  bool on(LightingFeature feature, bool enabled) =>
+      enabled && !compiledOut.contains(feature);
+  return shadingTierOverride ??
+      (!debugDisableLeanLighting &&
+          !on(LightingFeature.irradianceField, irradianceField) &&
+          !on(LightingFeature.rectAreaLights, rectAreaLightCount > 0) &&
+          !on(LightingFeature.environmentBlending, environmentBlending) &&
+          !on(LightingFeature.ambientOcclusion, ambientOcclusion) &&
+          !on(LightingFeature.pointShadows, pointShadowTileCount > 0));
+}
+
+final Set<LightingFeature> _warnedCompiledOut = {};
+
+/// Prints once per feature, in debug builds, when [enabled] uses a feature
+/// in [compiledOut], which the scene then draws without.
+@internal
+void debugWarnCompiledOutLightingFeatures(
+  Set<LightingFeature> enabled,
+  Set<LightingFeature> compiledOut,
+) {
+  if (!kDebugMode) return;
+  for (final feature in enabled) {
+    if (!compiledOut.contains(feature) || !_warnedCompiledOut.add(feature)) {
+      continue;
+    }
+    debugPrint(
+      'flutter_scene: the scene uses ${feature.key}, which this build '
+      'compiled out of the lit shaders, so it draws without it. Remove '
+      '${feature.key}: false from lighting_features in the pubspec to '
+      'compile it back in.',
+    );
+  }
+}
 
 /// Forces every eligible draw onto the lean (true) or full (false) lit entries
 /// regardless of the frame's features, or null to decide per frame. Set only
@@ -1117,7 +1149,23 @@ class Lighting {
     environmentBlending: environmentMapB != null && environmentBlend > 0.0,
     ambientOcclusion: ssaoMap != null || ssaoIndirectLight,
     pointShadowTileCount: pointShadowTileCount,
+    compiledOut: compiledOutLightingFeatures,
   );
+
+  /// The [LightingFeature]s this frame uses. A parallax box on a material's
+  /// own environment override is not counted.
+  @internal
+  Set<LightingFeature> get usedLightingFeatures => {
+    if (irradianceField != null) LightingFeature.irradianceField,
+    if (rectAreaLightCount > 0) LightingFeature.rectAreaLights,
+    if (environmentMapB != null && environmentBlend > 0.0)
+      LightingFeature.environmentBlending,
+    if (ssaoMap != null || ssaoIndirectLight) LightingFeature.ambientOcclusion,
+    if (pointShadowTileCount > 0) LightingFeature.pointShadows,
+    if (environmentMap.parallaxBoxCenter != null &&
+        environmentMap.parallaxBoxHalfExtents != null)
+      LightingFeature.parallaxReflection,
+  };
 
   /// A secondary environment cross-faded with [environmentMap] by
   /// [environmentBlend], or null when a single environment is in effect.

@@ -27,6 +27,19 @@
 ///     my_app:
 ///       flutter_scene_debug_views: true
 /// ```
+///
+/// `lighting_features` (`flutter_scene_lighting_features` for an app hook)
+/// compiles lit features a project never uses out of every lit shader, which
+/// shortens their first-draw compile (see [LightingFeature]):
+///
+/// ```yaml
+/// hooks:
+///   user_defines:
+///     flutter_scene:
+///       lighting_features:
+///         irradiance_field: false
+///         rect_area_lights: false
+/// ```
 library;
 
 import 'dart:convert';
@@ -42,6 +55,7 @@ import '../importer/build_cache.dart';
 import 'engine_identity.dart';
 import 'generated_assets.dart';
 import 'generated_tree.dart';
+import 'lighting_features.dart';
 import 'wgsl_sidecar.dart' show wgslSidecarPathFor;
 
 /// The package flutter_scene's engine assets are recorded as belonging to.
@@ -71,7 +85,7 @@ Future<void> buildOwnEngineAssets({
 }) => _build(
   buildInput: buildInput,
   buildOutput: buildOutput,
-  debugViews: HookOptions.of(buildInput).debugViews,
+  options: HookOptions.of(buildInput),
 );
 
 /// Builds the engine's shaders into the app's generated tree, from the app's
@@ -91,14 +105,21 @@ Future<void> buildEngineAssets({
 }) => _build(
   buildInput: buildInput,
   buildOutput: buildOutput,
-  debugViews: debugViews ?? HookOptions.of(buildInput).debugViews,
+  options: HookOptions(
+    debugViews: debugViews ?? HookOptions.of(buildInput).debugViews,
+    compiledOutLightingFeatures: HookOptions.of(
+      buildInput,
+    ).compiledOutLightingFeatures,
+  ),
 );
 
 Future<void> _build({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-  required bool debugViews,
+  required HookOptions options,
 }) async {
+  final debugViews = options.debugViews;
+  final lightingOff = options.compiledOutLightingFeatures;
   // flutter_scene's own root, the parent of its shader include directory.
   final root = (await engineShaderIncludeDirectory(buildInput)).resolve('../');
   await _buildBaseShaderBundle(
@@ -106,6 +127,7 @@ Future<void> _build({
     buildOutput: buildOutput,
     sourceRoot: root,
     debugViews: debugViews,
+    lightingOff: lightingOff,
   );
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
@@ -116,6 +138,7 @@ Future<void> _build({
     // Engine-compiled like the base bundle, so its name separates engines too.
     fileVariant: await engineIdentity(),
     debugViews: debugViews,
+    compiledOutLightingFeatures: lightingOff,
   );
 }
 
@@ -124,6 +147,7 @@ Future<void> _buildBaseShaderBundle({
   required BuildOutputBuilder buildOutput,
   required Uri sourceRoot,
   required bool debugViews,
+  required Set<LightingFeature> lightingOff,
 }) async {
   final shaders = sourceRoot.resolve('shaders/');
   final manifestFile = File.fromUri(sourceRoot.resolve(_baseBundleManifest));
@@ -152,7 +176,8 @@ Future<void> _buildBaseShaderBundle({
       buildInput,
       // Names the views' layout, so a bundle with them compiled into every
       // entry is rebuilt with twins.
-      'engine bundle=base debug_views=${debugViews ? 'twins' : false}',
+      'engine bundle=base debug_views=${debugViews ? 'twins' : false} '
+      'lighting_off=${describeCompiledOutLightingFeatures(lightingOff)}',
     ),
   );
   for (final file in sources) {
@@ -176,7 +201,8 @@ Future<void> _buildBaseShaderBundle({
   final target = shaderBundleTargetKey(buildInput);
   final variant =
       '${await engineIdentity()}'
-      '${debugViews ? debugViewsVariantSuffix : ''}';
+      '${debugViews ? debugViewsVariantSuffix : ''}'
+      '${lightingFeaturesVariantSuffix(lightingOff)}';
   final outputUri = tree.fileUri(
     GeneratedAssetFamily.shaderBundle,
     nameId: 'base',
@@ -223,9 +249,15 @@ Future<void> _buildBaseShaderBundle({
   var manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
       .cast<String, Object?>();
   var entryRoot = sourceRoot;
-  if (debugViews) {
-    entryRoot = hookIntermediateDirectory(buildInput, 'debug_views');
-    manifest = wrapDebugViewsManifest(manifest, entryRoot, shaders);
+  if (debugViews || lightingOff.isNotEmpty) {
+    entryRoot = hookIntermediateDirectory(buildInput, 'engine_entries');
+    manifest = wrapEngineManifest(
+      manifest,
+      entryRoot,
+      shaders,
+      debugViews: debugViews,
+      lightingOff: lightingOff,
+    );
   }
   buildOutput.dependencies.add(manifestFile.uri);
 
@@ -247,20 +279,31 @@ Future<void> _buildBaseShaderBundle({
 }
 
 /// Points every entry of [manifest] at a wrapper written into [directory],
-/// which entries then resolve against, and adds a twin of each fragment entry
-/// that draws the surface debug views, named with [debugViewsEntrySuffix] and
-/// defining `FLUTTER_SCENE_DEBUG_VIEWS`. A material draws with the twin only
-/// while a view is active, so the views cost nothing to compile until then.
+/// which entries then resolve against.
+///
+/// With [debugViews], adds a twin of each fragment entry that draws the
+/// surface debug views, named with [debugViewsEntrySuffix] and defining
+/// `FLUTTER_SCENE_DEBUG_VIEWS`. A material draws with the twin only while a
+/// view is active, so the views cost nothing to compile until then.
+///
+/// Every wrapper defines each feature in [lightingOff] out, and each one gets
+/// a marker entry ([LightingFeature.markerEntryName]) the runtime reads back.
 ///
 /// Every wrapper includes its original by name, found through [shaders] on the
 /// include path, since the compiler takes no defines per bundle. A wrapper
 /// keeps a different name from its original, or the include would find the
 /// wrapper itself.
-Map<String, Object?> wrapDebugViewsManifest(
+Map<String, Object?> wrapEngineManifest(
   Map<String, Object?> manifest,
   Uri directory,
-  Uri shaders,
-) {
+  Uri shaders, {
+  bool debugViews = false,
+  Set<LightingFeature> lightingOff = const {},
+}) {
+  final prefix = [
+    for (final f in LightingFeature.values)
+      if (lightingOff.contains(f)) '#define ${f.define}\n',
+  ].join();
   final wrapped = <String, Object?>{};
   for (final MapEntry(:key, :value) in manifest.entries) {
     final entry = (value as Map).cast<String, Object?>();
@@ -271,18 +314,29 @@ Map<String, Object?> wrapDebugViewsManifest(
           '${original.substring(0, dot)}$suffix${original.substring(dot)}';
       File.fromUri(
         directory.resolve(name),
-      ).writeAsStringSync('$defines#include <$original>\n');
+      ).writeAsStringSync('$prefix$defines#include <$original>\n');
       return name;
     }
 
     wrapped[key] = {...entry, 'file': wrap('_entry', '')};
-    if (entry['type'] == 'fragment' &&
+    if (debugViews &&
+        entry['type'] == 'fragment' &&
         _includesDebugViews(File.fromUri(shaders.resolve(original)), shaders)) {
       wrapped['$key$debugViewsEntrySuffix'] = {
         ...entry,
         'file': wrap('_debug_views', '#define FLUTTER_SCENE_DEBUG_VIEWS\n'),
       };
     }
+  }
+  for (final feature in lightingOff) {
+    final name = '${feature.markerEntryName}.frag';
+    File.fromUri(directory.resolve(name)).writeAsStringSync(
+      '// Records that ${feature.key} was compiled out. Never drawn.\n'
+      'precision mediump float;\n'
+      'out vec4 frag_color;\n'
+      'void main() {\n  frag_color = vec4(0.0);\n}\n',
+    );
+    wrapped[feature.markerEntryName] = {'type': 'fragment', 'file': name};
   }
   return wrapped;
 }

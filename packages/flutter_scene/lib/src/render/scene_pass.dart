@@ -405,6 +405,12 @@ class ScenePass extends RenderGraphPass {
       planarReflectionsSuppressed: _suppressPlanarReflections,
       surfaceDebugViews: _debugView?.drawsSurfaceViews ?? false,
     );
+    // TODO(lighting-features-passes): skip the occlusion pass and irradiance
+    // field updates for a compiled-out feature, whose output nothing reads.
+    debugWarnCompiledOutLightingFeatures(
+      lighting.usedLightingFeatures,
+      compiledOutLightingFeatures,
+    );
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(target);

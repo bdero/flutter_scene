@@ -21,14 +21,27 @@
 // one binding interface.
 
 // Each feature the lean tier drops has its own define, so a build can compile
-// out just the features a project never uses.
+// out just the features a project never uses (the `lighting_features` hook
+// user-define, see lighting_features.dart).
 #ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#ifndef FLUTTER_SCENE_NO_IRRADIANCE_FIELD
 #define FLUTTER_SCENE_NO_IRRADIANCE_FIELD
+#endif
+#ifndef FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
 #define FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
+#endif
+#ifndef FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
 #define FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
+#endif
+#ifndef FLUTTER_SCENE_NO_PARALLAX_REFLECTION
 #define FLUTTER_SCENE_NO_PARALLAX_REFLECTION
+#endif
+#ifndef FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
 #define FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
+#endif
+#ifndef FLUTTER_SCENE_NO_POINT_SHADOWS
 #define FLUTTER_SCENE_NO_POINT_SHADOWS
+#endif
 #endif
 
 // Distance fog (the FogInfo block + ApplyFog), applied to the final lit color.
@@ -432,7 +445,8 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   vec3 ao_bent_normal = vec3(0.0);
   float ao_bent_valid = 0.0;
   vec4 ssao_sample = vec4(1.0);
-#ifdef FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
+#if defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION) && \
+    !defined(FLUTTER_SCENE_SKIP_SSAO)
   // Keeps ssao_texture declared (the engine binds it); never taken.
   if (frag_info.ssao_params.x > 1e30) {
     occlusion = texture(ssao_texture, vec2(0.0)).r;
