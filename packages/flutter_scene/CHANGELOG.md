@@ -8,6 +8,7 @@
 * glTF imports read `EXT_texture_webp` textures, so a model whose textures are only WebP loads instead of failing.
 * The debug near-plane advisory no longer prints on reversed float depth (Metal and web), whose precision the near plane leaves alone.
 * A shader library on the WebGL2 web backend compiles each shader when it is first used, so a page no longer waits at load on shaders it never draws.
+* The WebGL2 web backend keeps every render target's framebuffer when a frame renders to more than 64 attachment combinations, instead of rebuilding and revalidating them each frame.
 * glTF imports honor `KHR_node_visibility`, so a node marked hidden imports hidden along with its subtree.
 * glTF imports play `KHR_animation_pointer` animations of node visibility, light color, intensity, range, and cone angles, material factors, and texture transforms. A pointer the engine can't drive warns and is skipped.
 * Normal maps on meshes without tangents no longer read their green channel inverted, and anisotropy directions on them are no longer mirrored. The tangent frame derived from screen-space derivatives now matches the one supplied tangents give.
