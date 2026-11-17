@@ -397,4 +397,76 @@ void main() {
       image.dispose();
     },
   );
+
+  test(
+    'DeviceBuffer.overwrite preserves neighbor bytes across aligned, unaligned, and float-backed writes',
+    () async {
+      const totalLen = 4096;
+      final expected = Uint8List(totalLen);
+      final staging = ByteData(totalLen);
+      for (var i = 0; i < totalLen; i++) {
+        final v = (i * 73 + 19) & 0xff;
+        expected[i] = v;
+        staging.setUint8(i, v);
+      }
+
+      final devBuf = gpu.gpuContext.createDeviceBuffer(
+        gpu.StorageMode.hostVisible,
+        totalLen,
+      );
+      expect(
+        devBuf.overwrite(ByteData.sublistView(staging, 0, totalLen)),
+        isTrue,
+      );
+
+      void applyPatch(int offset, List<int> patchBytes) {
+        final patch = ByteData(patchBytes.length);
+        for (var i = 0; i < patchBytes.length; i++) {
+          patch.setUint8(i, patchBytes[i]);
+          expected[offset + i] = patchBytes[i];
+        }
+        expect(
+          devBuf.overwrite(patch, destinationOffsetInBytes: offset),
+          isTrue,
+        );
+      }
+
+      applyPatch(1, [0xaa, 0xbb]);
+      applyPatch(3, [1, 2, 3, 4, 5, 6, 7]);
+      applyPatch(17, [9, 8, 7, 6, 5]);
+
+      final floats = Float32List.fromList([1.5, -2.25, 3.75, 16.0]);
+      final floatBytes = floats.buffer.asUint8List();
+      for (var i = 0; i < floatBytes.length; i++) {
+        expected[64 + i] = floatBytes[i];
+      }
+      expect(
+        devBuf.overwrite(
+          ByteData.sublistView(floats),
+          destinationOffsetInBytes: 64,
+        ),
+        isTrue,
+      );
+
+      final actual = await webGpuReadBuffer(devBuf, length: totalLen);
+      expect(actual, expected);
+
+      final geom = gpu.createGeometryBuffers(16, 10);
+      final idxSrc = Uint16List.fromList([10, 20, 30, 40, 50]);
+      expect(
+        gpu.writeGeometryData(
+          geom.index,
+          idxSrc,
+          destinationOffsetInBytes: geom.indexBaseOffset,
+        ),
+        isTrue,
+      );
+      final geomRead = await webGpuReadBuffer(
+        geom.index,
+        offset: geom.indexBaseOffset,
+        length: 10,
+      );
+      expect(geomRead, idxSrc.buffer.asUint8List());
+    },
+  );
 }
