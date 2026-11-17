@@ -4,6 +4,15 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/render/spot_shadow.dart'
+    show kMinShadowLightIntensity;
+
+/// Whether [light] actively casts cascaded shadows (`castsShadow` enabled and
+/// [DirectionalLight.intensity] above [kMinShadowLightIntensity]).
+bool directionalLightCastsShadow(DirectionalLight? light) =>
+    light != null &&
+    light.castsShadow &&
+    light.intensity > kMinShadowLightIntensity;
 
 /// One cascade's cached static-caster shadow tile: the persistent texture the
 /// static geometry was rendered into, the light-space matrix it was rendered

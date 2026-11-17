@@ -1,7 +1,15 @@
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/point_light_component.dart';
-import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
+import 'package:flutter_scene/src/light.dart'
+    show PointLight, ShadowCasterFaces;
+import 'package:flutter_scene/src/render/spot_shadow.dart'
+    show kMinShadowLightIntensity;
+
+/// Whether [light] actively casts point-light cube shadows (`castsShadow`
+/// enabled and [PointLight.intensity] above [kMinShadowLightIntensity]).
+bool pointLightCastsShadow(PointLight light) =>
+    light.castsShadow && light.intensity > kMinShadowLightIntensity;
 
 // TODO(point-shadow-cache): point faces re-render every caster every frame;
 // route static casters through cached tiles like the directional cascades.
@@ -48,12 +56,16 @@ class PointShadowFrame {
   int slotOf(PointLightComponent component) => casters.indexOf(component);
 }
 
-/// Selects up to [kMaxPointShadows] shadow-casting point lights from [points],
-/// or null when none cast a shadow.
+/// Selects up to [kMaxPointShadows] active shadow-casting point lights from
+/// [points], or null when none cast a shadow.
+///
+/// Point lights whose [PointLight.intensity] is at or below
+/// [kMinShadowLightIntensity] are skipped so zero-intensity lights neither
+/// consume shared atlas tiles nor render six cube depth passes.
 PointShadowFrame? collectPointShadows(List<PointLightComponent> points) {
   final casters = <PointLightComponent>[];
   for (final point in points) {
-    if (!point.light.castsShadow) continue;
+    if (!pointLightCastsShadow(point.light)) continue;
     casters.add(point);
     if (casters.length >= kMaxPointShadows) break;
   }

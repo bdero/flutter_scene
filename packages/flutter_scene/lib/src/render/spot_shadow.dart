@@ -1,13 +1,23 @@
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/spot_light_component.dart';
-import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
+import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces, SpotLight;
 
 /// The most spot lights that can cast a shadow at once. Each takes a tile in
 /// the shared shadow atlas and a perspective depth pass, so the count is
 /// capped; spots past the budget shade unshadowed. Kept small deliberately
 /// (shadowed local lights are expensive, especially on mobile).
 const int kMaxSpotShadows = 4;
+
+/// Minimum light intensity required before a shadow-casting light allocates
+/// and renders shadow-map tiles. Lights at or below this threshold contribute
+/// negligible radiance, so rendering their shadow maps wastes CPU and GPU work.
+const double kMinShadowLightIntensity = 1e-4;
+
+/// Whether [light] actively casts a shadow (`castsShadow` enabled and
+/// [SpotLight.intensity] above [kMinShadowLightIntensity]).
+bool spotLightCastsShadow(SpotLight light) =>
+    light.castsShadow && light.intensity > kMinShadowLightIntensity;
 
 /// The shadow-casting spots selected for a frame, in slot order (a spot's slot
 /// is its index here, matching its shadow atlas tile and its matrix). All tiles
@@ -46,12 +56,16 @@ class SpotShadowFrame {
   int slotOf(SpotLightComponent component) => casters.indexOf(component);
 }
 
-/// Selects up to [kMaxSpotShadows] shadow-casting spots from [spots] and
+/// Selects up to [kMaxSpotShadows] active shadow-casting spots from [spots] and
 /// computes their world -> spot-clip matrices, or null when none cast a shadow.
+///
+/// Spots whose [SpotLight.intensity] is at or below [kMinShadowLightIntensity]
+/// are skipped so zero-intensity lights neither consume an atlas slot nor
+/// render a shadow pass.
 SpotShadowFrame? collectSpotShadows(List<SpotLightComponent> spots) {
   final casters = <SpotLightComponent>[];
   for (final spot in spots) {
-    if (!spot.light.castsShadow) continue;
+    if (!spotLightCastsShadow(spot.light)) continue;
     casters.add(spot);
     if (casters.length >= kMaxSpotShadows) break;
   }

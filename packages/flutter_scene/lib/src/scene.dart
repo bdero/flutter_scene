@@ -658,10 +658,10 @@ base class Scene implements SceneGraph {
     }
     var requested = 0;
     for (final spot in spots) {
-      if (spot.light.castsShadow) requested++;
+      if (spotLightCastsShadow(spot.light)) requested++;
     }
     for (final point in points) {
-      if (point.light.castsShadow) requested++;
+      if (pointLightCastsShadow(point.light)) requested++;
     }
     _shadowCasterOverflowCount = requested - granted;
   }
@@ -2412,7 +2412,8 @@ base class Scene implements SceneGraph {
     // atlas to stop being one uniform strip, at which point
     // PointLight.shadowMapResolution and SpotLight.shadowMapResolution can
     // mean what they say for every light rather than only the first caster.
-    final shadowTileResolution = lightComponent?.light.castsShadow == true
+    final shadowTileResolution =
+        directionalLightCastsShadow(lightComponent?.light)
         ? lightComponent!.light.shadowMapResolution
         : spotShadowFrame?.tileResolution ??
               (pointShadowFrame == null
@@ -2442,7 +2443,7 @@ base class Scene implements SceneGraph {
     _sharedShadowAtlas =
         !debugDisableSharedShadowTiles &&
             anchor != null &&
-            lightComponent?.light.castsShadow != true &&
+            !directionalLightCastsShadow(lightComponent?.light) &&
             (spotShadowFrame != null || pointShadowFrame != null)
         ? SharedShadowAtlas(anchor.camera.position)
         : null;
@@ -3353,8 +3354,8 @@ base class Scene implements SceneGraph {
         projection.scaleX > 0.0 &&
         projection.scaleY > 0.0 &&
         projection.far > projection.near;
-    final cascades = light != null && light.castsShadow && projectionValid
-        ? light.computeCascades(
+    final cascades = directionalLightCastsShadow(light) && projectionValid
+        ? light!.computeCascades(
             camera,
             pixelSize.width / pixelSize.height,
             lightDirection,
@@ -3476,7 +3477,10 @@ base class Scene implements SceneGraph {
             staticSignature: staticShadowSignature,
           );
       effectiveCascades = shadowCachePlan.cascades;
-    } else {
+    } else if (!hasStaticShadowCasters ||
+        light == null ||
+        !light.castsShadow ||
+        !light.cacheStaticShadows) {
       _directionalShadowCache = null;
     }
 
