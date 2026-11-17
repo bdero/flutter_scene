@@ -10,6 +10,8 @@
 import 'package:clock/clock.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/scene.dart' show notifySceneRepaintForTesting;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -238,6 +240,87 @@ void main() {
 
     expect(tickCount, 0);
   });
+
+  testWidgets(
+    'repaintRequested under an active rate-limited ticker clears the deadline without dirtying out of band',
+    (tester) async {
+      final scene = _tryScene();
+      if (scene == null) {
+        markTestSkipped('No Impeller GPU context');
+        return;
+      }
+      var ticks = 0;
+      var paints = 0;
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene,
+            maxFrameRate: 10, // 100 ms period; 75 ms earliest due threshold.
+            cameraBuilder: (_) {
+              paints++;
+              return PerspectiveCamera();
+            },
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      // First ticker callback sets the 100 ms deadline.
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(ticks, 1);
+
+      // 16 ms into the period is rate-limited; neither tick nor paint runs.
+      await tester.pump(const Duration(milliseconds: 16));
+      final ticksBefore = ticks;
+      final paintsBefore = paints;
+      final paintBox = tester.renderObject(find.bySubtype<CustomPaint>());
+      expect(paintBox.debugNeedsPaint, isFalse);
+
+      // Firing repaintRequested must NOT dirty CustomPaint immediately, and
+      // must clear _frameDue so the very next vsync advances onTick early.
+      notifySceneRepaintForTesting(scene);
+      expect(paintBox.debugNeedsPaint, isFalse);
+
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(ticks, ticksBefore + 1);
+      expect(paints, paintsBefore + 1);
+    },
+  );
+
+  testWidgets(
+    'repaintRequested marks CustomPaint dirty when autoTick is false',
+    (tester) async {
+      final scene = _tryScene();
+      if (scene == null) {
+        markTestSkipped('No Impeller GPU context');
+        return;
+      }
+      var ticks = 0;
+      var paints = 0;
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene,
+            autoTick: false,
+            cameraBuilder: (_) {
+              paints++;
+              return PerspectiveCamera();
+            },
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      final paintsBefore = paints;
+      final paintBox = tester.renderObject(find.bySubtype<CustomPaint>());
+      expect(paintBox.debugNeedsPaint, isFalse);
+
+      notifySceneRepaintForTesting(scene);
+      expect(paintBox.debugNeedsPaint, isTrue);
+
+      await tester.pump();
+      expect(paints, paintsBefore + 1);
+      expect(ticks, 0);
+    },
+  );
 
   testWidgets('turning autoTick back on continues the clock', (tester) async {
     final scene = _tryScene();

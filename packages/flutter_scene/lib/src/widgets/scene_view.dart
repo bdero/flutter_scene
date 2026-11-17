@@ -450,8 +450,17 @@ class _SceneViewState extends State<SceneView>
 
   void _onAssetsRefreshed() => _repaint.notify();
 
-  // A paced frame's GPU work finished; paint the frame the view held.
-  void _onRepaintRequested() => _repaint.notify();
+  // A paced frame's GPU work (or deferred resource load) finished; paint the
+  // frame the view held. While the ticker is actively driving a revealed view,
+  // clear any rate-limit deadline so the next vsync runs _onTick and advances
+  // onTick in lockstep instead of painting out of band.
+  void _onRepaintRequested() {
+    if (widget.autoTick && (_ticker?.isTicking ?? false) && _revealed) {
+      _frameDue = null;
+      return;
+    }
+    _repaint.notify();
+  }
 
   // Creates the owned scene for the declarative form and applies every scene
   // prop, the single creation path for initState and constructor-form
