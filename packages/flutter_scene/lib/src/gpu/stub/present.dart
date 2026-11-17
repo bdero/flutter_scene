@@ -29,3 +29,5 @@ bool writeGeometryData(
   source is ByteData ? source : ByteData.sublistView(source),
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
+
+bool isPipelineReady(RenderPipeline pipeline) => _stub();

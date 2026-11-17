@@ -81,10 +81,12 @@ import 'render/render_graph_capture.dart';
 import 'render/render_stats.dart';
 import 'scene_encoder.dart'
     show
+        awaitPipelinesReady,
         beginDrawFailureFrame,
         deferredPipelineBuilds,
         pipelineCacheSize,
-        withPipelineBuildBudget;
+        withPipelineBuildBudget,
+        withUnreadyPipelinesHeld;
 import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
@@ -2140,9 +2142,11 @@ base class Scene implements SceneGraph {
   /// Awaiting it is optional and safe to repeat. It awaits
   /// [initializeStaticResources] first, and whatever on-demand shaders and
   /// tables the scene and [views] have started loading (see [preload]). On backends that compile pipelines
-  /// lazily on first draw (the common case) this front-loads that cost; on a
-  /// backend that compiles asynchronously it kicks compilation off without
-  /// blocking on completion.
+  /// lazily on first draw (the common case) this front-loads that cost. On a
+  /// backend that compiles in parallel (WebGL2 with
+  /// `KHR_parallel_shader_compile`), it starts every compile before drawing
+  /// with any, then waits for them without blocking, so the warm-up takes
+  /// about as long as the slowest one rather than their sum.
   ///
   /// Set [includeOffscreen] to encode every render item once. This costs more
   /// during loading, but avoids later pipeline stalls as a moving camera first
@@ -2239,8 +2243,18 @@ base class Scene implements SceneGraph {
       }
     }
 
+    // Draws whose pipeline is still compiling are skipped, so one frame
+    // starts every compile it needs before any draw waits on one; the next
+    // frame, after they finish, draws with them.
     if (sliceBudget == null) {
-      encode();
+      for (var frame = 0; frame < 100; frame++) {
+        if (frame > 0) await awaitRasterThread();
+        if (_disposed) return;
+        final paced = _pacedFrameCount;
+        final held = withUnreadyPipelinesHeld(encode);
+        if (held.isEmpty && _pacedFrameCount == paced) return;
+        await awaitPipelinesReady(held);
+      }
       return;
     }
     // Each slice is a whole offscreen frame; stop once one encodes every view
@@ -2252,8 +2266,11 @@ base class Scene implements SceneGraph {
       if (slice > 0) await awaitRasterThread();
       if (_disposed) return;
       final paced = _pacedFrameCount;
-      withPipelineBuildBudget(sliceBudget, encode);
+      final held = withUnreadyPipelinesHeld(
+        () => withPipelineBuildBudget(sliceBudget, encode),
+      );
       if (_pacedFrameCount == paced && deferredPipelineBuilds == 0) return;
+      if (held.isNotEmpty) await awaitPipelinesReady(held);
       await Future<void>.delayed(const Duration(milliseconds: 16));
     }
   }
