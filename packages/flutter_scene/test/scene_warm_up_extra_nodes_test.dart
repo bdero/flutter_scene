@@ -5,6 +5,8 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/scene.dart' show resolveWarmUpRegion;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -35,6 +37,39 @@ RenderFrameStats _render(Scene scene) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'resolveWarmUpRegion preserves aspect ratio within 16..128 and defaults to 64x64 when cold',
+    () {
+      expect(
+        resolveWarmUpRegion(lastSwapchainWidth: 0, lastSwapchainHeight: 0),
+        const ui.Rect.fromLTWH(0, 0, 64, 64),
+      );
+      expect(
+        resolveWarmUpRegion(lastSwapchainWidth: -10, lastSwapchainHeight: 480),
+        const ui.Rect.fromLTWH(0, 0, 64, 64),
+      );
+      // Landscape (4:3 -> 64x48) and portrait (3:4 -> 64x85).
+      expect(
+        resolveWarmUpRegion(lastSwapchainWidth: 1280, lastSwapchainHeight: 960),
+        const ui.Rect.fromLTWH(0, 0, 64, 48),
+      );
+      expect(
+        resolveWarmUpRegion(lastSwapchainWidth: 960, lastSwapchainHeight: 1280),
+        const ui.Rect.fromLTWH(0, 0, 64, 85),
+      );
+      // Extreme aspect ratios clamp height to [16, 128].
+      expect(
+        resolveWarmUpRegion(lastSwapchainWidth: 1000, lastSwapchainHeight: 100),
+        const ui.Rect.fromLTWH(0, 0, 64, 16),
+      );
+      expect(
+        resolveWarmUpRegion(lastSwapchainWidth: 100, lastSwapchainHeight: 1000),
+        const ui.Rect.fromLTWH(0, 0, 64, 128),
+      );
+    },
+  );
+
   if (!gpuAvailable()) {
     test(
       'warm-up extra nodes suite (skipped: no GPU device)',
@@ -76,4 +111,34 @@ void main() {
     expect(_render(scene).counters.submitted, 0);
     scene.dispose();
   });
+
+  test(
+    'warmUp uses an isolated scratch surface without evicting two-slot live surface pools',
+    () async {
+      final scene = Scene();
+      const sizeA = ui.Size(320, 180);
+      const sizeB = ui.Size(400, 225);
+      final ringA = {
+        scene.surface.getNextSwapchainColorTexture(sizeA),
+        scene.surface.getNextSwapchainColorTexture(sizeA),
+      };
+      final poolA = scene.surface.transientTexturePool();
+      scene.surface.getNextSwapchainColorTexture(sizeB);
+
+      await scene.warmUp(
+        _views(),
+        extraNodes: [_selectedCube()],
+        sliceBudget: const Duration(milliseconds: 2),
+      );
+
+      // Neither sizeA nor sizeB was evicted by warmUp's miniature pass.
+      final ringAAfter = {
+        scene.surface.getNextSwapchainColorTexture(sizeA),
+        scene.surface.getNextSwapchainColorTexture(sizeA),
+      };
+      expect(ringAAfter, ringA);
+      expect(identical(scene.surface.transientTexturePool(), poolA), isTrue);
+      scene.dispose();
+    },
+  );
 }
