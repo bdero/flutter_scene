@@ -29,6 +29,11 @@ final class WebGlContext extends GpuContext {
       );
     }
     _gl = gl;
+    // Before any link: the browser sizes the driver's compile thread pool
+    // when the page enables this, and with it a program's status can be
+    // polled instead of waited on (WebGlRenderPipeline.isLinkComplete).
+    _parallelShaderCompile =
+        _gl.getExtension('KHR_parallel_shader_compile') != null;
     // Cache extensions we rely on for later phases.
     _gl.getExtension('EXT_color_buffer_float');
     _gl.getExtension('OES_texture_float_linear');
@@ -52,6 +57,8 @@ final class WebGlContext extends GpuContext {
   }
 
   bool _clipDepthZeroToOne = false;
+
+  bool _parallelShaderCompile = false;
 
   /// Whether clip-space depth spans `[0, 1]` (EXT_clip_control), so GLES
   /// shaders run without their `[-1, 1]` depth remap.
