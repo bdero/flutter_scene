@@ -105,11 +105,27 @@ Future<List<Texture2D?>> loadStandardKtx2Batch(
   List<StandardKtx2Request> requests,
 ) async {
   if (requests.isEmpty) return const [];
-  final decoded = await compute(_decodeBatch, (
-    requests: requests,
-    mips: uploadableMipChains,
-    support: currentCompressionSupport(),
-  ));
+  final mips = uploadableMipChains;
+  final support = currentCompressionSupport();
+  final List<StandardKtx2Decoded> decoded;
+  if (kIsWeb) {
+    decoded = [
+      for (final request in requests)
+        await webTimeSlicer.run(
+          () => decodeStandardKtx2ForUpload(
+            request,
+            mips: mips,
+            support: support,
+          ),
+        ),
+    ];
+  } else {
+    decoded = await compute(_decodeBatch, (
+      requests: requests,
+      mips: mips,
+      support: support,
+    ));
+  }
   final out = <Texture2D?>[];
   for (final result in decoded) {
     if (result.error != null) {
@@ -257,7 +273,7 @@ Future<gpu.Texture> gpuTextureFromAnyKtx2Async(
   TextureContent content = TextureContent.color,
 }) async {
   if (isInternalKtx2(readKtx2(bytes))) return gpuTextureFromKtx2Async(bytes);
-  final decoded = await compute(_decodeBatch, (
+  final decoded = await computeOrSlice(_decodeBatch, (
     requests: [(bytes: bytes, content: content)],
     mips: uploadableMipChains,
     support: currentCompressionSupport(),

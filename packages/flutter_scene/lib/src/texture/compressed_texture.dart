@@ -25,6 +25,10 @@ import 'package:flutter_scene/src/texture/block/transcode_bc3.dart';
 import 'package:flutter_scene/src/texture/block/transcode_etc2.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
+import 'package:flutter_scene/src/texture/web_time_slicer.dart';
+
+export 'package:flutter_scene/src/texture/web_time_slicer.dart'
+    show WebTimeSlicer, computeOrSlice, webTimeSlicer;
 
 /// The order in which compressed families are preferred when the device
 /// supports more than one: ASTC (highest quality) > BC (desktop) > ETC2
@@ -51,13 +55,13 @@ const int _modeEtc2Rgba = 5;
 typedef _Prepared = ({List<Uint8List> levels, int mode, int width, int height});
 
 /// Reads a flutter_scene KTX2 file from [bytes], transcodes it on a background
-/// isolate, and uploads the result. Use this from async load paths so large
-/// textures do not block the UI.
+/// isolate (or time-sliced on the main thread on Web), and uploads the result.
+/// Use this from async load paths so large textures do not block the UI.
 Future<gpu.Texture> gpuTextureFromKtx2Async(Uint8List bytes) async {
   _logFamiliesOnce();
   final mode = _selectMode();
   final mips = uploadableMipChains;
-  final prepared = await compute(_prepareFromBytes, (
+  final prepared = await computeOrSlice(_prepareFromBytes, (
     ktx2: bytes,
     mode: mode,
     mips: mips,
