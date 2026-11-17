@@ -57,6 +57,12 @@ abstract base class WebBackend {
   });
 
   Surface createSurface({required int width, required int height});
+
+  /// See the top-level [isPipelineReady]. True by default, for a backend that
+  /// cannot tell.
+  // TODO(webgpu-async-pipelines): report createRenderPipelineAsync's
+  // completion once the WebGPU backend builds pipelines with it.
+  bool isPipelineReady(RenderPipeline pipeline) => true;
 }
 
 final WebBackend _backend = useWebGpuBackend
@@ -330,3 +336,9 @@ bool writeGeometryData(
   source,
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
+
+/// Whether [pipeline] is built, so its first draw will not wait on a shader
+/// compile. On WebGL2 with `KHR_parallel_shader_compile` this polls the
+/// program's link; elsewhere it is always true.
+bool isPipelineReady(RenderPipeline pipeline) =>
+    _backend.isPipelineReady(pipeline);

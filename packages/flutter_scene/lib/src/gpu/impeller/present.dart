@@ -45,3 +45,7 @@ bool writeGeometryData(
   source is ByteData ? source : ByteData.sublistView(source),
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
+
+/// Whether [pipeline] is built, so its first draw will not wait on a shader
+/// compile. Always true here, since Flutter GPU has no way to poll one.
+bool isPipelineReady(RenderPipeline pipeline) => true;
