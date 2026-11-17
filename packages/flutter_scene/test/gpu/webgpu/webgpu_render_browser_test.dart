@@ -218,10 +218,24 @@ void main() {
       texture: checker,
     );
     var completed = false;
-    commands.submit(completionCallback: (_) => completed = true);
+    final completionOrder = <int>[];
+    commands.submit(
+      completionCallback: (status) {
+        expect(status, gpu.CompletionStatus.successful);
+        completed = true;
+        completionOrder.add(0);
+      },
+    );
+    gpu.gpuContext.createCommandBuffer().submit(
+      completionCallback: (status) {
+        expect(status, gpu.CompletionStatus.successful);
+        completionOrder.add(1);
+      },
+    );
     expect(await pixel(color, 0, 0), [255, 0, 0, 255]);
     expect(await pixel(color, 3, 3), [0, 255, 0, 255]);
     expect(completed, isTrue);
+    expect(completionOrder, [0, 1]);
   });
 
   test('passes in one command buffer run in order, with blending', () async {

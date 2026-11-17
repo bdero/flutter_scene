@@ -203,6 +203,32 @@ final class _WebGpuContext extends GpuContext {
     ]);
   }
 
+  final List<CompletionCallback> _pendingCallbacks = [];
+
+  /// Coalesces completion callbacks from synchronous `queue.submit` calls
+  /// behind one FIFO `queue.onSubmittedWorkDone()` fence per microtask turn.
+  void enqueueSubmissionCallback(CompletionCallback callback) {
+    final firstInTurn = _pendingCallbacks.isEmpty;
+    _pendingCallbacks.add(callback);
+    if (!firstInTurn) return;
+    scheduleMicrotask(() {
+      final batch = _pendingCallbacks.toList(growable: false);
+      _pendingCallbacks.clear();
+      device.device.queue.onSubmittedWorkDone().toDart.then(
+        (_) {
+          for (final cb in batch) {
+            cb(CompletionStatus.successful);
+          }
+        },
+        onError: (Object _) {
+          for (final cb in batch) {
+            cb(CompletionStatus.error);
+          }
+        },
+      );
+    });
+  }
+
   @override
   CommandBuffer createCommandBuffer() => _WebGpuCommandBuffer(this);
 
