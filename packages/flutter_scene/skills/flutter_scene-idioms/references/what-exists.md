@@ -161,7 +161,7 @@ Every primitive except `PlaneGeometry` has a `Shape get collisionShape`.
 - `RibbonGeometry(path, {width = 1.0, stations = 64, alignment = RibbonAlignment.ground, up, storage = fixed})`; `updatePath(path)`. `RibbonAlignment` = `ground` | `path`.
 - `TubeGeometry(path, {radius = 0.5, radialSegments = 12, stations = 64, caps = true, storage})`.
 - `ExtrudeGeometry(path, {required List<Vector2> profile, stations = 64, caps = true, storage})`.
-- `PolylineGeometry(List<Vector3> points, {width = 8.0, widthMode = screenPixels, cap = butt, dash, perVertexWidth, perVertexColor})`. INERT until `updateForCamera(camera, viewportSize)` is called every frame. `PolylineWidthMode` = `screenPixels` | `worldUnits`; `PolylineCap` = `butt` | `round`; `DashPattern({dashLength, gapLength, cap})`.
+- `PolylineGeometry(List<Vector3> points, {width = 8.0, widthMode = screenPixels, cap = butt, dash, perVertexWidth, perVertexColor})`. `extends Geometry`, GPU-expanded for whichever camera renders it, so there is no per-frame call (`updateForCamera` is deprecated and does nothing). `PolylineWidthMode` = `screenPixels` | `worldUnits`; `PolylineCap` = `butt` | `round`; `DashPattern({dashLength, gapLength, cap})`.
 - `LineSegmentsGeometry(LineSegmentData segments, {width = 0.01, normalOffset = 0.0})`. `extends Geometry`, GPU-expanded, no per-frame CPU work. For large independent-segment sets.
 - `BillboardGeometry({capacity = 256})`. `floatsPerInstance = 14`; `BillboardFacing` = `spherical` | `axisLocked` | `velocityStretched`.
 

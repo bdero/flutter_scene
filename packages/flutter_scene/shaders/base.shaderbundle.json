@@ -31,6 +31,10 @@
     "type": "vertex",
     "file": "shaders/flutter_scene_line_segments.vert"
   },
+  "PolylineVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_polyline.vert"
+  },
   "SpriteFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_sprite.frag"
