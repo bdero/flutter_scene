@@ -30,6 +30,7 @@
 * A `RenderTexture` view no longer freezes while the GPU is a frame behind and a screen view renders anyway, such as after a resize.
 * The depth prepass writes a single-channel `r32Float` target when no pass needs normals, a quarter of the memory and bandwidth. `RenderPassContext.sceneDepthLinear` keeps four channels when normals are written.
 * Host-visible buffers on the WebGPU web backend upload far faster under dart2wasm. A frame sealing 248 KB of uniforms went from 19.4 ms to 3.7 ms.
+* The WebGL2 web backend compiles shaders in parallel and checks a program's link only when it is first drawn, and `Scene.warmUp` starts every pipeline's compile before drawing with any. A warm-up on Windows (ANGLE) takes about half as long and no longer freezes the page while it compiles.
 * Shader bundle reflection parses about 10x faster by copying each backend's output on its first read, so a `ShaderMaterial` on Apple platforms waits far less before its first draw.
 * Build hooks that `flutter test` calls in process (`buildMaterials`, `buildTargetShaderBundleJson`) find the engine's shader includes instead of throwing.
 * A skinned mesh imported offline is no longer culled while on screen in its rest pose, in one of several animations that move the same joint, or when its node sits apart from its skeleton.
