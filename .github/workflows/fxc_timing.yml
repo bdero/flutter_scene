@@ -23,27 +23,26 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
-      - name: Time compile, link, and first draw
+      - name: Time a warm-up of a realistic pipeline set
         run: |
-          CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
-          powershell -NoProfile -Command "(Get-Item 'C:\Program Files\Google\Chrome\Application\chrome.exe').VersionInfo.ProductVersion; (Get-CimInstance Win32_Processor).Name"
-          RUNS=3 node time_link.mjs "$CHROME" results.json ${{ matrix.angle }} \
-            c_lean c_lean_bilinear_only c_lean_floor c_lean_no_bilinear c_lean_no_fog c_lean_no_pcf_kernel c_lean_no_pcss c_lean_no_punctual c_lean_no_shadows c_lean_no_spot_shadows c_lean_no_sun c_lean_poisson_only 2> chrome_stderr.log
+          powershell -NoProfile -Command "(Get-Item 'C:\Program Files\Google\Chrome\Application\chrome.exe').VersionInfo.ProductVersion; (Get-CimInstance Win32_Processor).Name; (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors"
+          RUNS=3 node warmup/time_warmup.mjs "/c/Program Files/Google/Chrome/Application/chrome.exe" results.json ${{ matrix.angle }} 2> chrome_stderr.log
       - name: Summary
         if: always()
         run: |
           {
-            echo "### ANGLE ${{ matrix.angle }}"
-            echo '| variant | run | renderer | compile ms | link ms | first draw ms | total ms | error |'
-            echo '|---|---|---|---|---|---|---|---|'
+            echo "### Warm-up, ANGLE ${{ matrix.angle }}"
+            echo '| mode | cache | run | parallel | wall ms | blocked ms | longest slice ms | links issued ms | all ready ms | error |'
+            echo '|---|---|---|---|---|---|---|---|---|---|'
             node -e '
+              const f = (x) => x == null ? "" : Math.round(x);
               for (const r of require("fs").readFileSync("results.jsonl","utf8").split(/\r?\n/).filter(l => l.startsWith("{")).map(JSON.parse))
-                console.log(`| ${r.variant} | ${r.run} | ${r.renderer} | ${Math.round(r.compileMs)} | ${Math.round(r.linkMs)} | ${Math.round(r.firstDrawMs)} | ${Math.round(r.totalMs)} | ${r.error ?? r.glError} |`)'
+                console.log(`| ${r.mode} | ${r.cache} | ${r.run} | ${r.parallel} | ${f(r.wallMs)} | ${f(r.blockedMs)} | ${f(r.longestSliceMs)} | ${f(r.issuedMs)} | ${f(r.readyMs)} | ${r.error ?? r.glError} |`)'
             echo
-            echo 'stderr lines mentioning HLSL compile issues:'
-            echo '```'
-            grep -iE "x35[0-9]{2}|unroll|hlsl|d3dcompile|failed to compile" chrome_stderr.log | head -40 || true
-            echo '```'
+            node -e '
+              const r = require("fs").readFileSync("results.jsonl","utf8").split(/\r?\n/).filter(l => l.startsWith("{")).map(JSON.parse)[0];
+              console.log("renderer: " + r.renderer);
+              console.log("```"); console.log(JSON.stringify(r.drawMs, null, 1)); console.log("```");'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
