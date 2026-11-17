@@ -84,12 +84,13 @@ void main() {
     gl.delete('compileShader'.toJS);
   });
 
-  test('a shader that fails to compile throws on every lookup', () async {
+  // The failure reports at the first draw of a program linking it; see
+  // webgl_parallel_compile_browser_test.dart.
+  test('a lookup does not wait on the compile', () async {
     final library = (await gpu.loadShaderLibraryFromBytesAsync(
       ByteData.sublistView(_bundle(color: 'missing')),
     ))!;
-    expect(() => library['WhiteFragment'], throwsException);
-    expect(() => library['WhiteFragment'], throwsException);
+    expect(library['WhiteFragment'], isNotNull);
     expect(library['NoSuchShader'], isNull);
   });
 

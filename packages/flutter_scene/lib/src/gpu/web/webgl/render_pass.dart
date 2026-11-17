@@ -217,12 +217,16 @@ final class WebGlRenderPass extends RenderPass {
   @override
   void bindPipeline(RenderPipeline pipeline) {
     final gl = _gpuContext._gl;
-    _boundPipeline = pipeline.webGl;
-    gl.useProgram(pipeline.webGl._program);
+    final webGlPipeline = pipeline.webGl.._ensureLinked();
+    _boundPipeline = webGlPipeline;
+    // A program that failed to build stays bound so the binds before the
+    // draw resolve; the draw throws its error.
+    if (webGlPipeline._linkError != null) return;
+    gl.useProgram(webGlPipeline._program);
     // Give every active uniform block a valid (zeroed) buffer up front, so a
     // block the caller never binds does not raise a used-but-unbound uniform
     // buffer error on this backend. Explicit bindUniform calls override it.
-    pipeline.webGl._bindDefaultUniformBlocks();
+    webGlPipeline._bindDefaultUniformBlocks();
   }
 
   @override
@@ -966,9 +970,12 @@ final class WebGlRenderPass extends RenderPass {
   @override
   void draw(int vertexCount, {int instanceCount = 1}) {
     final gl = _gpuContext._gl;
-    if (_boundPipeline == null) {
+    final pipeline = _boundPipeline;
+    if (pipeline == null) {
       throw StateError('draw called before bindPipeline');
     }
+    final linkError = pipeline._linkError;
+    if (linkError != null) throw linkError;
     if (vertexCount == 0 || instanceCount == 0) return;
     _applyVertexState(needsIndex: false);
     _configureInlineVertexBuffer(vertexCount);
@@ -987,9 +994,12 @@ final class WebGlRenderPass extends RenderPass {
   @override
   void drawIndexed(int indexCount, {int instanceCount = 1}) {
     final gl = _gpuContext._gl;
-    if (_boundPipeline == null) {
+    final pipeline = _boundPipeline;
+    if (pipeline == null) {
       throw StateError('drawIndexed called before bindPipeline');
     }
+    final linkError = pipeline._linkError;
+    if (linkError != null) throw linkError;
     if (_inlineVertexBufferView != null) {
       throw StateError('Indexed inline pipelines require reflected attributes');
     }
