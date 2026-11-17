@@ -1,6 +1,6 @@
-// A line segment, billboard or splat batch builds its vertices in the engine's
-// own vertex shader, so a material's vertex shader must not replace it in any
-// pass. A plain mesh still takes the material's vertex shader.
+// A line segment batch, polyline, billboard or splat batch builds its vertices
+// in the engine's own vertex shader, so a material's vertex shader must not
+// replace it in any pass. A plain mesh still takes the material's vertex shader.
 
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -64,6 +64,7 @@ void main() {
     final lines = _RecordingUnlit();
     final sprites = _RecordingSprite();
     final splats = _RecordingSplat();
+    final polyline = _RecordingUnlit();
     final mesh = _RecordingUnlit();
 
     final billboards = BillboardGeometry(capacity: 1)
@@ -85,6 +86,14 @@ void main() {
       ),
     );
     scene.add(Node(mesh: Mesh(billboards, sprites)));
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PolylineGeometry([Vector3(-1, 0.5, 0), Vector3(1, 0.5, 0)]),
+          polyline,
+        ),
+      ),
+    );
     final splatGeometry = SplatGeometry(
       GaussianSplats.fromData(SplatData.zeroed(4)),
     );
@@ -107,8 +116,14 @@ void main() {
         'lines': lines.requested,
         'billboards': sprites.requested,
         'splats': splats.requested,
+        'polyline': polyline.requested,
       },
-      {'lines': isEmpty, 'billboards': isEmpty, 'splats': isEmpty},
+      {
+        'lines': isEmpty,
+        'billboards': isEmpty,
+        'splats': isEmpty,
+        'polyline': isEmpty,
+      },
     );
   });
 }

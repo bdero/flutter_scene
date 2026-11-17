@@ -2008,7 +2008,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // the fragment color (blended from a per-vertex attribute forwarded through a
   // varying). Covers the whole custom-material path end to end: the build hook,
   // the generated fragment and vertex variants, sidecar params, a custom
-  // attribute, a custom varying, and the depth/shadow variant.
+  // attribute, a custom varying, and the depth/shadow variant. It also carries
+  // the engine's own line vertex shaders (segments and polylines).
   SmokeScene('fmat_custom_material', () {
     final material = _fmatMaterial('CustomMaterial')
       ..parameters.setFloat('amplitude', 0.3);
@@ -2055,6 +2056,47 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           UnlitMaterial()..baseColorFactor = vm.Vector4(0.2, 0.9, 1.0, 1.0),
         ),
       )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0.5, 0)),
+    );
+    // Camera-facing polylines, expanded in their own vertex shader and placed
+    // by their nodes: a tapering gradient in screen pixels with round caps,
+    // and a dashed line in world units. Both cast shadows facing the light.
+    scene.add(
+      Node(
+          mesh: Mesh(
+            PolylineGeometry(
+              [
+                for (var i = 0; i <= 12; i++)
+                  vm.Vector3(-1.2 + i * 0.2, 0.15 * math.sin(i * 0.9), 0),
+              ],
+              perVertexWidth: [for (var i = 0; i <= 12; i++) 3.0 + i],
+              perVertexColor: [
+                for (var i = 0; i <= 12; i++) vm.Vector4(1.0, i / 12, 0.2, 1.0),
+              ],
+              cap: PolylineCap.round,
+            ),
+            UnlitMaterial(),
+          ),
+        )
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0, 1.75, 0)) *
+            vm.Matrix4.rotationY(0.5),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PolylineGeometry(
+            [vm.Vector3(-1.4, 1.45, 0.6), vm.Vector3(1.4, 1.45, 0.6)],
+            width: 0.06,
+            widthMode: PolylineWidthMode.worldUnits,
+            dash: const DashPattern(
+              dashLength: 0.3,
+              gapLength: 0.15,
+              cap: PolylineCap.round,
+            ),
+          ),
+          UnlitMaterial()..baseColorFactor = vm.Vector4(1.0, 0.9, 0.2, 1.0),
+        ),
+      ),
     );
     // Mesh and material need not agree on custom attributes. A patch with no
     // `phase` stream drawn with the material reads it as zero, and the hero
