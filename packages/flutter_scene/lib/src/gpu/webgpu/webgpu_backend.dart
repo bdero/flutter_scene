@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart'
         FlutterErrorDetails,
         debugPrint,
         kDebugMode,
+        kIsWasm,
         visibleForTesting;
 import 'package:web/web.dart' as web;
 
