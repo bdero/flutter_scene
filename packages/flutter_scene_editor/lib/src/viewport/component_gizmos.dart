@@ -384,15 +384,8 @@ class ComponentGizmoPainter extends CustomPainter {
 
   /// Whether [component] is a light whose authored shadow is not being drawn,
   /// because the shared shadow atlas ran out of slots for its light type.
-  bool _shadowRequestedButDropped(Component component) {
-    final casts = switch (component) {
-      SpotLightComponent(:final light) => light.castsShadow,
-      PointLightComponent(:final light) => light.castsShadow,
-      _ => false,
-    };
-    if (!casts) return false;
-    return !controller.scene.isShadowCasterGranted(component);
-  }
+  bool _shadowRequestedButDropped(Component component) =>
+      controller.scene.isShadowCasterDropped(component);
 
   void _addStroke(Offset a, Offset b, Color color, double width) {
     (_strokes[(color.toARGB32(), width)] ??= Path())

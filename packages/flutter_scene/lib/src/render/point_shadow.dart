@@ -2,6 +2,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
+import 'package:flutter_scene/src/render/shadow_caster_selection.dart';
 
 // TODO(point-shadow-cache): point faces re-render every caster every frame;
 // route static casters through cached tiles like the directional cascades.
@@ -28,6 +29,7 @@ class PointShadowFrame {
     required this.casters,
     required this.casterFaces,
     required this.casterChannelMasks,
+    required this.dropped,
   });
 
   /// The shadow-casting point components, index = slot.
@@ -39,6 +41,9 @@ class PointShadowFrame {
   /// renders into that light's faces only when its light channels intersect.
   final List<int> casterChannelMasks;
 
+  /// In-view point lights that asked for a shadow but got no slot.
+  final List<PointLightComponent> dropped;
+
   /// World -> clip matrix for face [face] of the caster in [slot].
   Matrix4 faceMatrix(int slot, int face) => casters[slot].light
       .pointShadowFaceViewProjection(casters[slot].worldPosition, face);
@@ -48,15 +53,24 @@ class PointShadowFrame {
   int slotOf(PointLightComponent component) => casters.indexOf(component);
 }
 
-/// Selects up to [kMaxPointShadows] shadow-casting point lights from [points],
-/// or null when none cast a shadow.
-PointShadowFrame? collectPointShadows(List<PointLightComponent> points) {
-  final casters = <PointLightComponent>[];
-  for (final point in points) {
-    if (!point.light.castsShadow) continue;
-    casters.add(point);
-    if (casters.length >= kMaxPointShadows) break;
-  }
+/// Selects up to [kMaxPointShadows] shadow-casting point lights from [points]
+/// (see [selectShadowCasters] for how [views] and [previous] pick them), or
+/// null when none cast a shadow.
+PointShadowFrame? collectPointShadows(
+  List<PointLightComponent> points, {
+  ShadowViewVolumes? views,
+  Set<Object>? previous,
+}) {
+  final selection = selectShadowCasters(
+    points,
+    budget: kMaxPointShadows,
+    castsShadow: (point) => point.light.castsShadow,
+    bounds: (point) =>
+        Sphere.centerRadius(point.worldPosition, point.light.range),
+    views: views,
+    previous: previous,
+  );
+  final casters = selection.casters;
   if (casters.isEmpty) return null;
   return PointShadowFrame(
     casters: casters,
@@ -64,5 +78,6 @@ PointShadowFrame? collectPointShadows(List<PointLightComponent> points) {
     casterChannelMasks: [
       for (final caster in casters) caster.light.shadowCasterChannelMask,
     ],
+    dropped: selection.dropped,
   );
 }

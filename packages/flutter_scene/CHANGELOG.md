@@ -45,6 +45,7 @@
 * On native, the render targets of a scene or `RenderTexture` count toward the Dart VM's external memory, so a scene dropped without `dispose` is collected as its GPU memory piles up. The collector saw only small wrappers and could leave gigabytes of dropped targets alive.
 * Turning `SceneView.autoTick` off and back on continues the view's elapsed time from where it stopped. It threw in debug builds; in release builds the elapsed time started over, and a view with `maxFrameRate` stayed frozen until the new ticker passed the old deadline.
 * `Texture2D.fromImage` builds its mip chain on a background isolate, so loading a model's PNG and JPEG textures at runtime on native platforms no longer holds up frames while each one downsamples.
+* Shadow slots for spot and point lights go to the lights whose shadows can be seen. A light whose range misses every view no longer takes a slot or renders its depth passes, and when more remain than slots, the largest on screen win. `Scene.isShadowCasterDropped` names the in-view lights the budget left out.
 
 ## 0.24.3
 
