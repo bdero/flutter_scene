@@ -32,6 +32,8 @@ class ShadowViewVolumes {
   /// unbounded) can affect anything these views see. A light's shadows fall
   /// only where it reaches, so a light that fails this casts no visible
   /// shadow.
+  // TODO(shadow-slot-unbounded-reach): an unbounded light's shadows end at
+  // its shadowFar, so that radius could cull it too.
   bool canSee(Sphere bounds) {
     final frustums = this.frustums;
     if (frustums == null || bounds.radius <= 0.0) return true;
