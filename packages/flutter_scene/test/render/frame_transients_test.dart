@@ -487,5 +487,28 @@ void main() {
       tracker.record();
       arena.beginFrame();
     });
+
+    test('emplaceDeduplicated reuses views per epoch and resets on submit', () {
+      final tracker = GpuSubmissionTracker();
+      final arena = TransientArena(
+        tracker,
+        alignment: 256,
+        blockLengthInBytes: 4096,
+      );
+
+      final first = arena.emplaceDeduplicated(_bytes(160, 0x3A));
+      final second = arena.emplaceDeduplicated(_bytes(160, 0x3A));
+      final distinct = arena.emplaceDeduplicated(_bytes(160, 0x3B));
+      expect(identical(second, first), isTrue);
+      expect(distinct.offsetInBytes, 256);
+      expect(arena.deduplicatedEmplaces, 1);
+
+      final id = tracker.record();
+      expect(arena.deduplicatedEmplaces, 0);
+      final afterSubmit = arena.emplaceDeduplicated(_bytes(160, 0x3A));
+      expect(identical(afterSubmit, first), isFalse);
+      tracker.complete(id);
+      arena.beginFrame();
+    });
   });
 }
