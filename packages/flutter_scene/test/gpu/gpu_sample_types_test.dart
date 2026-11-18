@@ -128,6 +128,48 @@ void main() {
       expect(slot.sampleType, GpuTextureSampleType.depth);
       expect(slot.samplerType, GpuSamplerBindingType.comparison);
     });
+
+    test('resolveSampleSlotCode and sampleSlotFromCode match exhaustively', () {
+      for (final dimension in GpuTextureViewDimension.values) {
+        for (final scalar in WgslTextureScalar.values) {
+          for (final depthShape in const [false, true]) {
+            for (final multisampled in const [false, true]) {
+              final shape = (
+                viewDimension: dimension,
+                scalar: scalar,
+                depth: depthShape,
+                multisampled: multisampled,
+              );
+              for (final fmtDepth in const [false, true]) {
+                for (final fmtFloat32 in const [false, true]) {
+                  for (final filters in const [false, true]) {
+                    for (final f32Feature in const [false, true]) {
+                      final resolved = resolveSampleSlot(
+                        shape: shape,
+                        format: (depth: fmtDepth, float32: fmtFloat32),
+                        samplerFilters: filters,
+                        float32Filterable: f32Feature,
+                      );
+                      final code = resolveSampleSlotCode(
+                        shape: shape,
+                        formatDepth: fmtDepth,
+                        formatFloat32: fmtFloat32,
+                        samplerFilters: filters,
+                        float32Filterable: f32Feature,
+                      );
+                      expect(code, sampleSlotCode(resolved));
+                      final decoded = sampleSlotFromCode(code);
+                      expect(decoded.sampleType, resolved.sampleType);
+                      expect(decoded.samplerType, resolved.samplerType);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
   });
 
   group('GpuSampleSignature', () {
@@ -165,9 +207,20 @@ void main() {
       );
       final ten = GpuSampleSignature(List.filled(10, slot(_depth)));
       expect(ten.overflow, isEmpty);
+      expect(ten, GpuSampleSignature.fromLanes(ten.primary));
+      expect(ten.hashCode, GpuSampleSignature.fromLanes(ten.primary).hashCode);
+
       final eleven = GpuSampleSignature(List.filled(11, slot(_depth)));
       expect(eleven.overflow, hasLength(1));
       expect(eleven, isNot(ten));
+      expect(
+        eleven,
+        GpuSampleSignature.fromLanes(eleven.primary, eleven.overflow),
+      );
+
+      final twentyOne = GpuSampleSignature(List.filled(21, slot(_depth)));
+      expect(twentyOne.overflow, hasLength(2));
+      expect(twentyOne, isNot(eleven));
     });
   });
 }

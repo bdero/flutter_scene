@@ -19,6 +19,20 @@ final class _WebGpuContext extends GpuContext {
   final JSUint32Array dynamicOffsetsJs = JSUint32Array.withLength(64);
   late final Uint32List dynamicOffsets = dynamicOffsetsJs.toDart;
 
+  /// Synchronous per-draw scratch buffers for unboxed bind-group and variant
+  /// cache lookups.
+  Uint32List groupKeyScratch = Uint32List(64);
+  final List<int> sampleOverflowScratch = [];
+  late final _VariantKey _variantProbe = _VariantKey._probe();
+
+  Uint32List growGroupKeyScratch(int minLength) {
+    var next = groupKeyScratch.length;
+    while (next < minLength) {
+      next *= 2;
+    }
+    return groupKeyScratch = Uint32List(next);
+  }
+
   _WebGpuDeviceBuffer? _zeroUniforms;
 
   /// A zeroed buffer of at least [size] bytes, bound to a uniform block the
@@ -32,25 +46,28 @@ final class _WebGpuContext extends GpuContext {
     );
   }
 
-  final Map<String, _WebGpuTexture> _blankTextures = {};
+  _WebGpuTexture? _blank2d;
+  _WebGpuTexture? _blankCube;
 
   /// An opaque black texture of [viewDimension], bound to a texture the
   /// renderer never binds; GL samples an unbound unit the same way.
-  _WebGpuTexture blankTexture(String viewDimension) =>
-      _blankTextures[viewDimension] ??= () {
-        final cube = viewDimension == 'cube';
-        final texture = createTexture(
-          StorageMode.hostVisible,
-          1,
-          1,
-          textureType: cube ? TextureType.textureCube : TextureType.texture2D,
-          enableRenderTargetUsage: false,
-        );
-        for (var slice = 0; slice < texture.sliceCount; slice++) {
-          texture.overwrite(ByteData(4)..setUint8(3, 255), slice: slice);
-        }
-        return texture as _WebGpuTexture;
-      }();
+  _WebGpuTexture blankTexture(String viewDimension) => viewDimension == 'cube'
+      ? (_blankCube ??= _createBlankTexture(cube: true))
+      : (_blank2d ??= _createBlankTexture(cube: false));
+
+  _WebGpuTexture _createBlankTexture({required bool cube}) {
+    final texture = createTexture(
+      StorageMode.hostVisible,
+      1,
+      1,
+      textureType: cube ? TextureType.textureCube : TextureType.texture2D,
+      enableRenderTargetUsage: false,
+    );
+    for (var slice = 0; slice < texture.sliceCount; slice++) {
+      texture.overwrite(ByteData(4)..setUint8(3, 255), slice: slice);
+    }
+    return texture as _WebGpuTexture;
+  }
 
   /// Bind group layouts by their canonical entries.
   final Map<String, _BindingLayout> bindingLayouts = {};
@@ -72,8 +89,15 @@ final class _WebGpuContext extends GpuContext {
       : PixelFormat.d24UnormS8Uint;
 
   @override
-  int get minimumUniformByteAlignment =>
+  late final int minimumUniformByteAlignment =
       device.device.limits.minUniformBufferOffsetAlignment;
+
+  // WebGPU guarantees minUniformBufferOffsetAlignment is a power of two.
+  late final int _uniformAlignmentMask = () {
+    final alignment = minimumUniformByteAlignment;
+    assert(alignment > 0 && (alignment & (alignment - 1)) == 0);
+    return alignment - 1;
+  }();
 
   @override
   bool get doesSupportOffscreenMSAA => true;
@@ -84,7 +108,7 @@ final class _WebGpuContext extends GpuContext {
   @override
   bool get doesSupportManuallyMippedTextures => true;
 
-  int get maxTextureSize => device.device.limits.maxTextureDimension2D;
+  late final int maxTextureSize = device.device.limits.maxTextureDimension2D;
 
   @override
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes) =>

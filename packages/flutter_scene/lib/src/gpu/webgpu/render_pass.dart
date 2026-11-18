@@ -38,12 +38,6 @@ final class _WebGpuCommandBuffer extends CommandBuffer {
   }
 }
 
-/// A bound uniform block's buffer range.
-typedef _BoundUniform = ({_WebGpuDeviceBuffer buffer, int offset, int length});
-
-/// A bound texture and the options it is sampled with.
-typedef _BoundTexture = ({_WebGpuTexture texture, SamplerOptions? sampler});
-
 final class _WebGpuRenderPass extends RenderPass {
   _WebGpuRenderPass(this._context, GPUCommandEncoder encoder, this._target) {
     final colors = _target.colorAttachments;
@@ -84,21 +78,28 @@ final class _WebGpuRenderPass extends RenderPass {
   /// Bound resources by binding number. A bind also fills the other stage's
   /// same-named binding unless that was bound itself, since WebGL2 binds by
   /// name across both stages and the renderer is written against that.
-  final Map<int, _BoundUniform> _uniforms = {};
-  final Set<int> _explicitUniforms = {};
-  final Map<int, _BoundTexture> _textures = {};
-  final Set<int> _explicitTextures = {};
+  final PassBindingTable<_WebGpuDeviceBuffer, _WebGpuTexture, SamplerOptions>
+  _bindings = PassBindingTable();
 
-  final List<BufferView?> _vertexBuffers = [];
-  BufferView? _indexBuffer;
+  _WebGpuDeviceBuffer? _indexBuffer;
+  int _indexOffset = 0;
+  bool _hasIndexBuffer = false;
   IndexType _indexType = IndexType.int32;
 
   // What the encoder already holds, to skip repeated calls.
   GPURenderPipeline? _encodedPipeline;
   GPUBindGroup? _encodedGroup;
-  final List<int> _encodedOffsets = [];
-  final List<(_WebGpuDeviceBuffer, int)?> _encodedVertex = [];
-  (_WebGpuDeviceBuffer, int, IndexType)? _encodedIndex;
+  final Uint32List _encodedOffsets = Uint32List(64);
+  int _encodedOffsetCount = -1;
+  final List<_WebGpuDeviceBuffer?> _encodedVertexBuffers = List.filled(
+    8,
+    null,
+    growable: true,
+  );
+  final List<int> _encodedVertexOffsets = List.filled(8, -1, growable: true);
+  _WebGpuDeviceBuffer? _encodedIndexBuffer;
+  int _encodedIndexOffset = -1;
+  IndexType _encodedIndexType = IndexType.int32;
 
   static int _mipExtent(int base, int mipLevel) {
     final size = base >> mipLevel;
@@ -187,7 +188,7 @@ final class _WebGpuRenderPass extends RenderPass {
   @override
   void bindVertexBuffer(BufferView bufferView, {int slot = 0}) {
     final pipeline = _bound('bindVertexBuffer');
-    final slots = pipeline.vertexLayout?.buffers.length ?? 1;
+    final slots = pipeline.vertexSlotCount;
     if (slot < 0 || slot >= slots) {
       throw RangeError.value(
         slot,
@@ -197,53 +198,61 @@ final class _WebGpuRenderPass extends RenderPass {
             : 'Pipeline VertexLayout declares $slots buffers',
       );
     }
-    while (_vertexBuffers.length <= slot) {
-      _vertexBuffers.add(null);
-    }
-    _vertexBuffers[slot] = bufferView;
+    _bindings.bindVertexBuffer(
+      slot,
+      bufferView.buffer as _WebGpuDeviceBuffer,
+      bufferView.offsetInBytes,
+    );
   }
 
   @override
   void bindIndexBuffer(BufferView bufferView, IndexType indexType) {
-    _indexBuffer = bufferView;
+    _indexBuffer = bufferView.buffer as _WebGpuDeviceBuffer;
+    _indexOffset = bufferView.offsetInBytes;
+    _hasIndexBuffer = true;
     _indexType = indexType;
     _state.setStripIndexType(indexType);
   }
 
-  /// The bound pipeline's shader for [stage], then the other one.
-  (_WebGpuShader, _WebGpuShader) _stages(_WebGpuRenderPipeline p, Shader s) =>
-      s.stage == ShaderStage.vertex
-      ? (p.vertexShader, p.fragmentShader)
-      : (p.fragmentShader, p.vertexShader);
-
   @override
   void bindUniform(UniformSlot slot, BufferView bufferView) {
     final pipeline = _bound('bindUniform');
-    final name = slot.uniformName;
-    final (own, other) = _stages(pipeline, slot.shader);
-    final ownBlock = own.uniforms[name];
-    final otherBlock = other.uniforms[name];
+    final s = slot as _WebGpuUniformSlot;
+    final isVertex = s.shader.stage == ShaderStage.vertex;
+    final own = isVertex ? pipeline.vertexShader : pipeline.fragmentShader;
+    final other = isVertex ? pipeline.fragmentShader : pipeline.vertexShader;
+    final ownBlock = s._uniformIn(own);
+    final otherBlock = s._uniformIn(other);
     if (ownBlock == null &&
         otherBlock == null &&
-        (slot.shader as _WebGpuShader).uniforms[name] == null) {
+        s._uniformIn(s.shader) == null) {
       throw StateError(
         'Failed to bind uniform. This shader declares no uniform block named '
-        '"$name". A block binds by its type name, not its instance name, and '
-        'a block nothing in the shader reads is optimized out by the compiler '
-        'and reflects as absent. $_staleBundleHint',
+        '"${s.uniformName}". A block binds by its type name, not its instance '
+        'name, and a block nothing in the shader reads is optimized out by the '
+        'compiler and reflects as absent. $_staleBundleHint',
       );
     }
-    final bound = (
-      buffer: bufferView.buffer as _WebGpuDeviceBuffer,
-      offset: bufferView.offsetInBytes,
-      length: bufferView.lengthInBytes,
-    );
+    final buffer = bufferView.buffer as _WebGpuDeviceBuffer;
+    final offset = bufferView.offsetInBytes;
+    final length = bufferView.lengthInBytes;
     if (ownBlock != null) {
-      _uniforms[ownBlock.binding] = bound;
-      _explicitUniforms.add(ownBlock.binding);
+      _bindings.bindUniform(
+        ownBlock.binding,
+        buffer,
+        offset,
+        length,
+        explicit: true,
+      );
     }
-    if (otherBlock != null && !_explicitUniforms.contains(otherBlock.binding)) {
-      _uniforms[otherBlock.binding] = bound;
+    if (otherBlock != null) {
+      _bindings.bindUniform(
+        otherBlock.binding,
+        buffer,
+        offset,
+        length,
+        explicit: false,
+      );
     }
   }
 
@@ -254,36 +263,33 @@ final class _WebGpuRenderPass extends RenderPass {
     SamplerOptions? sampler,
   }) {
     final pipeline = _bound('bindTexture');
-    final name = slot.uniformName;
-    final (own, other) = _stages(pipeline, slot.shader);
-    final ownSlot = own.textures.where((t) => t.name == name).firstOrNull;
-    final otherSlot = other.textures.where((t) => t.name == name).firstOrNull;
+    final s = slot as _WebGpuUniformSlot;
+    final isVertex = s.shader.stage == ShaderStage.vertex;
+    final own = isVertex ? pipeline.vertexShader : pipeline.fragmentShader;
+    final other = isVertex ? pipeline.fragmentShader : pipeline.vertexShader;
+    final ownSlot = s._textureIn(own);
+    final otherSlot = s._textureIn(other);
     if (ownSlot == null && otherSlot == null) {
       throw StateError(
         'Failed to bind texture. This shader declares no texture named '
-        '"$name". Check the sampler name spelling, and note that a sampler '
-        'nothing in the shader reads is optimized out by the compiler and '
-        'reflects as absent. $_staleBundleHint',
+        '"${s.uniformName}". Check the sampler name spelling, and note that a '
+        'sampler nothing in the shader reads is optimized out by the compiler '
+        'and reflects as absent. $_staleBundleHint',
       );
     }
-    final bound = (texture: texture as _WebGpuTexture, sampler: sampler);
+    final tex = texture as _WebGpuTexture;
     if (ownSlot != null) {
-      _textures[ownSlot.binding] = bound;
-      _explicitTextures.add(ownSlot.binding);
+      _bindings.bindTexture(ownSlot.binding, tex, sampler, explicit: true);
     }
-    if (otherSlot != null && !_explicitTextures.contains(otherSlot.binding)) {
-      _textures[otherSlot.binding] = bound;
+    if (otherSlot != null) {
+      _bindings.bindTexture(otherSlot.binding, tex, sampler, explicit: false);
     }
   }
 
   @override
   void clearBindings() {
-    _uniforms.clear();
-    _explicitUniforms.clear();
-    _textures.clear();
-    _explicitTextures.clear();
-    _vertexBuffers.clear();
-    _indexBuffer = null;
+    _bindings.clear();
+    _hasIndexBuffer = false;
   }
 
   // ---- fixed-function state --------------------------------------------------
@@ -378,23 +384,22 @@ final class _WebGpuRenderPass extends RenderPass {
     _checkOpen();
     final pipeline = _bound('drawIndexed');
     if (indexCount == 0 || instanceCount == 0) return;
-    final index = _indexBuffer;
-    if (index == null) {
+    final buffer = _indexBuffer;
+    if (!_hasIndexBuffer || buffer == null) {
       throw StateError('drawIndexed called before bindIndexBuffer');
     }
     _prepare(pipeline);
-    final buffer = index.buffer as _WebGpuDeviceBuffer;
-    final encoded = _encodedIndex;
-    if (encoded == null ||
-        !identical(encoded.$1, buffer) ||
-        encoded.$2 != index.offsetInBytes ||
-        encoded.$3 != _indexType) {
+    if (!identical(_encodedIndexBuffer, buffer) ||
+        _encodedIndexOffset != _indexOffset ||
+        _encodedIndexType != _indexType) {
       _encoder.setIndexBuffer(
         buffer.buffer,
         _indexType == IndexType.int16 ? 'uint16' : 'uint32',
-        index.offsetInBytes,
+        _indexOffset,
       );
-      _encodedIndex = (buffer, index.offsetInBytes, _indexType);
+      _encodedIndexBuffer = buffer;
+      _encodedIndexOffset = _indexOffset;
+      _encodedIndexType = _indexType;
     }
     _encoder.drawIndexed(indexCount, instanceCount);
   }
@@ -403,22 +408,62 @@ final class _WebGpuRenderPass extends RenderPass {
   void _prepare(_WebGpuRenderPipeline pipeline) {
     final sampled = pipeline.sampledTextures;
     final f32 = _context.float32Filterable;
-    final slots = <GpuSampleSlot>[
-      for (final (shader: _, :slot) in sampled)
-        switch (_textures[slot.binding]) {
-          final bound? => resolveSampleSlot(
-            shape: slot.shape!,
-            format: (
-              depth: bound.texture._format.depth,
-              float32: bound.texture._format.float32,
-            ),
-            samplerFilters: _filters(bound.sampler),
-            float32Filterable: f32,
-          ),
-          null => _defaultSampleSlot(slot, f32: f32),
-        },
-    ];
-    final variant = pipeline.variantFor(_state, _shape, slots);
+    var samplePrimary = 0;
+    var lane = 0;
+    var shift = 0;
+    var overflowCount = 0;
+    final overflow = _context.sampleOverflowScratch;
+    for (var i = 0; i < sampled.length; i++) {
+      if (shift == 30) {
+        if (overflowCount == 0) {
+          samplePrimary = lane;
+        } else {
+          final idx = overflowCount - 1;
+          if (idx >= overflow.length) {
+            overflow.add(lane);
+          } else {
+            overflow[idx] = lane;
+          }
+        }
+        overflowCount++;
+        lane = 0;
+        shift = 0;
+      }
+      final entry = sampled[i];
+      final int code;
+      if (_bindings.hasTexture(entry.binding)) {
+        final fmt = _bindings.texture(entry.binding)._format;
+        code = resolveSampleSlotCode(
+          shape: entry.slot.shape!,
+          formatDepth: fmt.depth,
+          formatFloat32: fmt.float32,
+          samplerFilters: _filters(_bindings.sampler(entry.binding)),
+          float32Filterable: f32,
+        );
+      } else {
+        code = entry.defaultCode;
+      }
+      lane |= code << shift;
+      shift += 3;
+    }
+    if (overflowCount == 0) {
+      samplePrimary = lane;
+    } else {
+      final idx = overflowCount - 1;
+      if (idx >= overflow.length) {
+        overflow.add(lane);
+      } else {
+        overflow[idx] = lane;
+      }
+    }
+
+    final variant = pipeline.variantForCodes(
+      _state,
+      _shape,
+      samplePrimary,
+      overflow,
+      overflowCount,
+    );
     if (!identical(variant.pipeline, _encodedPipeline)) {
       _encoder.setPipeline(variant.pipeline);
       _encodedPipeline = variant.pipeline;
@@ -434,80 +479,88 @@ final class _WebGpuRenderPass extends RenderPass {
           options.mipFilter == MipFilter.linear);
 
   void _setBindGroup(_WebGpuRenderPipeline pipeline, _BindingLayout layout) {
-    final parts = <Object>[];
+    var keyScratch = _context.groupKeyScratch;
+    if (keyScratch.length < layout.keyLength) {
+      keyScratch = _context.growGroupKeyScratch(layout.keyLength);
+    }
+    var keyIndex = 0;
     final offsets = _context.dynamicOffsets;
     var dynamicCount = 0;
-    for (final entry in layout.entries) {
+    final entries = layout.entries;
+    final alignmentMask = _context._uniformAlignmentMask;
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
       switch (entry.kind) {
         case _EntryKind.uniform:
           final size = pipeline.uniformSize(entry.binding);
-          final bound = _uniforms[entry.binding];
-          if (bound == null) {
+          if (!_bindings.hasUniform(entry.binding)) {
             final zero = _context.zeroUniformBuffer(size);
-            parts
-              ..add(zero)
-              ..add(size);
+            keyScratch[keyIndex++] = zero._id;
+            keyScratch[keyIndex++] = size;
             if (entry.dynamic) {
               offsets[dynamicCount++] = 0;
             } else {
-              parts.add(0);
+              keyScratch[keyIndex++] = 0;
             }
             continue;
           }
-          final alignment = _context.minimumUniformByteAlignment;
-          if (bound.offset % alignment != 0) {
+          final buffer = _bindings.uniformBuffer(entry.binding);
+          final offset = _bindings.uniformOffset(entry.binding);
+          if ((offset & alignmentMask) != 0) {
             throw StateError(
-              'A uniform buffer range at offset ${bound.offset} is not '
-              'aligned to $alignment bytes, which WebGPU requires; emplace '
-              'uniforms through a HostBuffer.',
+              'A uniform buffer range at offset $offset is not '
+              'aligned to ${_context.minimumUniformByteAlignment} bytes, '
+              'which WebGPU requires; emplace uniforms through a HostBuffer.',
             );
           }
           // Never past the buffer, even where the block is padded beyond
           // what was written.
-          final room = bound.buffer.sizeInBytes - bound.offset;
+          final room = buffer.sizeInBytes - offset;
           final bindSize = size <= room ? size : room;
-          parts
-            ..add(bound.buffer)
-            ..add(bindSize);
+          keyScratch[keyIndex++] = buffer._id;
+          keyScratch[keyIndex++] = bindSize;
           if (entry.dynamic) {
-            offsets[dynamicCount++] = bound.offset;
+            offsets[dynamicCount++] = offset;
           } else {
-            parts.add(bound.offset);
+            keyScratch[keyIndex++] = offset;
           }
         case _EntryKind.texture:
-          final bound = _textures[entry.binding];
-          parts.add(
-            bound?.texture ?? _context.blankTexture(entry.viewDimension!),
-          );
+          keyScratch[keyIndex++] = _textureOrBlank(entry)._id;
         case _EntryKind.sampler:
-          final bound =
-              _textures[entry.binding - WgslBindingMap.splitSamplerOffset];
-          parts.add(
-            _SamplerCache.keyOf(
-              bound?.sampler ?? _defaultSampler,
-              nonFiltering: entry.nonFiltering,
-            ),
-          );
+          keyScratch[keyIndex++] = _samplerKey(entry);
       }
     }
-    final key = _GroupKey(parts);
-    var group = layout.groups[key];
-    if (group == null) {
-      if (layout.groups.length >= 1024) layout.groups.clear();
-      group = layout.groups[key] = _createGroup(layout, parts);
-    }
+    final group =
+        layout.groups.lookup(keyScratch, keyIndex) ??
+        layout.groups.put(keyScratch, keyIndex, _createGroup(pipeline, layout));
     if (identical(group, _encodedGroup) && _sameOffsets(dynamicCount)) return;
     _encoder.setBindGroup(0, group, _context.dynamicOffsetsJs, 0, dynamicCount);
     _encodedGroup = group;
-    _encodedOffsets
-      ..clear()
-      ..addAll(offsets.take(dynamicCount));
+    _encodedOffsetCount = dynamicCount;
+    for (var i = 0; i < dynamicCount; i++) {
+      _encodedOffsets[i] = offsets[i];
+    }
   }
 
   static final SamplerOptions _defaultSampler = SamplerOptions();
 
+  @pragma('wasm:prefer-inline')
+  _WebGpuTexture _textureOrBlank(_LayoutEntry entry) =>
+      _bindings.hasTexture(entry.binding)
+      ? _bindings.texture(entry.binding)
+      : _context.blankTexture(entry.viewDimension!);
+
+  @pragma('wasm:prefer-inline')
+  int _samplerKey(_LayoutEntry entry) {
+    final texBinding = entry.binding - WgslBindingMap.splitSamplerOffset;
+    final sampler = _bindings.hasTexture(texBinding)
+        ? (_bindings.sampler(texBinding) ?? _defaultSampler)
+        : _defaultSampler;
+    return _SamplerCache.keyOf(sampler, nonFiltering: entry.nonFiltering);
+  }
+
   bool _sameOffsets(int count) {
-    if (_encodedOffsets.length != count) return false;
+    if (_encodedOffsetCount != count) return false;
     final offsets = _context.dynamicOffsets;
     for (var i = 0; i < count; i++) {
       if (_encodedOffsets[i] != offsets[i]) return false;
@@ -515,34 +568,48 @@ final class _WebGpuRenderPass extends RenderPass {
     return true;
   }
 
-  /// Builds a group from the [parts] a key was made of, which list each
-  /// entry's resources in entry order.
-  GPUBindGroup _createGroup(_BindingLayout layout, List<Object> parts) {
-    var i = 0;
+  /// Builds a bind group directly from the currently bound resources on a
+  /// cache miss.
+  GPUBindGroup _createGroup(
+    _WebGpuRenderPipeline pipeline,
+    _BindingLayout layout,
+  ) {
     final entries = <Map<String, Object?>>[];
     for (final entry in layout.entries) {
       switch (entry.kind) {
         case _EntryKind.uniform:
-          final buffer = parts[i++] as _WebGpuDeviceBuffer;
-          final size = parts[i++] as int;
-          final offset = entry.dynamic ? 0 : parts[i++] as int;
+          final size = pipeline.uniformSize(entry.binding);
+          final _WebGpuDeviceBuffer buffer;
+          final int bindSize;
+          final int offset;
+          if (!_bindings.hasUniform(entry.binding)) {
+            buffer = _context.zeroUniformBuffer(size);
+            bindSize = size;
+            offset = 0;
+          } else {
+            buffer = _bindings.uniformBuffer(entry.binding);
+            final boundOffset = _bindings.uniformOffset(entry.binding);
+            final room = buffer.sizeInBytes - boundOffset;
+            bindSize = size <= room ? size : room;
+            offset = entry.dynamic ? 0 : boundOffset;
+          }
           entries.add({
             'binding': entry.binding,
             'resource': {
               'buffer': buffer.buffer,
               'offset': offset,
-              'size': size,
+              'size': bindSize,
             },
           });
         case _EntryKind.texture:
           entries.add({
             'binding': entry.binding,
-            'resource': (parts[i++] as _WebGpuTexture).sampledView,
+            'resource': _textureOrBlank(entry).sampledView,
           });
         case _EntryKind.sampler:
           entries.add({
             'binding': entry.binding,
-            'resource': _context.samplers.byKey(parts[i++] as int),
+            'resource': _context.samplers.byKey(_samplerKey(entry)),
           });
       }
     }
@@ -552,27 +619,27 @@ final class _WebGpuRenderPass extends RenderPass {
   }
 
   void _setVertexBuffers(_WebGpuRenderPipeline pipeline) {
-    final slots = pipeline.vertexLayout?.buffers.length ?? 1;
-    while (_encodedVertex.length < slots) {
-      _encodedVertex.add(null);
+    final slots = pipeline.vertexSlotCount;
+    while (_encodedVertexBuffers.length < slots) {
+      _encodedVertexBuffers.add(null);
+      _encodedVertexOffsets.add(-1);
     }
     for (var slot = 0; slot < slots; slot++) {
-      final view = slot < _vertexBuffers.length ? _vertexBuffers[slot] : null;
-      if (view == null) {
+      if (!_bindings.hasVertexBuffer(slot)) {
         throw StateError(
           'Draw with "${pipeline.vertexShader.name}" has no vertex buffer '
           'bound to slot $slot.',
         );
       }
-      final buffer = view.buffer as _WebGpuDeviceBuffer;
-      final encoded = _encodedVertex[slot];
-      if (encoded != null &&
-          identical(encoded.$1, buffer) &&
-          encoded.$2 == view.offsetInBytes) {
+      final buffer = _bindings.vertexBuffer(slot);
+      final offset = _bindings.vertexOffset(slot);
+      if (identical(_encodedVertexBuffers[slot], buffer) &&
+          _encodedVertexOffsets[slot] == offset) {
         continue;
       }
-      _encoder.setVertexBuffer(slot, buffer.buffer, view.offsetInBytes);
-      _encodedVertex[slot] = (buffer, view.offsetInBytes);
+      _encoder.setVertexBuffer(slot, buffer.buffer, offset);
+      _encodedVertexBuffers[slot] = buffer;
+      _encodedVertexOffsets[slot] = offset;
     }
   }
 }

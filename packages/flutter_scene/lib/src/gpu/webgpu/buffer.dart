@@ -56,6 +56,11 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
   _WebGpuDeviceBuffer.geometry(_WebGpuContext context, int sizeInBytes)
     : this._(context, StorageMode.hostVisible, sizeInBytes, shadowed: false);
 
+  static int _nextId = 1;
+
+  /// Monotonic integer identity for unboxed bind-group cache keys.
+  final int _id = _nextId++;
+
   final _WebGpuContext _context;
   final GPUBuffer buffer;
   Uint32List? _shadowWords;

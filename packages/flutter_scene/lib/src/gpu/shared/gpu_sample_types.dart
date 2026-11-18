@@ -170,6 +170,82 @@ GpuSampleSlot resolveSampleSlot({
   );
 }
 
+/// Resolves the compact 3-bit signature code ([sampleSlotCode]) for [shape]
+/// and a bound texture's format/sampler flags without allocating a
+/// [GpuSampleSlot] record.
+@pragma('vm:prefer-inline')
+@pragma('wasm:prefer-inline')
+int resolveSampleSlotCode({
+  required WgslTextureShape shape,
+  required bool formatDepth,
+  required bool formatFloat32,
+  required bool samplerFilters,
+  required bool float32Filterable,
+}) {
+  if (shape.depth) return 3;
+  switch (shape.scalar) {
+    case WgslTextureScalar.i32:
+      return 4;
+    case WgslTextureScalar.u32:
+      return 5;
+    case WgslTextureScalar.f32:
+      break;
+  }
+  final filterable =
+      !formatDepth &&
+      (!formatFloat32 || float32Filterable) &&
+      !shape.multisampled;
+  if (filterable) {
+    return samplerFilters ? 0 : 1;
+  }
+  return 2;
+}
+
+/// The 3-bit code [GpuSampleSignature] packs for [slot] (`0..5`).
+int sampleSlotCode(GpuSampleSlot slot) => switch (slot.sampleType) {
+  GpuTextureSampleType.float =>
+    slot.samplerType == GpuSamplerBindingType.filtering ? 0 : 1,
+  GpuTextureSampleType.unfilterableFloat => 2,
+  GpuTextureSampleType.depth => 3,
+  GpuTextureSampleType.sint => 4,
+  GpuTextureSampleType.uint => 5,
+};
+
+/// Reconstructs the layout-relevant [GpuSampleSlot] from a [sampleSlotCode].
+GpuSampleSlot sampleSlotFromCode(int code) => switch (code) {
+  0 => (
+    sampleType: GpuTextureSampleType.float,
+    samplerType: GpuSamplerBindingType.filtering,
+    samplerDowngraded: false,
+  ),
+  1 => (
+    sampleType: GpuTextureSampleType.float,
+    samplerType: GpuSamplerBindingType.nonFiltering,
+    samplerDowngraded: false,
+  ),
+  2 => (
+    sampleType: GpuTextureSampleType.unfilterableFloat,
+    samplerType: GpuSamplerBindingType.nonFiltering,
+    samplerDowngraded: false,
+  ),
+  3 => (
+    sampleType: GpuTextureSampleType.depth,
+    samplerType: GpuSamplerBindingType.comparison,
+    samplerDowngraded: false,
+  ),
+  4 => (
+    sampleType: GpuTextureSampleType.sint,
+    samplerType: GpuSamplerBindingType.nonFiltering,
+    samplerDowngraded: false,
+  ),
+  5 => (
+    sampleType: GpuTextureSampleType.uint,
+    samplerType: GpuSamplerBindingType.nonFiltering,
+    samplerDowngraded: false,
+  ),
+  _ => throw RangeError.range(code, 0, 5, 'code'),
+};
+
 /// The per-draw part of a pipeline's bind group layouts, packed into one int.
 ///
 /// A shader's declarations fix everything about its layouts except each
@@ -180,48 +256,62 @@ GpuSampleSlot resolveSampleSlot({
 /// into [overflow]. In practice nearly every draw of a material repeats
 /// the same signature, so the extra cache axis rarely misses.
 final class GpuSampleSignature {
-  GpuSampleSignature(Iterable<GpuSampleSlot> slotsInLayoutOrder) {
+  factory GpuSampleSignature(Iterable<GpuSampleSlot> slotsInLayoutOrder) {
+    var first = 0;
     var lane = 0;
     var shift = 0;
+    var hasOverflow = false;
+    List<int>? extra;
     for (final slot in slotsInLayoutOrder) {
       if (shift == 30) {
-        _lanes.add(lane);
+        if (!hasOverflow) {
+          first = lane;
+          hasOverflow = true;
+        } else {
+          (extra ??= <int>[]).add(lane);
+        }
         lane = 0;
         shift = 0;
       }
-      lane |= _code(slot) << shift;
+      lane |= sampleSlotCode(slot) << shift;
       shift += 3;
     }
-    _lanes.add(lane);
+    if (!hasOverflow) {
+      return GpuSampleSignature.fromLanes(lane);
+    }
+    return GpuSampleSignature.fromLanes(
+      first,
+      List<int>.unmodifiable(<int>[...?extra, lane]),
+    );
   }
 
-  final List<int> _lanes = [];
-
-  static int _code(GpuSampleSlot slot) => switch (slot.sampleType) {
-    GpuTextureSampleType.float =>
-      slot.samplerType == GpuSamplerBindingType.filtering ? 0 : 1,
-    GpuTextureSampleType.unfilterableFloat => 2,
-    GpuTextureSampleType.depth => 3,
-    GpuTextureSampleType.sint => 4,
-    GpuTextureSampleType.uint => 5,
-  };
+  /// Builds a signature from pre-packed 30-bit lanes without allocating an
+  /// overflow list when ten or fewer textures are sampled.
+  GpuSampleSignature.fromLanes(this.primary, [this.overflow = const []])
+    : hashCode = overflow.isEmpty
+          ? primary.hashCode
+          : Object.hash(primary, Object.hashAll(overflow));
 
   /// The first 30 bits, enough for every built-in material.
-  int get primary => _lanes.first;
+  final int primary;
 
   /// Lanes past the first, empty for layouts of ten or fewer textures.
-  List<int> get overflow => _lanes.sublist(1);
+  final List<int> overflow;
+
+  @override
+  final int hashCode;
 
   @override
   bool operator ==(Object other) {
-    if (other is! GpuSampleSignature) return false;
-    if (other._lanes.length != _lanes.length) return false;
-    for (var i = 0; i < _lanes.length; i++) {
-      if (other._lanes[i] != _lanes[i]) return false;
+    if (identical(this, other)) return true;
+    if (other is! GpuSampleSignature ||
+        other.primary != primary ||
+        other.overflow.length != overflow.length) {
+      return false;
+    }
+    for (var i = 0; i < overflow.length; i++) {
+      if (other.overflow[i] != overflow[i]) return false;
     }
     return true;
   }
-
-  @override
-  int get hashCode => Object.hashAll(_lanes);
 }
