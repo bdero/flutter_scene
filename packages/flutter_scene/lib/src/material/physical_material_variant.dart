@@ -188,6 +188,15 @@ void requestPhysicalMaterialResources() {
   );
 }
 
+/// Loads the physical bundle again if a material's load of it failed, so a
+/// view retrying a failed load waits on it rather than keeping the fallback.
+@internal
+void retryFailedPhysicalMaterialResources() {
+  if (!_physicalAssetsFailed) return;
+  _physicalAssetsFailed = false;
+  requestPhysicalMaterialResources();
+}
+
 /// Whether the physical bundle is loading and has not arrived yet.
 @internal
 bool get physicalMaterialResourcesPending =>

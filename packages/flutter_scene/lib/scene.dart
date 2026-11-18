@@ -400,6 +400,7 @@ export 'src/widgets/render_texture_view.dart' show RenderTextureView;
 export 'src/widgets/scene_view.dart'
     show
         SceneCameraBuilder,
+        SceneErrorBuilder,
         SceneLoadingBuilder,
         SceneScope,
         SceneTickCallback,

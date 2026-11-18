@@ -406,4 +406,77 @@ void main() {
     await tester.pumpWidget(_sized(const SizedBox()));
     expect(appScene.isDisposed, isFalse);
   });
+
+  testWidgets('errorBuilder shows a failed static load and retry recovers', (
+    tester,
+  ) async {
+    final scene = _tryScene();
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    await tester.runAsync(Scene.initializeStaticResources);
+    Scene.debugFailNextStaticResourcesLoad(StateError('offline'));
+
+    VoidCallback? retry;
+    await tester.pumpWidget(
+      _sized(
+        SceneView(
+          scene,
+          camera: PerspectiveCamera(),
+          loadingBuilder: (_, _) => const Text('loading'),
+          errorBuilder: (context, error, onRetry) {
+            retry = onRetry;
+            return Text('failed: $error');
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.textContaining('offline'), findsOneWidget);
+    // Handed to the builder, not reported.
+    expect(tester.takeException(), isNull);
+
+    retry!();
+    await tester.pump();
+    expect(find.text('loading'), findsOneWidget);
+    await tester.runAsync(Scene.initializeStaticResources);
+    for (var i = 0; i < 10 && !_revealed(tester); i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(Scene.isReadyToRender, isTrue);
+    expect(_revealed(tester), isTrue);
+    expect(find.textContaining('offline'), findsNothing);
+  });
+
+  testWidgets('without errorBuilder a failed static load is reported', (
+    tester,
+  ) async {
+    final scene = _tryScene();
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    await tester.runAsync(Scene.initializeStaticResources);
+    Scene.debugFailNextStaticResourcesLoad(StateError('offline'));
+    addTearDown(() => tester.runAsync(Scene.initializeStaticResources));
+
+    await tester.pumpWidget(
+      _sized(
+        SceneView(
+          scene,
+          camera: PerspectiveCamera(),
+          loadingBuilder: (_, _) => const Text('loading'),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isA<StateError>());
+    expect(find.text('loading'), findsOneWidget);
+  });
 }
+
+// Whether the view has swapped its loading or error widget for the scene.
+bool _revealed(WidgetTester tester) =>
+    find.text('loading').evaluate().isEmpty &&
+    find.textContaining('failed').evaluate().isEmpty;

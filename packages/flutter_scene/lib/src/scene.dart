@@ -228,6 +228,24 @@ base class Scene implements SceneGraph {
 
   static Future<void>? _initializeStaticResources;
   static bool _readyToRender = false;
+  static Object? _debugNextLoadError;
+
+  /// Forgets the loaded static resources and fails the next
+  /// [initializeStaticResources] with [error], for tests of a failed load.
+  @visibleForTesting
+  static void debugFailNextStaticResourcesLoad(Object error) {
+    _initializeStaticResources = null;
+    _readyToRender = false;
+    _debugNextLoadError = error;
+  }
+
+  static Future<void> _initializeGpuBackend() {
+    final error = _debugNextLoadError;
+    _debugNextLoadError = null;
+    return error == null
+        ? gpu.initializeGpuBackend()
+        : Future<void>.error(error);
+  }
 
   /// Whether the engine's shared shader libraries and material lookup
   /// resources have finished loading, so any scene can render this frame.
@@ -545,15 +563,15 @@ base class Scene implements SceneGraph {
   /// and that completes with the load's error when it fails. A failure also
   /// resets the resources and leaves the scene not ready to render, so a
   /// caller that awaits this without catching gets the error rather than a
-  /// misleading one from the first draw. `SceneView` reports it and stays on
-  /// its loading builder.
+  /// misleading one from the first draw. A later call retries. `SceneView`
+  /// passes it to its `errorBuilder`, or reports it and stays on its loading
+  /// builder.
   static Future<void> initializeStaticResources() {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;
     }
     listenForMemoryPressure();
-    _initializeStaticResources = gpu
-        .initializeGpuBackend()
+    _initializeStaticResources = _initializeGpuBackend()
         .then(
           (_) => Future.wait([
             loadBaseShaderLibrary(),

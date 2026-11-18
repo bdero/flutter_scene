@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-idioms
-version: 16
+version: 17
 description: Write correct flutter_scene code. Use this whenever building 3D with the flutter_scene Dart/Flutter engine (rendering a scene, geometry, materials, lighting, loading a .glb model, animation, custom shaders). It corrects the wrong assumptions models carry from three.js, Godot, and Unity, and names the APIs and traps that are specific to this engine.
 ---
 
@@ -30,7 +30,7 @@ dart run flutter_scene:init      # installs the build hook, sets up assets
 flutter run --enable-flutter-gpu # native; add -d chrome for web
 ```
 
-`flutter_scene:init` is required setup, not optional. Rendering is gated on `Scene.initializeStaticResources()`; until it completes the engine prints "Flutter Scene is not ready to render. Skipping frame."
+`flutter_scene:init` is required setup, not optional. Rendering is gated on `Scene.initializeStaticResources()`; until it completes the engine prints "Flutter Scene is not ready to render. Skipping frame." If that load fails (a web build that could not fetch its shader bundle, say), a `SceneView` with an `errorBuilder: (context, error, retry)` shows it and calls `retry()` when the app chooses; nothing retries on its own, and without an `errorBuilder` the view reports the error and stays on its loading widget.
 
 ## Minimal scene (this compiles as-is)
 
