@@ -58,6 +58,11 @@ final class _WebGpuTexture extends Texture {
     _textureFinalizer.attach(this, texture, detach: this);
   }
 
+  static int _nextId = 1;
+
+  /// Monotonic integer identity for unboxed bind-group cache keys.
+  final int _id = _nextId++;
+
   final _WebGpuContext _context;
   final _GpuFormat _format;
   late final GPUTexture texture;

@@ -57,7 +57,9 @@ final class _WebGpuShader extends Shader {
   late String entryPoint;
   final Map<String, _UniformBlock> uniforms = {};
   final List<_TextureSlot> textures = [];
+  final Map<String, _TextureSlot> texturesByName = {};
   final List<_VertexInput> inputs = [];
+  final Map<String, _WebGpuUniformSlot> _slots = {};
 
   /// The WGSL type of each vertex input the entry point declares, by
   /// location. A layout must feed exactly these, with a matching scalar.
@@ -76,7 +78,7 @@ final class _WebGpuShader extends Shader {
 
   @override
   UniformSlot getUniformSlot(String uniformName) =>
-      _WebGpuUniformSlot(this, uniformName);
+      _slots[uniformName] ??= _WebGpuUniformSlot(this, uniformName);
 
   /// Completes once the browser has checked the module of the first compile,
   /// after reporting a compile error to [FlutterError.reportError].
@@ -180,6 +182,10 @@ final class _WebGpuShader extends Shader {
             samplerDeclared: declared.containsKey((t['group'], t['sampler'])),
           ),
       ]);
+    texturesByName.clear();
+    for (final t in textures) {
+      texturesByName[t.name] = t;
+    }
     inputs
       ..clear()
       ..addAll([
@@ -272,12 +278,69 @@ final class _WebGpuUniformSlot extends UniformSlot {
   @override
   final String uniformName;
 
+  int _ownGeneration = -1;
+  _UniformBlock? _ownUniform;
+  _TextureSlot? _ownTexture;
+
+  _WebGpuShader? _pairedShader;
+  int _pairedGeneration = -1;
+  _UniformBlock? _pairedUniform;
+  _TextureSlot? _pairedTexture;
+
+  void _syncOwn() {
+    final gen = shader.generation;
+    if (_ownGeneration == gen) return;
+    _ownUniform = shader.uniforms[uniformName];
+    _ownTexture = shader.texturesByName[uniformName];
+    _ownGeneration = gen;
+  }
+
+  _WebGpuUniformSlot _cachePaired(_WebGpuShader target) {
+    _pairedShader = target;
+    _pairedGeneration = target.generation;
+    _pairedUniform = target.uniforms[uniformName];
+    _pairedTexture = target.texturesByName[uniformName];
+    return this;
+  }
+
+  @pragma('vm:prefer-inline')
+  @pragma('wasm:prefer-inline')
+  _UniformBlock? _uniformIn(_WebGpuShader target) {
+    if (identical(target, shader)) {
+      if (_ownGeneration != target.generation) _syncOwn();
+      return _ownUniform;
+    }
+    if (identical(target, _pairedShader) &&
+        _pairedGeneration == target.generation) {
+      return _pairedUniform;
+    }
+    return _cachePaired(target)._pairedUniform;
+  }
+
+  @pragma('vm:prefer-inline')
+  @pragma('wasm:prefer-inline')
+  _TextureSlot? _textureIn(_WebGpuShader target) {
+    if (identical(target, shader)) {
+      if (_ownGeneration != target.generation) _syncOwn();
+      return _ownTexture;
+    }
+    if (identical(target, _pairedShader) &&
+        _pairedGeneration == target.generation) {
+      return _pairedTexture;
+    }
+    return _cachePaired(target)._pairedTexture;
+  }
+
   @override
-  int? get sizeInBytes => shader.uniforms[uniformName]?.size;
+  int? get sizeInBytes {
+    _syncOwn();
+    return _ownUniform?.size;
+  }
 
   @override
   int? getMemberOffsetInBytes(String memberName) {
-    final block = shader.uniforms[uniformName];
+    _syncOwn();
+    final block = _ownUniform;
     if (block == null) return null;
     for (final member in block.members) {
       if (member.name == memberName) return member.offset;
