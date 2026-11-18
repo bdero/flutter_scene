@@ -6,8 +6,7 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:material_ui/material_ui.dart' hide Matrix4, Step;
-import 'package:flutter_scene/scene.dart'
-    show Component, PointLightComponent, SpotLightComponent;
+import 'package:flutter_scene/scene.dart' show Component;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
@@ -602,13 +601,7 @@ class _ComponentSection extends StatelessWidget {
       final live = controller.liveNode(node.id);
       if (live == null) continue;
       for (final component in live.getComponents<Component>()) {
-        final casts = switch (component) {
-          SpotLightComponent(:final light) => light.castsShadow,
-          PointLightComponent(:final light) => light.castsShadow,
-          _ => false,
-        };
-        if (!casts) continue;
-        if (!controller.scene.isShadowCasterGranted(component)) dropped++;
+        if (controller.scene.isShadowCasterDropped(component)) dropped++;
       }
     }
     return dropped;

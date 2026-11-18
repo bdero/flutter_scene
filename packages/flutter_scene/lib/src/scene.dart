@@ -37,9 +37,7 @@ import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
 import 'components/irradiance_volume_component.dart';
 import 'components/planar_reflector_component.dart';
-import 'components/point_light_component.dart';
 import 'components/reflection_probe_component.dart';
-import 'components/spot_light_component.dart';
 import 'fog.dart';
 import 'god_rays.dart';
 import 'light.dart';
@@ -90,6 +88,7 @@ import 'scene_encoder.dart'
 import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
+import 'render/shadow_caster_selection.dart';
 import 'render/punctual_lights.dart';
 import 'render/point_shadow.dart';
 import 'render/spot_shadow.dart';
@@ -614,56 +613,109 @@ base class Scene implements SceneGraph {
   int get punctualLightOverflowCount =>
       _punctualLightBuffer.overflowedItemCount;
 
-  // The lights that held a shadow slot last frame, by identity, plus how many
-  // asked for one and missed. Refreshed once per frame alongside the caster
-  // selection; empty until the first frame renders.
+  // The lights that held a shadow slot last frame, and the in-view ones that
+  // asked for one and missed, by identity. Refreshed once per frame alongside
+  // the caster selection; empty until the first frame renders.
   final Set<Object> _grantedShadowCasters = Set.identity();
-  int _shadowCasterOverflowCount = 0;
+  final Set<Object> _droppedShadowCasters = Set.identity();
 
   /// How many lights asked to cast a shadow last frame but got no slot in the
   /// shared shadow atlas, which caps shadow-casting spots and point lights
   /// separately (see `kMaxSpotShadows` and `kMaxPointShadows`).
   ///
-  /// Those lights still light the scene; they just throw no shadow, silently.
-  /// A nonzero value means the scene asks for more shadowed local lights than
-  /// the atlas holds, so some authored shadows are not being drawn.
+  /// Only lights whose range reaches what a view sees compete; the slots go
+  /// to the ones that appear largest. The losers still light the scene; they
+  /// just throw no shadow, silently. A nonzero value means more shadowed
+  /// local lights are in view than the atlas holds, so some authored shadows
+  /// are not being drawn.
   /// {@category Lighting and environment}
-  int get shadowCasterOverflowCount => _shadowCasterOverflowCount;
+  int get shadowCasterOverflowCount => _droppedShadowCasters.length;
 
   /// Whether [lightComponent] (a `SpotLightComponent` or
   /// `PointLightComponent`) held a shadow slot last frame.
   ///
-  /// False for a light that does not cast at all, and also for one whose
-  /// `castsShadow` is set but which lost the slot to the budget. Editors pair
-  /// this with [shadowCasterOverflowCount] to point at the specific lights
-  /// whose authored shadow is not being drawn.
+  /// False for a light that does not cast at all, one whose range misses
+  /// every view (its shadow could not be seen), and one that lost the slot to
+  /// the budget. [isShadowCasterDropped] picks out only the last.
   /// {@category Lighting and environment}
   bool isShadowCasterGranted(Object lightComponent) =>
       _grantedShadowCasters.contains(lightComponent);
 
+  /// Whether [lightComponent] (a `SpotLightComponent` or
+  /// `PointLightComponent`) asked for a shadow last frame, was in view, and
+  /// got no slot, one of the lights [shadowCasterOverflowCount] counts.
+  ///
+  /// Unlike a false [isShadowCasterGranted], this excludes lights whose
+  /// shadow could not have been seen anyway, so editors can flag exactly the
+  /// shadows the budget is hiding.
+  /// {@category Lighting and environment}
+  bool isShadowCasterDropped(Object lightComponent) =>
+      _droppedShadowCasters.contains(lightComponent);
+
   // Records this frame's caster selection for the two queries above.
   void _recordShadowCasterBudget({
-    required List<SpotLightComponent> spots,
-    required List<PointLightComponent> points,
     required SpotShadowFrame? spotShadows,
     required PointShadowFrame? pointShadows,
   }) {
     _grantedShadowCasters.clear();
-    final granted =
-        (spotShadows?.casters.length ?? 0) +
-        (pointShadows?.casters.length ?? 0);
-    if (spotShadows != null) _grantedShadowCasters.addAll(spotShadows.casters);
+    _droppedShadowCasters.clear();
+    if (spotShadows != null) {
+      _grantedShadowCasters.addAll(spotShadows.casters);
+      _droppedShadowCasters.addAll(spotShadows.dropped);
+    }
     if (pointShadows != null) {
       _grantedShadowCasters.addAll(pointShadows.casters);
+      _droppedShadowCasters.addAll(pointShadows.dropped);
     }
-    var requested = 0;
-    for (final spot in spots) {
-      if (spot.light.castsShadow) requested++;
+  }
+
+  // The union of what this frame's views see: every screen and texture view,
+  // their planar reflections, and any pending reflection-probe capture (which
+  // sees everything).
+  ShadowViewVolumes _shadowViewVolumes(
+    List<RenderView> views,
+    ui.Rect drawArea,
+  ) {
+    final eyes = <Vector3>[];
+    final frustums = <Frustum>[];
+    void add(Camera camera, ui.Size size) {
+      if (size.isEmpty) return;
+      eyes.add(camera.position);
+      frustums.add(cullingFrustumOf(camera, size));
     }
-    for (final point in points) {
-      if (point.light.castsShadow) requested++;
+
+    for (final view in this.views) {
+      final target = view.target;
+      if (target == null) continue;
+      add(
+        view.camera,
+        ui.Size(target.width.toDouble(), target.height.toDouble()),
+      );
     }
-    _shadowCasterOverflowCount = requested - granted;
+    for (final view in views) {
+      final target = view.target;
+      add(
+        view.camera,
+        target != null
+            ? ui.Size(target.width.toDouble(), target.height.toDouble())
+            : _viewDrawArea(drawArea, view.viewport).size,
+      );
+    }
+    var omnidirectional = false;
+    for (final probe in renderScene.reflectionProbeComponents) {
+      if (!probe.capturePending) continue;
+      omnidirectional = true;
+      eyes.add(probe.worldCenter);
+    }
+    return ShadowViewVolumes(
+      eyes: eyes,
+      frustums: omnidirectional ? null : frustums,
+      mirrors: [
+        for (final reflector in renderScene.planarReflectorComponents)
+          if (reflector.enabled && reflector.node.internalEffectiveVisible)
+            reflector.worldPlane(),
+      ],
+    );
   }
 
   /// Whether punctual lights shade through per-view froxel clustering (the
@@ -1401,8 +1453,16 @@ base class Scene implements SceneGraph {
     }());
     renderScene.rebuildIfDirty();
     final lightComponent = renderScene.primaryDirectionalLight;
-    final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
-    final pointShadowFrame = collectPointShadows(renderScene.pointLights);
+    // The capture sees every direction, so only distance ranks the casters.
+    final captureViews = ShadowViewVolumes(eyes: [position]);
+    final spotShadowFrame = collectSpotShadows(
+      renderScene.spotLights,
+      views: captureViews,
+    );
+    final pointShadowFrame = collectPointShadows(
+      renderScene.pointLights,
+      views: captureViews,
+    );
     final punctualLighting = _punctualLightBuffer.build(
       directionals: renderScene.directionalLights,
       primaryDirectional: lightComponent,
@@ -2400,10 +2460,19 @@ base class Scene implements SceneGraph {
     // All other directional lights remain in the additional-light buffer.
     final lightComponent = renderScene.primaryDirectionalLight;
 
-    // Select this frame's shadow-casting spots and point lights
-    // (view-independent).
-    final spotShadowFrame = collectSpotShadows(visibleSpots);
-    final pointShadowFrame = collectPointShadows(visiblePoints);
+    // Select this frame's shadow-casting spots and point lights. Every view
+    // shares the selection, so it favors lights any of them can see.
+    final shadowViews = _shadowViewVolumes(views, drawArea);
+    final spotShadowFrame = collectSpotShadows(
+      visibleSpots,
+      views: shadowViews,
+      previous: _grantedShadowCasters,
+    );
+    final pointShadowFrame = collectPointShadows(
+      visiblePoints,
+      views: shadowViews,
+      previous: _grantedShadowCasters,
+    );
     // Every tile in the shared atlas is one size, so resolve it once here
     // rather than per view: the point rows stamp their face resolution from
     // it, and ShadowPass renders the faces at the same size. The directional
@@ -2448,8 +2517,6 @@ base class Scene implements SceneGraph {
         : null;
 
     _recordShadowCasterBudget(
-      spots: visibleSpots,
-      points: visiblePoints,
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
     );
