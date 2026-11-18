@@ -13,6 +13,8 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
+import 'support/gpu_available.dart';
+
 /// Builds a [Scene], or returns null when no GPU/Impeller context is available.
 Scene? _tryScene() {
   try {
@@ -410,11 +412,12 @@ void main() {
   testWidgets('errorBuilder shows a failed static load and retry recovers', (
     tester,
   ) async {
-    final scene = _tryScene();
-    if (scene == null) {
-      markTestSkipped('No Impeller GPU context');
+    // Static resources never finish loading under a web `flutter test`.
+    if (!gpuAvailable()) {
+      markTestSkipped('No GPU rendering');
       return;
     }
+    final scene = Scene();
     await tester.runAsync(Scene.initializeStaticResources);
     Scene.debugFailNextStaticResourcesLoad(StateError('offline'));
 
@@ -452,11 +455,12 @@ void main() {
   testWidgets('without errorBuilder a failed static load is reported', (
     tester,
   ) async {
-    final scene = _tryScene();
-    if (scene == null) {
-      markTestSkipped('No Impeller GPU context');
+    // Static resources never finish loading under a web `flutter test`.
+    if (!gpuAvailable()) {
+      markTestSkipped('No GPU rendering');
       return;
     }
+    final scene = Scene();
     await tester.runAsync(Scene.initializeStaticResources);
     Scene.debugFailNextStaticResourcesLoad(StateError('offline'));
     addTearDown(() => tester.runAsync(Scene.initializeStaticResources));
