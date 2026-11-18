@@ -96,9 +96,10 @@ class ShadowCasterSelection<T> {
 /// Picks up to [budget] of [lights] to cast shadows.
 ///
 /// Lights not casting ([castsShadow] false) or whose influence [bounds] (a
-/// sphere, radius `0` for unbounded) misses [views] are skipped. When more remain than [budget], the largest on screen win
-/// (see [ShadowViewVolumes.apparentSize]), lights in [previous] winning
-/// near-ties; equal ranks fall back to the nearer light, then list order.
+/// sphere, radius `0` for unbounded) misses [views] are skipped. When more
+/// remain than [budget], the largest on screen win (see
+/// [ShadowViewVolumes.apparentSize]), lights in [previous] winning near-ties;
+/// equal ranks fall back to the nearer light, then list order.
 /// Winners keep list order, so slots stay put while the chosen set does.
 /// A null [views] skips nothing and takes the first [budget].
 ShadowCasterSelection<T> selectShadowCasters<T extends Object>(
