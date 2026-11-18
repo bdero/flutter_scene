@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physical_material.dart';
+import 'package:flutter_scene/src/material/texture_transform_cache.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
@@ -55,7 +56,11 @@ class TextureTransform {
 
   /// Whether this transform leaves UV coordinates unchanged.
   bool get isIdentity =>
-      offset == Vector2.zero() && scale == Vector2.all(1.0) && rotation == 0.0;
+      offset.x == 0.0 &&
+      offset.y == 0.0 &&
+      scale.x == 1.0 &&
+      scale.y == 1.0 &&
+      rotation == 0.0;
 }
 
 /// A metallic-roughness physically based material with optional layered and
@@ -1666,59 +1671,11 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[163] = lightListOffset.toDouble();
     pass.bindUniform(
       shader.cachedUniformSlot("FragInfo"),
-      transientsBuffer.emplace(_fragInfoBytes),
+      transientsBuffer.emplaceDeduplicated(_fragInfoBytes),
     );
-
-    final textureTransforms = _textureTransformsScratch;
-    _packTextureTransform(
-      textureTransforms,
-      0,
-      baseColorTextureTransform,
-      baseColorTextureTexCoord,
-    );
-    _packTextureTransform(
-      textureTransforms,
-      8,
-      metallicRoughnessTextureTransform,
-      metallicRoughnessTextureTexCoord,
-    );
-    _packTextureTransform(
-      textureTransforms,
-      16,
-      normalTextureTransform,
-      normalTextureTexCoord,
-    );
-    _packTextureTransform(
-      textureTransforms,
-      24,
-      emissiveTextureTransform,
-      emissiveTextureTexCoord,
-    );
-    _packTextureTransform(
-      textureTransforms,
-      32,
-      occlusionTextureTransform,
-      occlusionTextureTexCoord,
-    );
-    // The base record's padding float carries one flag the shader branches on
-    // to skip the five UV-transform evaluations, set when any record
-    // transforms its UVs or selects UV set 1. The identity transform
-    // reproduces the raw UV bit-exactly, so the flag only gates work.
-    final transformedUvs =
-        !baseColorTextureTransform.isIdentity ||
-        !metallicRoughnessTextureTransform.isIdentity ||
-        !normalTextureTransform.isIdentity ||
-        !emissiveTextureTransform.isIdentity ||
-        !occlusionTextureTransform.isIdentity ||
-        baseColorTextureTexCoord != 0 ||
-        metallicRoughnessTextureTexCoord != 0 ||
-        normalTextureTexCoord != 0 ||
-        emissiveTextureTexCoord != 0 ||
-        occlusionTextureTexCoord != 0;
-    textureTransforms[7] = transformedUvs ? 1.0 : 0.0;
     pass.bindUniform(
       shader.cachedUniformSlot('TextureTransforms'),
-      transientsBuffer.emplace(scratchBytesOf(textureTransforms)),
+      transientsBuffer.emplaceDeduplicated(packStandardTextureTransforms(this)),
     );
 
     _bindSlot(pass, shader, 'base_color_texture', baseColorTexture);
@@ -1775,23 +1732,8 @@ class PhysicallyBasedMaterial extends Material {
   );
   static final ByteData _fragInfoBytes = ByteData.sublistView(_fragInfoScratch);
 
-  static final Float32List _textureTransformsScratch = Float32List(40);
-
-  static void _packTextureTransform(
-    Float32List target,
-    int offset,
-    TextureTransform transform,
-    int texCoord,
-  ) {
-    target[offset] = transform.offset.x;
-    target[offset + 1] = transform.offset.y;
-    target[offset + 2] = transform.scale.x;
-    target[offset + 3] = transform.scale.y;
-    target[offset + 4] = math.cos(transform.rotation);
-    target[offset + 5] = math.sin(transform.rotation);
-    target[offset + 6] = texCoord.clamp(0, 1).toDouble();
-    target[offset + 7] = 0.0;
-  }
+  final TextureTransformCache _textureTransforms =
+      TextureTransformCache.standardFive();
 
   static final gpu.SamplerOptions _repeatSampler = gpu.SamplerOptions(
     widthAddressMode: gpu.SamplerAddressMode.repeat,
@@ -1847,6 +1789,9 @@ class PhysicallyBasedMaterial extends Material {
   @override
   bool get lodCrossFades => true;
 
+  static final Float32List _maskInfoScratch = Float32List(12);
+  static final ByteData _maskInfoBytes = ByteData.sublistView(_maskInfoScratch);
+
   @override
   void bindDepthAlphaMask(
     gpu.RenderPass pass,
@@ -1855,11 +1800,12 @@ class PhysicallyBasedMaterial extends Material {
   ) {
     // Mirrors the coverage the color pass tests in Surface():
     // texture.a * weighted vertex-color alpha * baseColorFactor alpha.
-    final params = Float32List(12)
+    final params = _maskInfoScratch
       ..[0] = alphaCutoff
       ..[1] = baseColorFactor.a
-      ..[2] = vertexColorWeight;
-    _packTextureTransform(
+      ..[2] = vertexColorWeight
+      ..[3] = 0.0;
+    packTextureTransformRecord(
       params,
       4,
       baseColorTextureTransform,
@@ -1867,7 +1813,7 @@ class PhysicallyBasedMaterial extends Material {
     );
     pass.bindUniform(
       shader.cachedUniformSlot('MaskInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(params)),
+      transientsBuffer.emplaceDeduplicated(_maskInfoBytes),
     );
     final resolved = resolveTextureSource(baseColorTexture);
     pass.bindTexture(
@@ -1891,3 +1837,25 @@ class PhysicallyBasedMaterial extends Material {
     return baseColorFactor.a >= 1.0;
   }
 }
+
+/// Packs or reuses [material]'s cached 5-slot TextureTransforms block.
+@internal
+ByteData packStandardTextureTransforms(PhysicallyBasedMaterial material) =>
+    material._textureTransforms.packFive(
+      material.baseColorTextureTransform,
+      material.baseColorTextureTexCoord,
+      material.metallicRoughnessTextureTransform,
+      material.metallicRoughnessTextureTexCoord,
+      material.normalTextureTransform,
+      material.normalTextureTexCoord,
+      material.emissiveTextureTransform,
+      material.emissiveTextureTexCoord,
+      material.occlusionTextureTransform,
+      material.occlusionTextureTexCoord,
+    );
+
+/// Repack count of [material]'s standard TextureTransforms cache, for tests.
+@internal
+@visibleForTesting
+int standardTextureTransformPackCount(PhysicallyBasedMaterial material) =>
+    material._textureTransforms.packCount;

@@ -1,17 +1,15 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart'
     show AlphaMode, TextureTransform;
-
-import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/material/texture_transform_cache.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
+import 'package:vector_math/vector_math.dart';
 
 /// A material that draws geometry with a flat color or texture, ignoring
 /// scene lighting.
@@ -52,7 +50,16 @@ class UnlitMaterial extends Material {
   /// Texture-coordinate channel used by [baseColorTexture].
   int baseColorTextureTexCoord = 0;
 
-  static final Float32List _textureTransformScratch = Float32List(8);
+  static final Float32List _fragInfoScratch = Float32List(7);
+  static final ByteData _fragInfoBytes = ByteData.sublistView(_fragInfoScratch);
+
+  static final gpu.SamplerOptions _repeatSampler = gpu.SamplerOptions(
+    widthAddressMode: gpu.SamplerAddressMode.repeat,
+    heightAddressMode: gpu.SamplerAddressMode.repeat,
+  );
+
+  final TextureTransformCache _textureTransform =
+      TextureTransformCache.single();
 
   /// How the material's alpha is interpreted. [AlphaMode.opaque] ignores
   /// alpha; [AlphaMode.blend] routes the material through the depth-sorted
@@ -100,28 +107,21 @@ class UnlitMaterial extends Material {
   ) {
     super.bind(pass, transientsBuffer, lighting);
 
-    var fragInfo = Float32List.fromList([
-      baseColorFactor.r, baseColorFactor.g,
-      baseColorFactor.b, baseColorFactor.a, // color
-      vertexColorWeight, // vertex_color_weight
-      lodFade, // fade
-      displayReferred ? 1.0 : 0.0, // display_referred
-    ]);
+    _fragInfoScratch
+      ..[0] = baseColorFactor.r
+      ..[1] = baseColorFactor.g
+      ..[2] = baseColorFactor.b
+      ..[3] = baseColorFactor.a
+      ..[4] = vertexColorWeight
+      ..[5] = lodFade
+      ..[6] = displayReferred ? 1.0 : 0.0;
     pass.bindUniform(
       fragmentShader.cachedUniformSlot("FragInfo"),
-      transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+      transientsBuffer.emplaceDeduplicated(_fragInfoBytes),
     );
-    final transform = _textureTransformScratch
-      ..[0] = baseColorTextureTransform.offset.x
-      ..[1] = baseColorTextureTransform.offset.y
-      ..[2] = baseColorTextureTransform.scale.x
-      ..[3] = baseColorTextureTransform.scale.y
-      ..[4] = math.cos(baseColorTextureTransform.rotation)
-      ..[5] = math.sin(baseColorTextureTransform.rotation)
-      ..[6] = baseColorTextureTexCoord.clamp(0, 1).toDouble();
     pass.bindUniform(
       fragmentShader.cachedUniformSlot('TextureTransform'),
-      transientsBuffer.emplace(ByteData.sublistView(transform)),
+      transientsBuffer.emplaceDeduplicated(packUnlitTextureTransform(this)),
     );
     final resolved = resolveTextureSource(baseColorTexture);
     pass.bindTexture(
@@ -129,11 +129,7 @@ class UnlitMaterial extends Material {
       Material.whitePlaceholder(resolved),
       sampler: samplerOrPlaceholder(
         resolved,
-        textureSourceSampler(baseColorTexture) ??
-            gpu.SamplerOptions(
-              widthAddressMode: gpu.SamplerAddressMode.repeat,
-              heightAddressMode: gpu.SamplerAddressMode.repeat,
-            ),
+        textureSourceSampler(baseColorTexture) ?? _repeatSampler,
       ),
     );
     // The unlit shader carries the FogInfo block (fog.glsl) too.
@@ -151,3 +147,17 @@ class UnlitMaterial extends Material {
     );
   }
 }
+
+/// Packs or reuses [material]'s cached `TextureTransform` uniform block.
+@internal
+ByteData packUnlitTextureTransform(UnlitMaterial material) =>
+    material._textureTransform.packSingle(
+      material.baseColorTextureTransform,
+      material.baseColorTextureTexCoord,
+    );
+
+/// Repack count of [material]'s `TextureTransform` cache, for tests.
+@internal
+@visibleForTesting
+int unlitTextureTransformPackCount(UnlitMaterial material) =>
+    material._textureTransform.packCount;

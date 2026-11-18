@@ -198,7 +198,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     parameters.bind(pass, shader, transientsBuffer);
     pass.bindUniform(
       shader.cachedUniformSlot('FragmentKeepAlive'),
-      transientsBuffer.emplace(_zeroKeepAlive),
+      transientsBuffer.emplaceDeduplicated(_zeroKeepAlive),
     );
   }
 
@@ -225,7 +225,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
     put('camera_position', position);
     put('camera_forward', forward);
-    pass.bindUniform(slot, transientsBuffer.emplace(data));
+    pass.bindUniform(slot, transientsBuffer.emplaceDeduplicated(data));
   }
 
   @override
@@ -390,7 +390,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // replaces the outputs, and zero makes it invisible.
     pass.bindUniform(
       vertexShader.cachedUniformSlot('VertexKeepAlive'),
-      transientsBuffer.emplace(_zeroKeepAlive),
+      transientsBuffer.emplaceDeduplicated(_zeroKeepAlive),
     );
   }
 
@@ -460,7 +460,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       _packEngineFragInfo(lighting, lighting.environmentMap);
       pass.bindUniform(
         shader.cachedUniformSlot('FragInfo'),
-        transientsBuffer.emplace(_fragInfoBytes),
+        transientsBuffer.emplaceDeduplicated(_fragInfoBytes),
       );
       // The catcher's generated fragment samples only the shadow atlas, the
       // occlusion chain, and (in its shadow variant) the punctual textures.
@@ -480,7 +480,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         _packEngineFragInfo(lighting, env);
         pass.bindUniform(
           shader.cachedUniformSlot('FragInfo'),
-          transientsBuffer.emplace(_fragInfoBytes),
+          transientsBuffer.emplaceDeduplicated(_fragInfoBytes),
         );
         if (_sceneInputs.isNotEmpty) {
           EngineLightingUniforms.bindSceneInputTextures(
@@ -548,7 +548,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         _usesPlanarReflection) {
       pass.bindUniform(
         shader.cachedUniformSlot('FragmentKeepAlive'),
-        transientsBuffer.emplace(_zeroKeepAlive),
+        transientsBuffer.emplaceDeduplicated(_zeroKeepAlive),
       );
     }
   }
@@ -558,6 +558,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     magFilter: gpu.MinMagFilter.linear,
     widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
     heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
+  static final Float32List _planarReflectionScratch = Float32List(20);
+  static final ByteData _planarReflectionBytes = ByteData.sublistView(
+    _planarReflectionScratch,
   );
 
   // Binds the planar capture routed by this surface's reflector, or a black
@@ -573,14 +578,14 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         ? null
         : planarReflectionFrame;
     // PlanarReflectionInfo: mat4 view_projection + vec4 params (x gate).
-    final info = Float32List(20);
+    final info = _planarReflectionScratch..fillRange(0, 20, 0);
     if (frame != null) {
       info.setAll(0, frame.viewProjection.storage);
       info[16] = 1.0;
     }
     pass.bindUniform(
       shader.cachedUniformSlot('PlanarReflectionInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(info)),
+      transientsBuffer.emplaceDeduplicated(_planarReflectionBytes),
     );
     pass.bindTexture(
       shader.cachedUniformSlot('planar_reflection'),
@@ -604,6 +609,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     heightAddressMode: gpu.SamplerAddressMode.repeat,
   );
 
+  static final Float32List _depthMaskScratch = Float32List(12);
+  static final ByteData _depthMaskBytes = ByteData.sublistView(
+    _depthMaskScratch,
+  );
+
   @override
   @internal
   void bindDepthAlphaMask(
@@ -613,20 +623,22 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   ) {
     final transform = _depthMaskTransform;
     final rotation = transform.rotation;
-    final values = Float32List(12)
+    _depthMaskScratch
       ..[0] = _depthMaskCutoff
       ..[1] = _depthMaskAlpha
       ..[2] = 1.0
+      ..[3] = 0.0
       ..[4] = transform.offset.x
       ..[5] = transform.offset.y
       ..[6] = transform.scale.x
       ..[7] = transform.scale.y
       ..[8] = math.cos(rotation)
       ..[9] = math.sin(rotation)
-      ..[10] = _depthMaskTexCoord.toDouble();
+      ..[10] = _depthMaskTexCoord.toDouble()
+      ..[11] = 0.0;
     pass.bindUniform(
       shader.cachedUniformSlot('MaskInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(values)),
+      transientsBuffer.emplaceDeduplicated(_depthMaskBytes),
     );
     final source = _depthMaskTexture;
     final resolved = resolveTextureSource(source);
