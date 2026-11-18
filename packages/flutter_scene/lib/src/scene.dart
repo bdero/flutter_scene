@@ -2462,7 +2462,12 @@ base class Scene implements SceneGraph {
 
     // Select this frame's shadow-casting spots and point lights. Every view
     // shares the selection, so it favors lights any of them can see.
-    final shadowViews = _shadowViewVolumes(views, drawArea);
+    // Built only when a light asks, so scenes without local shadows skip it.
+    final shadowViews =
+        visibleSpots.any((spot) => spot.light.castsShadow) ||
+            visiblePoints.any((point) => point.light.castsShadow)
+        ? _shadowViewVolumes(views, drawArea)
+        : null;
     final spotShadowFrame = collectSpotShadows(
       visibleSpots,
       views: shadowViews,
