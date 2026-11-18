@@ -28,6 +28,7 @@
 * The `lighting_features` hook user-define compiles lit features a project never uses (`irradiance_field`, `rect_area_lights`, `environment_blending`, `parallax_reflection`, `ambient_occlusion`, `point_shadows`) out of the engine's and the bundled physical materials' shaders, so their first draw compiles faster. Dropping the irradiance field and rect area lights cuts the lit shader's first-draw compile on Windows (ANGLE) by about half. A scene that uses a compiled-out feature draws without it and warns once in debug builds.
 * A `RenderTexture` view no longer freezes while the GPU is a frame behind and a screen view renders anyway, such as after a resize.
 * The depth prepass writes a single-channel `r32Float` target when no pass needs normals, a quarter of the memory and bandwidth. `RenderPassContext.sceneDepthLinear` keeps four channels when normals are written.
+* Host-visible buffers on the WebGPU web backend upload far faster under dart2wasm. A frame sealing 248 KB of uniforms went from 19.4 ms to 3.7 ms.
 * Shader bundle reflection parses about 10x faster by copying each backend's output on its first read, so a `ShaderMaterial` on Apple platforms waits far less before its first draw.
 * Build hooks that `flutter test` calls in process (`buildMaterials`, `buildTargetShaderBundleJson`) find the engine's shader includes instead of throwing.
 * A skinned mesh imported offline is no longer culled while on screen in its rest pose, in one of several animations that move the same joint, or when its node sits apart from its skeleton.

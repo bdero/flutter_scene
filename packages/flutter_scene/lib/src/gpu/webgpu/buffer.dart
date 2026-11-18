@@ -2,9 +2,6 @@ part of 'webgpu_backend.dart';
 
 int _align4(int value) => (value + 3) & ~3;
 
-/// Compile-time check: `true` under `dart2js`, `false` under `dart2wasm` / VM.
-const bool _isJsRuntime = identical(1, 1.0);
-
 /// Every role a buffer can play in a draw, since a flutter_gpu DeviceBuffer
 /// is untyped and the engine binds one range as vertices and another as
 /// indices or uniforms.
@@ -42,20 +39,14 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
          ),
        ) {
     if (shadowed) {
-      // Keep the CPU shadow in native Dart 32-bit word storage rather than a
-      // JS-backed Uint8Array view (`JSUint8Array.toDart`). Under dart2wasm,
-      // `JSUint8ArrayImpl.setRange` from a Wasm-backed list falls back to
-      // materializing a boxed `List<int>` and writing one byte per FFI call,
-      // whereas writing native 32-bit words and crossing an aligned
-      // `Uint32List` slice stays unboxed and transfers 4 bytes per step (and on
-      // dart2js `Uint32List` / `Uint8List` views share the same JS ArrayBuffer
-      // with zero copy).
+      // Word storage, since dart2wasm hands typed data to JS one element at a
+      // time. Writing into a JS-backed shadow instead boxes every byte.
       final words = Uint32List(buffer.size >> 2);
       _shadowWords = words;
-      if (_isJsRuntime) {
-        _shadowJsBytes = words.buffer.asUint8List();
-      } else {
+      if (kIsWasm) {
         _shadowByteData = ByteData.sublistView(words);
+      } else {
+        _shadowBytes = words.buffer.asUint8List();
       }
     }
     _bufferFinalizer.attach(this, buffer, detach: this);
@@ -68,7 +59,9 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
   final _WebGpuContext _context;
   final GPUBuffer buffer;
   Uint32List? _shadowWords;
-  Uint8List? _shadowJsBytes;
+  // A byte view of the shadow for dart2js, where it shares the JS buffer.
+  Uint8List? _shadowBytes;
+  // The view dart2wasm writes unaligned head and tail bytes through.
   ByteData? _shadowByteData;
 
   @override
@@ -119,19 +112,19 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
         queue.writeBuffer(buffer, offset, _jsViewOf(source));
       } else {
         final paddedWords = Uint32List(_align4(length) >> 2);
-        if (_isJsRuntime) {
-          paddedWords.buffer.asUint8List().setRange(
-            0,
-            length,
-            source.buffer.asUint8List(source.offsetInBytes, length),
-          );
-        } else {
-          _copyIntoShadowWasm(
+        if (kIsWasm) {
+          _copyWords(
             paddedWords,
             ByteData.sublistView(paddedWords),
             0,
             source,
             length,
+          );
+        } else {
+          paddedWords.buffer.asUint8List().setRange(
+            0,
+            length,
+            source.buffer.asUint8List(source.offsetInBytes, length),
           );
         }
         queue.writeBuffer(buffer, offset, paddedWords.toJS);
@@ -139,19 +132,13 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
       return true;
     }
 
-    if (_isJsRuntime) {
-      _shadowJsBytes!.setRange(
+    if (kIsWasm) {
+      _copyWords(shadowWords, _shadowByteData!, offset, source, length);
+    } else {
+      _shadowBytes!.setRange(
         offset,
         offset + length,
         source.buffer.asUint8List(source.offsetInBytes, length),
-      );
-    } else {
-      _copyIntoShadowWasm(
-        shadowWords,
-        _shadowByteData!,
-        offset,
-        source,
-        length,
       );
     }
     final start = offset & ~3;
@@ -161,9 +148,13 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
     return true;
   }
 
-  /// Copies [length] bytes from [source] into [dstWords] / [dstBytes] at
-  /// [dstOffset] inside pure Wasm memory without boxing or JS FFI crossings.
-  static void _copyIntoShadowWasm(
+  /// Copies [length] bytes of [source] to [dstOffset] in [dstWords] a word at
+  /// a time, through [dstBytes] (a view of [dstWords]) for unaligned ends.
+  ///
+  /// Under dart2wasm this is about 7x faster than a byte `setRange` into the
+  /// same words. Words are copied as integers, never floats, so NaN payloads
+  /// survive.
+  static void _copyWords(
     Uint32List dstWords,
     ByteData dstBytes,
     int dstOffset,
@@ -221,25 +212,16 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
     _ => _copyTypedDataToJs(source),
   };
 
+  /// Copies [source], whose length is a multiple of 4, into a list JS can
+  /// take as is.
   static JSObject _copyTypedDataToJs(TypedData source) {
     final length = source.lengthInBytes;
-    if (_isJsRuntime) {
+    if (!kIsWasm) {
       return source.buffer.asUint8List(source.offsetInBytes, length).toJS;
     }
-    final data = source is ByteData ? source : ByteData.sublistView(source);
-    if ((length & 3) == 0) {
-      final wordCount = length >> 2;
-      final words = Uint32List(wordCount);
-      for (var i = 0; i < wordCount; i++) {
-        words[i] = data.getUint32(i << 2, Endian.host);
-      }
-      return words.toJS;
-    }
-    final bytes = Uint8List(length);
-    for (var i = 0; i < length; i++) {
-      bytes[i] = data.getUint8(i);
-    }
-    return bytes.toJS;
+    final words = Uint32List(length >> 2);
+    _copyWords(words, ByteData.sublistView(words), 0, source, length);
+    return words.toJS;
   }
 
   /// Host writes reach the GPU through the queue; there is nothing to flush.
