@@ -448,8 +448,9 @@ antiAliasingMode, double? renderScale, FilterQuality? filterQuality, List<Plane>
 
 Widgets:
 - `SceneView(Scene scene, {Camera? camera, SceneCameraBuilder? cameraBuilder, SceneViewsBuilder?
-  viewsBuilder, autoTick = true, pixelRatio, onTick, loading, loadingBuilder, revealMinDuration,
-  warmUp = false, children})`. App-owned scene; does not write scene properties. `camera`,
+  viewsBuilder, autoTick = true, pixelRatio, onTick, loading, loadingBuilder, errorBuilder,
+  revealMinDuration, warmUp = false, children})`. `errorBuilder(context, error, retry)` replaces the
+  loading widget when the engine's static resources fail to load; `retry()` loads them again. App-owned scene; does not write scene properties. `camera`,
   `cameraBuilder`, `viewsBuilder` are mutually exclusive.
 - `SceneView.declarative({environment, environmentIntensity = 1.0, exposure = 1.0, toneMapping =
   pbrNeutral, camera, cameraBuilder, viewsBuilder, children, ...})`. View-owned scene.

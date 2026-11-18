@@ -1,5 +1,6 @@
 ## 0.24.4
 
+* `SceneView.errorBuilder` shows a failed engine resource load (such as a shader bundle a web build could not fetch) with a `retry` callback, instead of leaving the view on its loading widget.
 * Placeholder textures always bind with a nearest sampler, so on OpenGL ES, which keeps sampler state on the texture, an untextured slot no longer reads slightly under white depending on bind order.
 * `Scene.warmUp` takes `extraNodes` (and `SceneView` takes `warmUpExtraNodes`), drawn only in the warm-up frames, so content added later compiles its pipelines before it first shows instead of stalling that frame.
 * A sliced `Scene.warmUp` (`sliceBudget`, and `SceneView(warmUp: true)`) yields between slow pipeline builds and after the first sky bake. Its budget timed only creating each pipeline, while the backend compiles one when a pass first binds it, so it built everything in its first slice and blocked for the whole compile.
