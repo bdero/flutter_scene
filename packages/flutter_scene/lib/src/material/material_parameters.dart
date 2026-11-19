@@ -25,7 +25,14 @@ class _ParamSlot {
 }
 
 class _SamplerSlot {
-  _SamplerSlot(this.defaultPlaceholder, [this.type = FmatType.sampler2d]);
+  _SamplerSlot(this.defaultPlaceholder, [this.type = FmatType.sampler2d]) {
+    if (type == FmatType.sampler2DArray && !gpu.supportsTextureArrays) {
+      throw UnsupportedError(
+        'This material declares a sampler2DArray, but this backend has no '
+        '2D-array textures (see Texture2DArray.isSupported).',
+      );
+    }
+  }
 
   final FmatHintKind? defaultPlaceholder;
 
@@ -736,7 +743,7 @@ class MaterialParameters {
     FmatType type,
     gpu.Texture texture,
   ) {
-    final isArray = texture.textureType == gpu.TextureType.texture2DArray;
+    final isArray = gpu.isTexture2DArray(texture);
     final String? expected = switch (type) {
       FmatType.sampler2DArray when !isArray => 'a 2D-array texture',
       FmatType.sampler2d when isArray => 'a 2D texture',
@@ -769,12 +776,11 @@ class MaterialParameters {
   static final Map<FmatHintKind?, gpu.Texture> _arrayPlaceholders = {};
 
   static gpu.Texture _arrayPlaceholder(FmatHintKind? kind) {
-    final texture = gpu.gpuContext.createTexture(
+    final texture = gpu.createTexture2DArray(
       gpu.StorageMode.hostVisible,
       1,
       1,
-      textureType: gpu.TextureType.texture2DArray,
-      enableRenderTargetUsage: false,
+      1,
     );
     final rgba = switch (kind) {
       FmatHintKind.defaultNormal => 0xFFFF7F7F,

@@ -79,6 +79,33 @@ GpuContext get gpuContext => _backend.context;
 /// The active backend's host integration.
 GpuHost get gpuHost => _backend.host;
 
+/// Whether the active context creates 2D-array textures.
+bool get supportsTextureArrays => gpuContext.doesSupportTextureArrays;
+
+/// A [width] x [height] 2D-array texture of [layerCount] layers.
+Texture createTexture2DArray(
+  StorageMode storageMode,
+  int width,
+  int height,
+  int layerCount, {
+  PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+}) => gpuContext.createTexture(
+  storageMode,
+  width,
+  height,
+  format: format,
+  textureType: TextureType.texture2DArray,
+  enableRenderTargetUsage: false,
+  layerCount: layerCount,
+);
+
+/// Whether [texture] is a 2D-array texture.
+bool isTexture2DArray(Texture texture) =>
+    texture.textureType == TextureType.texture2DArray;
+
+/// The layers of a 2D-array [texture], or 1 for every other kind.
+int textureLayerCount(Texture texture) => texture.layerCount;
+
 abstract base class GpuContext {
   PixelFormat get defaultColorFormat;
   PixelFormat get defaultStencilFormat;

@@ -16,3 +16,4 @@ part 'host.dart';
 part 'present.dart';
 part 'shader_library_inline.dart';
 part 'surface.dart';
+part 'texture_arrays.dart';

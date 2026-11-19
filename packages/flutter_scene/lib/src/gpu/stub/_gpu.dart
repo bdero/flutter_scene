@@ -15,3 +15,4 @@ part 'shader_library.dart';
 part 'shader_library_inline.dart';
 part 'shim_stubs.dart';
 part 'surface.dart';
+part 'texture_arrays.dart';
