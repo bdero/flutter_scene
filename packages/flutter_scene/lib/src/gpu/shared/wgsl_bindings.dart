@@ -17,6 +17,9 @@ enum WgslResourceKind {
   /// A combined image sampler in SPIR-V. Occupies two consecutive binding
   /// slots once Tint splits it, the texture first and the sampler second.
   combinedTextureSampler,
+
+  /// A compute shader's storage buffer. Occupies one binding slot.
+  storageBuffer,
 }
 
 /// One resource as the shader bundle reflection describes it, before
@@ -38,6 +41,9 @@ typedef WgslBinding = ({
 
   /// Only set for [WgslResourceKind.combinedTextureSampler].
   int? samplerBinding,
+
+  /// Whether this is a [WgslResourceKind.storageBuffer].
+  bool storage,
 });
 
 /// Raised when the emitted WGSL disagrees with the predicted layout.
@@ -95,12 +101,13 @@ class WgslBindingMap {
     for (final r in sorted) {
       final base = r.binding + shift;
       switch (r.kind) {
-        case WgslResourceKind.uniformBuffer:
+        case WgslResourceKind.uniformBuffer || WgslResourceKind.storageBuffer:
           out[r.name] = (
             name: r.name,
             group: group,
             textureBinding: base,
             samplerBinding: null,
+            storage: r.kind == WgslResourceKind.storageBuffer,
           );
         case WgslResourceKind.combinedTextureSampler:
           out[r.name] = (
@@ -108,6 +115,7 @@ class WgslBindingMap {
             group: group,
             textureBinding: base,
             samplerBinding: base + 1,
+            storage: false,
           );
           shift += 1;
       }
@@ -152,6 +160,7 @@ class WgslBindingMap {
         samplerBinding: r.kind == WgslResourceKind.combinedTextureSampler
             ? r.binding + splitSamplerOffset
             : null,
+        storage: r.kind == WgslResourceKind.storageBuffer,
       );
     }
     return WgslBindingMap._(Map.unmodifiable(out));
@@ -193,8 +202,11 @@ class WgslBindingMap {
     final expectedSamplers = <int>{};
     final expectedTextures = <int>{};
     final expectedUniforms = <int>{};
+    final expectedStorage = <int>{};
     for (final b in bindings.values) {
-      if (b.samplerBinding == null) {
+      if (b.storage) {
+        expectedStorage.add(b.textureBinding);
+      } else if (b.samplerBinding == null) {
         expectedUniforms.add(b.textureBinding);
       } else {
         expectedTextures.add(b.textureBinding);
@@ -205,6 +217,7 @@ class WgslBindingMap {
     final actualSamplers = <int>{};
     final actualTextures = <int>{};
     final actualUniforms = <int>{};
+    final actualStorage = <int>{};
     for (final d in actual) {
       switch (d.kind) {
         case WgslDeclarationKind.sampler:
@@ -213,6 +226,8 @@ class WgslBindingMap {
           actualTextures.add(d.binding);
         case WgslDeclarationKind.uniform:
           actualUniforms.add(d.binding);
+        case WgslDeclarationKind.storage:
+          actualStorage.add(d.binding);
         case WgslDeclarationKind.other:
           break;
       }
@@ -229,11 +244,19 @@ class WgslBindingMap {
     compare('uniform', expectedUniforms, actualUniforms);
     compare('texture', expectedTextures, actualTextures);
     compare('sampler', expectedSamplers, actualSamplers);
+    if (actualStorage.isNotEmpty && expectedStorage.isEmpty) {
+      // A bundle older than format 3 reflects no storage buffers at all.
+      throw WgslBindingMismatch(
+        'storage buffers$where are not reflected by the shader bundle. '
+        'Compute shaders need a bundle built by Flutter 3.51 or newer',
+      );
+    }
+    compare('storage', expectedStorage, actualStorage);
   }
 }
 
 /// What a parsed WGSL module-scope declaration binds.
-enum WgslDeclarationKind { uniform, texture, sampler, other }
+enum WgslDeclarationKind { uniform, storage, texture, sampler, other }
 
 /// A `@group(G) @binding(B) var ...` declaration parsed out of WGSL source.
 ///
@@ -260,6 +283,7 @@ List<WgslDeclaration> parseWgslDeclarations(String wgsl) {
     final type = m.group(4)!.trim();
     final kind = switch (0) {
       _ when addressSpace.startsWith('uniform') => WgslDeclarationKind.uniform,
+      _ when addressSpace.startsWith('storage') => WgslDeclarationKind.storage,
       _ when type == 'sampler' || type == 'sampler_comparison' =>
         WgslDeclarationKind.sampler,
       _ when type.startsWith('texture_') => WgslDeclarationKind.texture,

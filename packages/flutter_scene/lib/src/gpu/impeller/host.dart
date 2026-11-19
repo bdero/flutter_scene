@@ -8,14 +8,12 @@ class GpuHost {
   const GpuHost._();
 
   /// See [GpuCapabilities].
-  GpuCapabilities get capabilities => const GpuCapabilities(
+  GpuCapabilities get capabilities => GpuCapabilities(
     textureToImage: true,
     imageToTexture: true,
     // Native uses Texture.asImage directly; the present path is a web concept.
     presentAsImage: false,
-    // Impeller has a compute HAL, but flutter_gpu exposes no Dart surface for
-    // it yet. Tracked upstream as flutter/flutter#188474.
-    compute: false,
+    compute: supportsCompute,
     // Flutter GPU allocates every texture itself; wrapping a swapchain image
     // a runtime owns is proposed as flutter/flutter#192059.
     externalColorTargets: false,

@@ -121,6 +121,78 @@ void main() {
     expect(lit['inputs'], <Object?>[]);
   });
 
+  test('records a compute shader\'s storage buffers and workgroup', () async {
+    const wgsl = '''
+@group(0u) @binding(2u) var<uniform> v : Params;
+@group(0u) @binding(1u) var<storage, read_write> v_1 : Output;
+@group(0u) @binding(0u) var<storage, read> v_2 : Input;
+
+@compute @workgroup_size(4u, 1u, 1u)
+fn main() {}
+''';
+    fb.BackendShaderObjectBuilder compute() => fb.BackendShaderObjectBuilder(
+      stage: fb.ShaderStage.kCompute,
+      entrypoint: 'main',
+      uniformStructs: [
+        fb.ShaderUniformStructObjectBuilder(
+          name: 'Params',
+          $set: 0,
+          binding: 2,
+          sizeInBytes: 8,
+          fields: const [],
+        ),
+      ],
+      storageBuffers: [
+        fb.ShaderStorageBufferObjectBuilder(
+          name: 'Input',
+          binding: 0,
+          access: fb.ShaderResourceAccess.kReadOnly,
+          sizeInBytes: 0,
+          runtimeArrayStride: 4,
+        ),
+        fb.ShaderStorageBufferObjectBuilder(
+          name: 'Output',
+          binding: 1,
+          access: fb.ShaderResourceAccess.kWriteOnly,
+          sizeInBytes: 16,
+          runtimeArrayStride: 0,
+        ),
+      ],
+      workgroupSize: fb.WorkgroupSizeObjectBuilder(x: 4, y: 1, z: 1),
+      shader: const [3, 2, 35, 7],
+    );
+    final bundle = fb.ShaderBundleObjectBuilder(
+      shaders: [fb.ShaderObjectBuilder(name: 'Scale', vulkan: compute())],
+      formatVersion: 3,
+    ).toBytes();
+    final json = await buildWgslSidecar(
+      bundle,
+      _FakeTranslator(wgsl),
+      shippedBundleHash: 'abc',
+    );
+    final scale = ((jsonDecode(json) as Map)['shaders'] as Map)['Scale'] as Map;
+    expect(scale['stage'], 'compute');
+    expect(scale['workgroupSize'], [4, 1, 1]);
+    expect(scale['storageBuffers'], [
+      {
+        'name': 'Input',
+        'group': 0,
+        'binding': 0,
+        'size': 0,
+        'stride': 4,
+        'access': 'read',
+      },
+      {
+        'name': 'Output',
+        'group': 0,
+        'binding': 1,
+        'size': 16,
+        'stride': 0,
+        'access': 'read_write',
+      },
+    ]);
+  });
+
   test('fails naming the shader when Tint moves a binding', () async {
     final moved = _goodWgsl.replaceFirst('194u', '67u');
     expect(

@@ -2,13 +2,14 @@ part of 'webgpu_backend.dart';
 
 int _align4(int value) => (value + 3) & ~3;
 
-/// Every role a buffer can play in a draw, since a flutter_gpu DeviceBuffer
-/// is untyped and the engine binds one range as vertices and another as
-/// indices or uniforms.
+/// Every role a buffer can play in a draw or dispatch, since a flutter_gpu
+/// DeviceBuffer is untyped and the engine binds one range as vertices and
+/// another as indices, uniforms, or compute storage.
 const int _bufferUsage =
     GPUBufferUsage.vertex |
     GPUBufferUsage.index |
     GPUBufferUsage.uniform |
+    GPUBufferUsage.storage |
     GPUBufferUsage.copyDst |
     GPUBufferUsage.copySrc;
 

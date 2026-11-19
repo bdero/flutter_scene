@@ -20,6 +20,7 @@ import 'package:hooks/hooks.dart';
 import '../gpu/shared/wgsl_bindings.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
 import 'spirv_constant_arrays.dart';
+import 'spirv_storage_access.dart';
 import 'tint_binary.dart';
 
 /// The pubspec user-define that turns WGSL translation on.
@@ -33,7 +34,8 @@ const int kWgslSidecarFormat = 2;
 
 /// Names the SPIR-V preprocessing ahead of the translator, recorded beside
 /// its revision. Bump it when the preprocessing changes what Tint sees.
-const String kSpirvPreprocessing = 'hoist-constant-arrays-1';
+const String kSpirvPreprocessing =
+    'hoist-constant-arrays-1, drop-non-readable-1';
 
 /// Whether [input]'s package asked for WGSL sidecars.
 bool webGpuShadersRequested(BuildInput input) =>
@@ -86,6 +88,12 @@ List<WgslReflectedResource> reflectedResources(fb.BackendShader shader) => [
       binding: t.binding,
       kind: WgslResourceKind.combinedTextureSampler,
     ),
+  for (final b in shader.storageBuffers ?? const <fb.ShaderStorageBuffer>[])
+    (
+      name: b.name ?? '',
+      binding: b.binding,
+      kind: WgslResourceKind.storageBuffer,
+    ),
 ];
 
 /// Translates every Vulkan entry in [untrimmedBundle] and returns the sidecar
@@ -118,7 +126,7 @@ Future<String> buildWgslSidecar(
     };
     jobs.add((
       name: name,
-      spirv: hoistConstantArrays(Uint8List.fromList(words)),
+      spirv: hoistConstantArrays(dropNonReadable(Uint8List.fromList(words))),
       samplerBindings: map.samplerMappings,
     ));
   }
@@ -234,6 +242,28 @@ Map<String, Object?> _sidecarEntry({
           'sampler': map[t.name!]!.samplerBinding,
         },
   ],
+  if (stage == 'compute') ...{
+    'storageBuffers': [
+      for (final b
+          in reflection.storageBuffers ?? const <fb.ShaderStorageBuffer>[])
+        if (b.name != null)
+          {
+            'name': b.name,
+            'group': map[b.name!]!.group,
+            'binding': map[b.name!]!.textureBinding,
+            'size': b.sizeInBytes,
+            'stride': b.runtimeArrayStride,
+            // WGSL has no write-only storage, so only read-only is distinct.
+            'access': b.access == fb.ShaderResourceAccess.kReadOnly
+                ? 'read'
+                : 'read_write',
+          },
+    ],
+    'workgroupSize': switch (reflection.workgroupSize) {
+      final size? => [size.x, size.y, size.z],
+      null => [1, 1, 1],
+    },
+  },
 };
 
 /// Runs the native `flutter_scene_tint` binary over a batch.

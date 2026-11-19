@@ -11,6 +11,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import '../shared/encoded_image_types.dart';
 import '../shared/external_target.dart';
 import '../shared/gpu_capabilities.dart';
+import '../shared/gpu_compute_limits.dart';
 import '../webgpu/webgpu_backend.dart' show createWebGpuBackend;
 import 'webgl/_webgl.dart' show createWebGlBackend;
 

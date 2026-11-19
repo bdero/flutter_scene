@@ -114,6 +114,22 @@ final class _WebGpuContext extends GpuContext {
 
   late final int maxTextureSize = device.device.limits.maxTextureDimension2D;
 
+  late final GpuComputeLimits computeLimits = () {
+    final limits = device.device.limits;
+    final count = limits.maxComputeWorkgroupsPerDimension;
+    return GpuComputeLimits(
+      maxWorkgroupInvocations: limits.maxComputeInvocationsPerWorkgroup,
+      maxWorkgroupSize: (
+        limits.maxComputeWorkgroupSizeX,
+        limits.maxComputeWorkgroupSizeY,
+        limits.maxComputeWorkgroupSizeZ,
+      ),
+      maxWorkgroupCount: (count, count, count),
+      maxSharedMemoryBytes: limits.maxComputeWorkgroupStorageSize,
+      minStorageBufferOffsetAlignment: limits.minStorageBufferOffsetAlignment,
+    );
+  }();
+
   @override
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes) =>
       _WebGpuDeviceBuffer._(
