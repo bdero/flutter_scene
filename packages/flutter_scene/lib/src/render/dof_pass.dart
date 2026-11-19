@@ -90,15 +90,17 @@ class DofPass extends RenderGraphPass {
     final halfWidth = math.max(1, fullWidth ~/ 2);
     final halfHeight = math.max(1, fullHeight ~/ 2);
 
-    gpu.Texture acquire(String debugName, {bool half = true}) =>
-        context.texturePool.acquire(
-          TransientTextureDescriptor.color(
-            width: half ? halfWidth : fullWidth,
-            height: half ? halfHeight : fullHeight,
-            format: _hdrFormat,
-            debugName: debugName,
-          ),
-        );
+    gpu.Texture acquire(String debugName, {bool half = true}) {
+      final descriptor = TransientTextureDescriptor.color(
+        width: half ? halfWidth : fullWidth,
+        height: half ? halfHeight : fullHeight,
+        format: _hdrFormat,
+        debugName: debugName,
+      );
+      return half
+          ? context.texturePool.acquireScoped(descriptor)
+          : context.texturePool.acquire(descriptor);
+    }
 
     // 1. Half-res downsample + signed CoC (in half-res pixel radii).
     final cocColor = acquire('dof_coc_color');
@@ -157,6 +159,7 @@ class DofPass extends RenderGraphPass {
       },
       textures: {'coc_color': nearRow},
     );
+    context.texturePool.releaseScoped(nearRow);
 
     // 3. The bokeh gather. The kernel block is memoized on the settings
     // object against the shape parameters (this pass is rebuilt every frame),
@@ -171,6 +174,8 @@ class DofPass extends RenderGraphPass {
       },
       textures: {'coc_color': cocColor, 'near_coc': nearCoc},
     );
+    context.texturePool.releaseScoped(cocColor);
+    context.texturePool.releaseScoped(nearCoc);
 
     // 4. Postfilter (skipped on the low tier).
     var dof = gathered;
@@ -186,6 +191,7 @@ class DofPass extends RenderGraphPass {
         uniforms: {'PostFilterInfo': postInfo},
         textures: {'dof_texture': dof},
       );
+      context.texturePool.releaseScoped(dof);
       dof = filtered;
     }
 
@@ -198,6 +204,7 @@ class DofPass extends RenderGraphPass {
       target: output,
       textures: {'scene_color': scene, 'dof_texture': dof},
     );
+    context.texturePool.releaseScoped(dof);
     context.blackboard.set(kSceneColorBlackboardKey, output);
   }
 

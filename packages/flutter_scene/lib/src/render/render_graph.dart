@@ -126,11 +126,23 @@ class ObservedTexturePool extends TransientTexturePool {
     return texture;
   }
 
+  // Capture frames keep distinct physical targets per descriptor so pass
+  // boundary snapshots never alias over an earlier pass's image.
+  @override
+  gpu.Texture acquireScoped(TransientTextureDescriptor descriptor) =>
+      acquire(descriptor);
+
+  @override
+  void releaseScoped(gpu.Texture texture) {}
+
   @override
   void clear() => _inner.clear();
 
   @override
   int get residentBytes => _inner.residentBytes;
+
+  @override
+  int get heldTextureCount => _inner.heldTextureCount;
 }
 
 /// Description of a transient GPU texture requested from a
@@ -244,20 +256,60 @@ class TransientTextureDescriptor {
   );
 }
 
+class _PhysicalTextureKey {
+  const _PhysicalTextureKey(this.descriptor);
+
+  final TransientTextureDescriptor descriptor;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PhysicalTextureKey &&
+      other.descriptor.width == descriptor.width &&
+      other.descriptor.height == descriptor.height &&
+      other.descriptor.format == descriptor.format &&
+      other.descriptor.sampleCount == descriptor.sampleCount &&
+      other.descriptor.storageMode == descriptor.storageMode &&
+      other.descriptor.enableShaderReadUsage ==
+          descriptor.enableShaderReadUsage &&
+      other.descriptor.attachmentKey == descriptor.attachmentKey;
+
+  @override
+  int get hashCode => Object.hash(
+    descriptor.width,
+    descriptor.height,
+    descriptor.format,
+    descriptor.sampleCount,
+    descriptor.storageMode,
+    descriptor.enableShaderReadUsage,
+    descriptor.attachmentKey,
+  );
+}
+
+class _AliasedSlot {
+  _AliasedSlot(int framesInFlight)
+    : ring = List<gpu.Texture?>.filled(framesInFlight, null);
+
+  final List<gpu.Texture?> ring;
+  bool inUse = false;
+}
+
 /// Recycles GPU textures used as transient render-graph attachments
 /// across frames.
 ///
-/// Keyed by [TransientTextureDescriptor]; for each descriptor it keeps a
-/// ring of [framesInFlight] textures so a texture written this frame is
-/// not overwritten while an earlier frame still references it. This is the
-/// minimal "transient resource" mechanism — there is no intra-frame
-/// lifetime aliasing; a pass that needs two simultaneously-live textures
-/// of the same shape must give them distinct [TransientTextureDescriptor.debugName]s.
+/// [acquire] keeps a ring of [framesInFlight] textures per
+/// [TransientTextureDescriptor] so a texture written this frame is not
+/// overwritten while an earlier frame still references it; passes that need
+/// two simultaneously-live textures of the same shape via [acquire] must give
+/// them distinct [TransientTextureDescriptor.debugName]s. Passes with
+/// explicit non-overlapping lifetimes can opt into intra-frame physical slot
+/// aliasing via [acquireScoped] and [releaseScoped].
 class TransientTexturePool {
   TransientTexturePool({this.framesInFlight = 2});
 
   final int framesInFlight;
   final Map<TransientTextureDescriptor, List<gpu.Texture?>> _rings = {};
+  final Map<_PhysicalTextureKey, List<_AliasedSlot>> _aliasedPools = {};
+  final Map<gpu.Texture, _AliasedSlot> _activeScopedSlots = Map.identity();
   int _frame = 0;
 
   /// Textures every [TransientTexturePool] has created. For tests that check
@@ -268,7 +320,28 @@ class TransientTexturePool {
   /// Advances to the next frame's ring slot. Call once per frame before
   /// any [acquire] calls.
   void beginFrame() {
+    _activeScopedSlots.clear();
+    for (final slots in _aliasedPools.values) {
+      for (final slot in slots) {
+        slot.inUse = false;
+      }
+    }
     _frame = (_frame + 1) % framesInFlight;
+  }
+
+  gpu.Texture _allocate(TransientTextureDescriptor descriptor) {
+    texturesCreated++;
+    final texture = gpu.gpuContext.createTexture(
+      descriptor.storageMode,
+      descriptor.width,
+      descriptor.height,
+      sampleCount: descriptor.sampleCount,
+      format: descriptor.format,
+      enableRenderTargetUsage: true,
+      enableShaderReadUsage: descriptor.enableShaderReadUsage,
+    );
+    statesExternalBytes(texture, gpuTextureBytes(texture));
+    return texture;
   }
 
   /// Returns a texture matching [descriptor] from the pool for the
@@ -278,22 +351,46 @@ class TransientTexturePool {
       descriptor,
       () => List<gpu.Texture?>.filled(framesInFlight, null),
     );
-    var texture = ring[_frame];
-    if (texture == null) {
-      texturesCreated++;
-      texture = gpu.gpuContext.createTexture(
-        descriptor.storageMode,
-        descriptor.width,
-        descriptor.height,
-        sampleCount: descriptor.sampleCount,
-        format: descriptor.format,
-        enableRenderTargetUsage: true,
-        enableShaderReadUsage: descriptor.enableShaderReadUsage,
-      );
-      statesExternalBytes(texture, gpuTextureBytes(texture));
-      ring[_frame] = texture;
+    return ring[_frame] ??= _allocate(descriptor);
+  }
+
+  /// Acquires an intra-frame aliasable texture matching [descriptor]'s
+  /// physical properties (ignoring [TransientTextureDescriptor.debugName],
+  /// while preserving format, size, sample count, storage mode, shader-read
+  /// usage, and [TransientTextureDescriptor.attachmentKey]).
+  ///
+  /// Call [releaseScoped] once the frame's last reader has submitted its
+  /// command buffer so later passes in the same frame can reuse the physical
+  /// slot. Cross-frame [framesInFlight] isolation is preserved per slot.
+  @internal
+  gpu.Texture acquireScoped(TransientTextureDescriptor descriptor) {
+    final key = _PhysicalTextureKey(descriptor);
+    final slots = _aliasedPools.putIfAbsent(key, () => <_AliasedSlot>[]);
+    _AliasedSlot? chosen;
+    for (var i = 0; i < slots.length; i++) {
+      if (!slots[i].inUse) {
+        chosen = slots[i];
+        break;
+      }
     }
+    if (chosen == null) {
+      chosen = _AliasedSlot(framesInFlight);
+      slots.add(chosen);
+    }
+    chosen.inUse = true;
+    final texture = chosen.ring[_frame] ??= _allocate(descriptor);
+    _activeScopedSlots[texture] = chosen;
     return texture;
+  }
+
+  /// Marks a texture obtained from [acquireScoped] free for intra-frame reuse
+  /// by subsequent compatible passes. No-op for non-scoped textures.
+  @internal
+  void releaseScoped(gpu.Texture texture) {
+    final slot = _activeScopedSlots.remove(texture);
+    if (slot != null) {
+      slot.inUse = false;
+    }
   }
 
   /// Releases all cached textures. The next [acquire] for any descriptor
@@ -309,6 +406,15 @@ class TransientTexturePool {
       }
     }
     _rings.clear();
+    for (final slots in _aliasedPools.values) {
+      for (final slot in slots) {
+        for (final texture in slot.ring) {
+          if (texture != null) gpu.gpuHost.releaseTexture(texture);
+        }
+      }
+    }
+    _aliasedPools.clear();
+    _activeScopedSlots.clear();
   }
 
   /// Resident bytes of every texture the pool holds, summed across mip chains.
@@ -319,13 +425,30 @@ class TransientTexturePool {
         if (texture != null) bytes += gpuTextureBytes(texture);
       }
     }
+    for (final slots in _aliasedPools.values) {
+      for (final slot in slots) {
+        for (final texture in slot.ring) {
+          if (texture != null) bytes += gpuTextureBytes(texture);
+        }
+      }
+    }
     return bytes;
   }
 
   /// The number of textures the pool holds across every descriptor's ring.
   @internal
-  int get heldTextureCount =>
-      _rings.values.fold(0, (count, ring) => count + ring.nonNulls.length);
+  int get heldTextureCount {
+    var count = _rings.values.fold(
+      0,
+      (sum, ring) => sum + ring.nonNulls.length,
+    );
+    for (final slots in _aliasedPools.values) {
+      for (final slot in slots) {
+        count += slot.ring.nonNulls.length;
+      }
+    }
+    return count;
+  }
 }
 
 /// Per-frame state handed to every [RenderGraphPass] when the graph
