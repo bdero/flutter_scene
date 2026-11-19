@@ -72,8 +72,8 @@ void main() {
       }
     });
 
-    test('never claims compute, which no backend implements yet', () {
-      expect(gpu.gpuHost.capabilities.compute, isFalse);
+    test('claims compute exactly when the context supports it', () {
+      expect(gpu.gpuHost.capabilities.compute, gpu.supportsCompute);
     });
 
     test('exposes a host tier without touching a GPU context', () {

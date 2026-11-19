@@ -41,16 +41,36 @@ typedef _TextureSlot = ({
 /// A vertex input the shader reads.
 typedef _VertexInput = ({String name, int location, int vecSize, int offset});
 
+/// A storage buffer a compute shader declares. [declared] is false when Tint
+/// dropped it as unused.
+typedef _StorageBlock = ({
+  String name,
+  int group,
+  int binding,
+  int size,
+  int stride,
+  bool readOnly,
+  bool declared,
+});
+
 /// A [Shader] compiled from the WGSL sidecar that sits next to its bundle.
 ///
 /// The module and reflection are replaced in place on hot reload, so
 /// materials and pipeline-cache keys holding the shader stay valid; the
 /// pipeline cache tells a reloaded shader apart by [generation].
 final class _WebGpuShader extends Shader {
-  _WebGpuShader(this.stage);
+  /// A shader of [_stage], or a compute shader when it is null.
+  _WebGpuShader(this._stage);
+
+  final ShaderStage? _stage;
+
+  /// Whether this is a compute shader, which has no render [stage].
+  bool get isCompute => _stage == null;
 
   @override
-  final ShaderStage stage;
+  ShaderStage get stage =>
+      _stage ??
+      (throw StateError('"$name" is a compute shader, with no render stage.'));
 
   late String name;
   late GPUShaderModule module;
@@ -60,6 +80,11 @@ final class _WebGpuShader extends Shader {
   final Map<String, _TextureSlot> texturesByName = {};
   final List<_VertexInput> inputs = [];
   final Map<String, _WebGpuUniformSlot> _slots = {};
+
+  /// A compute shader's storage buffers, and its `local_size`.
+  final Map<String, _StorageBlock> storageBuffers = {};
+  (int, int, int) workgroupSize = (1, 1, 1);
+  final Map<String, _WebGpuStorageBufferSlot> _storageSlots = {};
 
   /// The WGSL type of each vertex input the entry point declares, by
   /// location. A layout must feed exactly these, with a matching scalar.
@@ -79,6 +104,18 @@ final class _WebGpuShader extends Shader {
   @override
   UniformSlot getUniformSlot(String uniformName) =>
       _slots[uniformName] ??= _WebGpuUniformSlot(this, uniformName);
+
+  /// The slot of storage buffer [name], which this shader must declare.
+  _WebGpuStorageBufferSlot getStorageBufferSlot(String name) {
+    if (!storageBuffers.containsKey(name)) {
+      throw ArgumentError.value(
+        name,
+        'name',
+        '"${this.name}" declares no storage buffer with this name',
+      );
+    }
+    return _storageSlots[name] ??= _WebGpuStorageBufferSlot(this, name);
+  }
 
   /// Completes once the browser has checked the module of the first compile,
   /// after reporting a compile error to [FlutterError.reportError].
@@ -206,14 +243,29 @@ final class _WebGpuShader extends Shader {
     vertexStride = stride;
     declaredInputs
       ..clear()
-      ..addAll(stage == ShaderStage.vertex ? _entryInputs(wgsl) : const {});
+      ..addAll(_stage == ShaderStage.vertex ? _entryInputs(wgsl) : const {});
     varyings
       ..clear()
-      ..addAll(
-        stage == ShaderStage.vertex
-            ? _vertexOutputs(wgsl)
-            : _fragmentInputs(wgsl),
+      ..addAll(switch (_stage) {
+        ShaderStage.vertex => _vertexOutputs(wgsl),
+        ShaderStage.fragment => _fragmentInputs(wgsl),
+        null => const {},
+      });
+    storageBuffers.clear();
+    for (final b
+        in (entry['storageBuffers'] as List? ?? const []).cast<Map>()) {
+      storageBuffers[b['name'] as String] = (
+        name: b['name'] as String,
+        group: b['group'] as int,
+        binding: b['binding'] as int,
+        size: b['size'] as int,
+        stride: b['stride'] as int,
+        readOnly: b['access'] == 'read',
+        declared: declared.containsKey((b['group'], b['binding'])),
       );
+    }
+    final size = (entry['workgroupSize'] as List?)?.cast<int>();
+    workgroupSize = size == null ? (1, 1, 1) : (size[0], size[1], size[2]);
     generation++;
   }
 }
@@ -369,9 +421,11 @@ final class _WebGpuShaderLibrary extends ShaderLibrary {
   _WebGpuShader? _compiled(String name) {
     final entry = _entries[name];
     if (entry == null) return null;
-    final shader = _WebGpuShader(
-      entry['stage'] == 'fragment' ? ShaderStage.fragment : ShaderStage.vertex,
-    ).._compile(_device, name, entry.cast<String, Object?>());
+    final shader = _WebGpuShader(switch (entry['stage']) {
+      'fragment' => ShaderStage.fragment,
+      'compute' => null,
+      _ => ShaderStage.vertex,
+    }).._compile(_device, name, entry.cast<String, Object?>());
     _live?[name] = WeakReference(shader);
     return _shaders[name] = shader;
   }

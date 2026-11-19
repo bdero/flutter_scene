@@ -9,9 +9,11 @@ import 'package:flutter_scene/src/gpu/shared/shader_library_sources.dart';
 
 import '../shared/external_target.dart';
 import '../shared/gpu_capabilities.dart';
+import '../shared/gpu_compute_limits.dart';
 
 export 'package:flutter_gpu/gpu.dart';
 
+part 'compute.dart';
 part 'encoded_image.dart';
 part 'host.dart';
 part 'present.dart';

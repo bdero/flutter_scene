@@ -447,6 +447,9 @@ typedef _SampledTexture = ({
   int defaultCode,
 });
 
+String _stageName(_WebGpuShader shader) =>
+    shader.isCompute ? 'compute' : shader.stage.name;
+
 final class _WebGpuRenderPipeline extends RenderPipeline {
   _WebGpuRenderPipeline(
     this._context,
@@ -454,12 +457,14 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
     this.fragmentShader,
     this.vertexLayout,
   ) : vertexSlotCount = vertexLayout?.buffers.length ?? 1 {
-    if (vertexShader.stage != ShaderStage.vertex ||
+    if (vertexShader.isCompute ||
+        fragmentShader.isCompute ||
+        vertexShader.stage != ShaderStage.vertex ||
         fragmentShader.stage != ShaderStage.fragment) {
       throw Exception(
         'A render pipeline needs a vertex shader then a fragment shader, not '
-        '"${vertexShader.name}" (${vertexShader.stage.name}) and '
-        '"${fragmentShader.name}" (${fragmentShader.stage.name}).',
+        '"${vertexShader.name}" (${_stageName(vertexShader)}) and '
+        '"${fragmentShader.name}" (${_stageName(fragmentShader)}).',
       );
     }
     _refresh();
