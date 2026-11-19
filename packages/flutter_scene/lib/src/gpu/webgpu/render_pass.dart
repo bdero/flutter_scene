@@ -408,62 +408,26 @@ final class _WebGpuRenderPass extends RenderPass {
   void _prepare(_WebGpuRenderPipeline pipeline) {
     final sampled = pipeline.sampledTextures;
     final f32 = _context.float32Filterable;
-    var samplePrimary = 0;
-    var lane = 0;
-    var shift = 0;
-    var overflowCount = 0;
-    final overflow = _context.sampleOverflowScratch;
+    final samples = _context.sampleLanesScratch..reset();
     for (var i = 0; i < sampled.length; i++) {
-      if (shift == 30) {
-        if (overflowCount == 0) {
-          samplePrimary = lane;
-        } else {
-          final idx = overflowCount - 1;
-          if (idx >= overflow.length) {
-            overflow.add(lane);
-          } else {
-            overflow[idx] = lane;
-          }
-        }
-        overflowCount++;
-        lane = 0;
-        shift = 0;
-      }
       final entry = sampled[i];
-      final int code;
-      if (_bindings.hasTexture(entry.binding)) {
-        final fmt = _bindings.texture(entry.binding)._format;
-        code = resolveSampleSlotCode(
+      if (!_bindings.hasTexture(entry.binding)) {
+        samples.add(entry.defaultCode);
+        continue;
+      }
+      final format = _bindings.texture(entry.binding)._format;
+      samples.add(
+        resolveSampleSlotCode(
           shape: entry.slot.shape!,
-          formatDepth: fmt.depth,
-          formatFloat32: fmt.float32,
+          formatDepth: format.depth,
+          formatFloat32: format.float32,
           samplerFilters: _filters(_bindings.sampler(entry.binding)),
           float32Filterable: f32,
-        );
-      } else {
-        code = entry.defaultCode;
-      }
-      lane |= code << shift;
-      shift += 3;
-    }
-    if (overflowCount == 0) {
-      samplePrimary = lane;
-    } else {
-      final idx = overflowCount - 1;
-      if (idx >= overflow.length) {
-        overflow.add(lane);
-      } else {
-        overflow[idx] = lane;
-      }
+        ),
+      );
     }
 
-    final variant = pipeline.variantForCodes(
-      _state,
-      _shape,
-      samplePrimary,
-      overflow,
-      overflowCount,
-    );
+    final variant = pipeline.variantForLanes(_state, _shape, samples);
     if (!identical(variant.pipeline, _encodedPipeline)) {
       _encoder.setPipeline(variant.pipeline);
       _encodedPipeline = variant.pipeline;
@@ -544,13 +508,11 @@ final class _WebGpuRenderPass extends RenderPass {
 
   static final SamplerOptions _defaultSampler = SamplerOptions();
 
-  @pragma('wasm:prefer-inline')
   _WebGpuTexture _textureOrBlank(_LayoutEntry entry) =>
       _bindings.hasTexture(entry.binding)
       ? _bindings.texture(entry.binding)
       : _context.blankTexture(entry.viewDimension!);
 
-  @pragma('wasm:prefer-inline')
   int _samplerKey(_LayoutEntry entry) {
     final texBinding = entry.binding - WgslBindingMap.splitSamplerOffset;
     final sampler = _bindings.hasTexture(texBinding)

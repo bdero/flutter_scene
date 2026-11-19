@@ -22,8 +22,7 @@ final class _WebGpuContext extends GpuContext {
   /// Synchronous per-draw scratch buffers for unboxed bind-group and variant
   /// cache lookups.
   Uint32List groupKeyScratch = Uint32List(64);
-  final List<int> sampleOverflowScratch = [];
-  late final _VariantKey _variantProbe = _VariantKey._probe();
+  final GpuSampleLanes sampleLanesScratch = GpuSampleLanes();
 
   Uint32List growGroupKeyScratch(int minLength) {
     var next = groupKeyScratch.length;

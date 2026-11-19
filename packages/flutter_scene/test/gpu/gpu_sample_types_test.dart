@@ -207,20 +207,34 @@ void main() {
       );
       final ten = GpuSampleSignature(List.filled(10, slot(_depth)));
       expect(ten.overflow, isEmpty);
-      expect(ten, GpuSampleSignature.fromLanes(ten.primary));
-      expect(ten.hashCode, GpuSampleSignature.fromLanes(ten.primary).hashCode);
 
       final eleven = GpuSampleSignature(List.filled(11, slot(_depth)));
       expect(eleven.overflow, hasLength(1));
       expect(eleven, isNot(ten));
-      expect(
-        eleven,
-        GpuSampleSignature.fromLanes(eleven.primary, eleven.overflow),
-      );
 
       final twentyOne = GpuSampleSignature(List.filled(21, slot(_depth)));
       expect(twentyOne.overflow, hasLength(2));
       expect(twentyOne, isNot(eleven));
+    });
+    test('reused lanes match a fresh signature and decode per slot', () {
+      final codes = [for (var i = 0; i < 23; i++) i % 6];
+      final lanes = GpuSampleLanes();
+      for (final code in codes) {
+        lanes.add(code);
+      }
+      // Reuse after a wide layout must not leak its stale overflow lanes.
+      lanes.reset();
+      for (final code in codes.take(12)) {
+        lanes.add(code);
+      }
+      final reused = lanes.toSignature();
+      final fresh = GpuSampleLanes();
+      for (final code in codes.take(12)) {
+        fresh.add(code);
+      }
+      expect(reused, fresh.toSignature());
+      expect(reused.hashCode, fresh.toSignature().hashCode);
+      expect([for (var i = 0; i < 12; i++) reused.codeAt(i)], codes.take(12));
     });
   });
 }

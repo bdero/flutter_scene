@@ -173,8 +173,6 @@ GpuSampleSlot resolveSampleSlot({
 /// Resolves the compact 3-bit signature code ([sampleSlotCode]) for [shape]
 /// and a bound texture's format/sampler flags without allocating a
 /// [GpuSampleSlot] record.
-@pragma('vm:prefer-inline')
-@pragma('wasm:prefer-inline')
 int resolveSampleSlotCode({
   required WgslTextureShape shape,
   required bool formatDepth,
@@ -246,7 +244,55 @@ GpuSampleSlot sampleSlotFromCode(int code) => switch (code) {
   _ => throw RangeError.range(code, 0, 5, 'code'),
 };
 
-/// The per-draw part of a pipeline's bind group layouts, packed into one int.
+/// Packs resolved slot codes ([sampleSlotCode]) three bits each into 30-bit
+/// lanes, ten codes to a lane. Reused across draws so packing allocates
+/// nothing once [overflow] has grown.
+final class GpuSampleLanes {
+  /// The first ten codes.
+  int primary = 0;
+
+  /// Lanes past the first. Only the first [overflowCount] are live.
+  final List<int> overflow = [];
+  int overflowCount = 0;
+
+  int _count = 0;
+
+  void reset() {
+    primary = 0;
+    overflowCount = 0;
+    _count = 0;
+  }
+
+  /// Appends the next slot's [code].
+  void add(int code) {
+    final lane = _count ~/ 10;
+    final shift = (_count % 10) * 3;
+    _count++;
+    if (lane == 0) {
+      primary |= code << shift;
+      return;
+    }
+    if (shift == 0) {
+      overflowCount = lane;
+      if (overflow.length < lane) {
+        overflow.add(0);
+      } else {
+        overflow[lane - 1] = 0;
+      }
+    }
+    overflow[lane - 1] |= code << shift;
+  }
+
+  /// An immutable copy, for use as a cache key.
+  GpuSampleSignature toSignature() => GpuSampleSignature._(
+    primary,
+    overflowCount == 0
+        ? const []
+        : List<int>.unmodifiable(overflow.take(overflowCount)),
+  );
+}
+
+/// The per-draw part of a pipeline's bind group layouts, packed into ints.
 ///
 /// A shader's declarations fix everything about its layouts except each
 /// texture slot's resolved [GpuSampleSlot], which depends on what is bound.
@@ -257,37 +303,14 @@ GpuSampleSlot sampleSlotFromCode(int code) => switch (code) {
 /// the same signature, so the extra cache axis rarely misses.
 final class GpuSampleSignature {
   factory GpuSampleSignature(Iterable<GpuSampleSlot> slotsInLayoutOrder) {
-    var first = 0;
-    var lane = 0;
-    var shift = 0;
-    var hasOverflow = false;
-    List<int>? extra;
+    final lanes = GpuSampleLanes();
     for (final slot in slotsInLayoutOrder) {
-      if (shift == 30) {
-        if (!hasOverflow) {
-          first = lane;
-          hasOverflow = true;
-        } else {
-          (extra ??= <int>[]).add(lane);
-        }
-        lane = 0;
-        shift = 0;
-      }
-      lane |= sampleSlotCode(slot) << shift;
-      shift += 3;
+      lanes.add(sampleSlotCode(slot));
     }
-    if (!hasOverflow) {
-      return GpuSampleSignature.fromLanes(lane);
-    }
-    return GpuSampleSignature.fromLanes(
-      first,
-      List<int>.unmodifiable(<int>[...?extra, lane]),
-    );
+    return lanes.toSignature();
   }
 
-  /// Builds a signature from pre-packed 30-bit lanes without allocating an
-  /// overflow list when ten or fewer textures are sampled.
-  GpuSampleSignature.fromLanes(this.primary, [this.overflow = const []])
+  GpuSampleSignature._(this.primary, this.overflow)
     : hashCode = overflow.isEmpty
           ? primary.hashCode
           : Object.hash(primary, Object.hashAll(overflow));
@@ -297,6 +320,12 @@ final class GpuSampleSignature {
 
   /// Lanes past the first, empty for layouts of ten or fewer textures.
   final List<int> overflow;
+
+  /// The code packed for the slot at [index].
+  int codeAt(int index) {
+    final lane = index < 10 ? primary : overflow[index ~/ 10 - 1];
+    return (lane >> (index % 10) * 3) & 7;
+  }
 
   @override
   final int hashCode;
