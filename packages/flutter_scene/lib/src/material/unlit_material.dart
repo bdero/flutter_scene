@@ -117,11 +117,16 @@ class UnlitMaterial extends Material {
       ..[6] = displayReferred ? 1.0 : 0.0;
     pass.bindUniform(
       fragmentShader.cachedUniformSlot("FragInfo"),
-      transientsBuffer.emplaceDeduplicated(_fragInfoBytes),
+      transientsBuffer.emplace(_fragInfoBytes),
     );
     pass.bindUniform(
       fragmentShader.cachedUniformSlot('TextureTransform'),
-      transientsBuffer.emplaceDeduplicated(packUnlitTextureTransform(this)),
+      transientsBuffer.emplace(
+        _textureTransform.packSingle(
+          baseColorTextureTransform,
+          baseColorTextureTexCoord,
+        ),
+      ),
     );
     final resolved = resolveTextureSource(baseColorTexture);
     pass.bindTexture(
@@ -147,17 +152,3 @@ class UnlitMaterial extends Material {
     );
   }
 }
-
-/// Packs or reuses [material]'s cached `TextureTransform` uniform block.
-@internal
-ByteData packUnlitTextureTransform(UnlitMaterial material) =>
-    material._textureTransform.packSingle(
-      material.baseColorTextureTransform,
-      material.baseColorTextureTexCoord,
-    );
-
-/// Repack count of [material]'s `TextureTransform` cache, for tests.
-@internal
-@visibleForTesting
-int unlitTextureTransformPackCount(UnlitMaterial material) =>
-    material._textureTransform.packCount;

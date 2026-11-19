@@ -157,23 +157,6 @@ abstract interface class TransientWriter {
   gpu.BufferView emplace(ByteData bytes);
 }
 
-/// Content-addressed uniform deduplication on [TransientWriter].
-///
-/// Defined as an extension so lightweight [TransientWriter] wrappers and test
-/// doubles only need to implement [TransientWriter.emplace].
-extension TransientWriterDeduplication on TransientWriter {
-  /// Appends [bytes], or returns the [gpu.BufferView] of an identical byte
-  /// sequence already staged in the current submission epoch when backed by
-  /// [TransientArena].
-  gpu.BufferView emplaceDeduplicated(ByteData bytes) {
-    final self = this;
-    if (self is TransientArena) {
-      return self.emplaceDeduplicated(bytes);
-    }
-    return emplace(bytes);
-  }
-}
-
 final Expando<ByteData> _scratchBytes = Expando('scratch bytes');
 
 /// A byte view of the long-lived [scratch], made once and reused, for
@@ -196,10 +179,6 @@ abstract interface class FrameTransients implements TransientWriter {
   /// upload by element type, so this skips the byte-wise copy a `ByteData`
   /// view of a `Float32List` costs under dart2wasm.
   gpu.BufferView emplaceTyped(TypedData data);
-
-  /// Appends [bytes], or reuses an already-staged view in the current
-  /// submission epoch when identical bytes were already emplaced.
-  gpu.BufferView emplaceDeduplicated(ByteData bytes);
 }
 
 /// Per-emplacement pooled transients for the immediate-execution WebGL2
@@ -258,9 +237,6 @@ class ImmediatePoolTransients implements FrameTransients {
 
   @override
   gpu.BufferView emplace(ByteData bytes) => emplaceTyped(bytes);
-
-  @override
-  gpu.BufferView emplaceDeduplicated(ByteData bytes) => emplace(bytes);
 
   @override
   gpu.BufferView emplaceTyped(TypedData data) {
@@ -346,110 +322,6 @@ FrameTransients createFrameTransients(
     ? ImmediatePoolTransients(tracker, vertexData: vertexData)
     : TransientArena(tracker, alignment: alignment);
 
-/// Fixed-size open-addressed hash table deduplicating byte slices staged in the
-/// current submission epoch.
-///
-/// Invalidates in O(1) across submissions and frames by advancing a generation
-/// counter rather than clearing every slot.
-@visibleForTesting
-class UniformDedupTable<V extends Object> {
-  static const int _capacity = 512;
-  static const int _mask = _capacity - 1;
-  static const int _probeLimit = 4;
-
-  int _generation = 1;
-  int _evictCursor = 0;
-  int _lastHash = 0;
-  int _lastInsertSlot = 0;
-
-  final Uint32List _slotGen = Uint32List(_capacity);
-  final Uint32List _hash = Uint32List(_capacity);
-  final Int32List _length = Int32List(_capacity);
-  final Int32List _blockIndex = Int32List(_capacity);
-  final Int32List _byteOffset = Int32List(_capacity);
-  final List<V?> _views = List<V?>.filled(_capacity, null);
-
-  /// Hits recorded since the last [invalidate].
-  int hitCount = 0;
-
-  /// Bytes skipped by hits since the last [invalidate].
-  int hitBytes = 0;
-
-  /// Invalidates all entries in O(1) and resets hit counters.
-  void invalidate() {
-    _generation = (_generation + 1) & 0x7FFFFFFF;
-    if (_generation == 0) {
-      _slotGen.fillRange(0, _capacity, 0);
-      _generation = 1;
-    }
-    hitCount = 0;
-    hitBytes = 0;
-  }
-
-  /// Releases retained view references when pooled blocks retire.
-  void clearRetainedViews() {
-    _views.fillRange(0, _capacity, null);
-  }
-
-  static int _hashBytes(ByteData bytes, int length) {
-    var h = (length * 0x9E377) & 0x1FFFFFFF;
-    final wordCount = length >> 2;
-    for (var i = 0; i < wordCount; i++) {
-      final w = bytes.getUint32(i << 2, Endian.host);
-      h = ((h * 0x9E377) + (w ^ (w >>> 16))) & 0x1FFFFFFF;
-      h ^= h >>> 11;
-    }
-    for (var b = wordCount << 2; b < length; b++) {
-      h = ((h * 0x9E377) + bytes.getUint8(b)) & 0x1FFFFFFF;
-      h ^= h >>> 7;
-    }
-    return h ^ (h >>> 9);
-  }
-
-  /// Returns the cached view for [bytes] if an identical slice is already
-  /// staged in [openBlocks], or `null` on a miss (preparing [record]).
-  V? lookup(ByteData bytes, List<TransientStagingBuffer> openBlocks) {
-    final length = bytes.lengthInBytes;
-    final hash = _hashBytes(bytes, length);
-    final gen = _generation;
-    final baseSlot = hash & _mask;
-    var insertSlot = -1;
-
-    for (var p = 0; p < _probeLimit; p++) {
-      final slot = (baseSlot + p) & _mask;
-      if (_slotGen[slot] != gen) {
-        insertSlot = slot;
-        break;
-      }
-      if (_hash[slot] == hash &&
-          _length[slot] == length &&
-          openBlocks[_blockIndex[slot]].matches(_byteOffset[slot], bytes)) {
-        hitCount++;
-        hitBytes += length;
-        return _views[slot];
-      }
-    }
-
-    if (insertSlot < 0) {
-      insertSlot = (baseSlot + (_evictCursor++ & (_probeLimit - 1))) & _mask;
-    }
-    _lastHash = hash;
-    _lastInsertSlot = insertSlot;
-    return null;
-  }
-
-  /// Records the newly staged [view] after a [lookup] miss.
-  void record(int blockIndex, int byteOffset, int length, V view) {
-    final slot = _lastInsertSlot;
-    _slotGen[slot] = _generation;
-    _hash[slot] = _lastHash;
-    _length[slot] = length;
-    _blockIndex[slot] = blockIndex;
-    _byteOffset[slot] = byteOffset;
-    _views[slot] = view;
-  }
-}
-
 /// A completion-aware bump allocator for per-frame transient GPU data.
 ///
 /// Emplacements are staged CPU-side into fixed-size blocks and returned as
@@ -504,18 +376,11 @@ class TransientArena implements FrameTransients {
   /// the tracker's watermark passes their stamp.
   final List<_TransientBlock> _sealed = [];
 
-  final UniformDedupTable<gpu.BufferView> _dedup =
-      UniformDedupTable<gpu.BufferView>();
-
   int _frame = 0;
 
   /// Total pooled blocks (open + sealed). For tests.
   @visibleForTesting
   int get blockCount => _open.length + _sealed.length;
-
-  /// Hits satisfied by [emplaceDeduplicated] in the current epoch. For tests.
-  @visibleForTesting
-  int get deduplicatedEmplaces => _dedup.hitCount;
 
   /// Device buffers every [TransientArena] has created. For tests that
   /// check steady-state rendering allocates nothing.
@@ -532,18 +397,9 @@ class TransientArena implements FrameTransients {
       _seal(block, _tracker.latestSubmission);
     }
     _open.clear();
-    _dedup.invalidate();
     _frame++;
     final completed = _tracker.completedThrough;
-    var retiredAny = false;
-    _sealed.removeWhere((block) {
-      final retired = block.retireIfIdle(completed, _frame);
-      if (retired) retiredAny = true;
-      return retired;
-    });
-    if (retiredAny) {
-      _dedup.clearRetainedViews();
-    }
+    _sealed.removeWhere((block) => block.retireIfIdle(completed, _frame));
   }
 
   /// Decides where an emplacement of [length] lands: at the aligned offset
@@ -582,19 +438,6 @@ class TransientArena implements FrameTransients {
 
   TypedData? _lastTyped;
   ByteData? _lastTypedBytes;
-
-  @override
-  gpu.BufferView emplaceDeduplicated(ByteData bytes) {
-    final length = bytes.lengthInBytes;
-    if (length > blockLengthInBytes) {
-      return _emplaceOversize(bytes);
-    }
-    final hit = _dedup.lookup(bytes, _open);
-    if (hit != null) return hit;
-    final view = emplace(bytes);
-    _dedup.record(_open.length - 1, view.offsetInBytes, length, view);
-    return view;
-  }
 
   @override
   gpu.BufferView emplace(ByteData bytes) {
@@ -683,11 +526,13 @@ class TransientArena implements FrameTransients {
       _seal(block, id);
     }
     _open.clear();
-    _dedup.invalidate();
   }
 
   void _seal(_TransientBlock block, int stamp) {
     if (block.cursor > 0) {
+      // TODO(webgpu-transients): upload `block.words` directly. A ByteData
+      // source misses the WebGPU buffer's whole-word copy for a Uint32List,
+      // which needs DeviceBuffer.overwrite to accept TypedData.
       final ok = block.device.overwrite(
         ByteData.sublistView(block.staging, 0, block.cursor),
       );
@@ -708,11 +553,10 @@ class TransientArena implements FrameTransients {
   }
 }
 
-/// Word-backed CPU staging buffer for a [TransientArena] block.
+/// CPU staging for a [TransientArena] block, backed by 32-bit words.
 ///
-/// Allocates a [Uint32List] primary store so word staging, deduplication
-/// probes, and WebGPU uploads stay on `WasmArray<WasmI32>` under dart2wasm
-/// rather than emulating 32-bit accesses over a byte array (`_SlowU32List`).
+/// Word storage keeps staging copies whole-word under dart2wasm, where 32-bit
+/// access to a byte-backed list is much slower.
 @visibleForTesting
 class TransientStagingBuffer {
   TransientStagingBuffer(this.capacity)
@@ -781,32 +625,6 @@ class TransientStagingBuffer {
       dstPos++;
       srcPos++;
     }
-  }
-
-  /// Whether the staged slice at [offset] equals [bytes] byte-for-byte.
-  bool matches(int offset, ByteData bytes) {
-    final byteLength = bytes.lengthInBytes;
-    if ((offset & 3) == 0) {
-      final srcWord = offset >> 2;
-      final wordCount = byteLength >> 2;
-      for (var i = 0; i < wordCount; i++) {
-        if (words[srcWord + i] != bytes.getUint32(i << 2, Endian.host)) {
-          return false;
-        }
-      }
-      for (var b = wordCount << 2; b < byteLength; b++) {
-        if (staging.getUint8(offset + b) != bytes.getUint8(b)) {
-          return false;
-        }
-      }
-      return true;
-    }
-    for (var i = 0; i < byteLength; i++) {
-      if (staging.getUint8(offset + i) != bytes.getUint8(i)) {
-        return false;
-      }
-    }
-    return true;
   }
 }
 

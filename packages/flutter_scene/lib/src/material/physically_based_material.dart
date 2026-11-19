@@ -1671,11 +1671,24 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[163] = lightListOffset.toDouble();
     pass.bindUniform(
       shader.cachedUniformSlot("FragInfo"),
-      transientsBuffer.emplaceDeduplicated(_fragInfoBytes),
+      transientsBuffer.emplace(_fragInfoBytes),
     );
     pass.bindUniform(
       shader.cachedUniformSlot('TextureTransforms'),
-      transientsBuffer.emplaceDeduplicated(packStandardTextureTransforms(this)),
+      transientsBuffer.emplace(
+        _textureTransforms.packFive(
+          baseColorTextureTransform,
+          baseColorTextureTexCoord,
+          metallicRoughnessTextureTransform,
+          metallicRoughnessTextureTexCoord,
+          normalTextureTransform,
+          normalTextureTexCoord,
+          emissiveTextureTransform,
+          emissiveTextureTexCoord,
+          occlusionTextureTransform,
+          occlusionTextureTexCoord,
+        ),
+      ),
     );
 
     _bindSlot(pass, shader, 'base_color_texture', baseColorTexture);
@@ -1813,7 +1826,7 @@ class PhysicallyBasedMaterial extends Material {
     );
     pass.bindUniform(
       shader.cachedUniformSlot('MaskInfo'),
-      transientsBuffer.emplaceDeduplicated(_maskInfoBytes),
+      transientsBuffer.emplace(_maskInfoBytes),
     );
     final resolved = resolveTextureSource(baseColorTexture);
     pass.bindTexture(
@@ -1837,25 +1850,3 @@ class PhysicallyBasedMaterial extends Material {
     return baseColorFactor.a >= 1.0;
   }
 }
-
-/// Packs or reuses [material]'s cached 5-slot TextureTransforms block.
-@internal
-ByteData packStandardTextureTransforms(PhysicallyBasedMaterial material) =>
-    material._textureTransforms.packFive(
-      material.baseColorTextureTransform,
-      material.baseColorTextureTexCoord,
-      material.metallicRoughnessTextureTransform,
-      material.metallicRoughnessTextureTexCoord,
-      material.normalTextureTransform,
-      material.normalTextureTexCoord,
-      material.emissiveTextureTransform,
-      material.emissiveTextureTexCoord,
-      material.occlusionTextureTransform,
-      material.occlusionTextureTexCoord,
-    );
-
-/// Repack count of [material]'s standard TextureTransforms cache, for tests.
-@internal
-@visibleForTesting
-int standardTextureTransformPackCount(PhysicallyBasedMaterial material) =>
-    material._textureTransforms.packCount;
