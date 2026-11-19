@@ -55,11 +55,26 @@ ByteData packPostShadowInfo(
 /// passes were added.
 ///
 /// The stages are coarse and stable, so a custom pass keeps working as the
-/// internal pipeline evolves. The first two stages operate on the linear
-/// HDR scene color (before tone mapping); the last two operate on the
-/// display-referred image (after the resolve/tone-mapping pass).
+/// internal pipeline evolves. [beforeScene] runs before anything of the view
+/// is drawn and has no color to work on; [afterScene] and
+/// [beforeToneMapping] operate on the linear HDR scene color (before tone
+/// mapping); the last two operate on the display-referred image (after the
+/// resolve/tone-mapping pass).
 /// {@category Rendering}
 enum RenderStage {
+  /// Before anything of the view is drawn (its shadows, depth prepass and
+  /// scene), with this frame's camera. For a pass whose output the frame's
+  /// own draws read: a GPU culling or instance-selection pass that writes a
+  /// buffer or texture a material samples later in the same frame.
+  ///
+  /// There is no color chain yet: [RenderPassContext.currentColor] and
+  /// [RenderPassContext.applyShader] throw at this stage, and the pass's
+  /// [CustomRenderPass.inputs] are not produced for it (none of them exists
+  /// before the scene is drawn). [RenderPassContext.drawObjects] works, and
+  /// the pass may record GPU work of its own (a compute-style full-screen
+  /// draw into its own texture).
+  beforeScene,
+
   /// Right after the scene is drawn (opaque and transparent), on the linear
   /// HDR scene color, before bloom and any HDR custom effects.
   afterScene,
@@ -196,7 +211,8 @@ class RenderPassContext {
   /// The render-target size in physical pixels.
   final ui.Size dimensions;
 
-  final gpu.Texture _destination;
+  // Null at [RenderStage.beforeScene], which has no color chain.
+  final gpu.Texture? _destination;
   final RenderScene _renderScene;
   final int _viewLayerMask;
   final String _passKey;
@@ -325,10 +341,16 @@ class RenderPassContext {
   }
 
   // Whether this stage operates on the HDR scene color or the display image.
-  Object get _chainKey =>
-      stage == RenderStage.afterScene || stage == RenderStage.beforeToneMapping
-      ? kSceneColorBlackboardKey
-      : kDisplayColorBlackboardKey;
+  Object get _chainKey => switch (stage) {
+    RenderStage.beforeScene => throw StateError(
+      'A RenderStage.beforeScene pass has no color chain: nothing of the '
+      'view is drawn yet.',
+    ),
+    RenderStage.afterScene ||
+    RenderStage.beforeToneMapping => kSceneColorBlackboardKey,
+    RenderStage.afterToneMapping ||
+    RenderStage.afterAntiAliasing => kDisplayColorBlackboardKey,
+  };
 
   /// The current color for this stage's chain (HDR at the HDR stages, the
   /// display image at the display stages). [applyShader] binds this as
@@ -368,7 +390,7 @@ class RenderPassContext {
       TransientTextureDescriptor.color(
         width: width,
         height: height,
-        format: _destination.format,
+        format: _destination?.format ?? gpu.PixelFormat.r16g16b16a16Float,
         debugName: 'custom_mask_${_passKey}_$index',
       ),
     );
@@ -423,10 +445,11 @@ class RenderPassContext {
     bool frameInfo = false,
   }) {
     final input = _context.blackboard.require<gpu.Texture>(_chainKey);
+    final destination = _destination!;
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
-      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: _destination)),
+      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: destination)),
     );
     renderPass.bindPipeline(resolvePipeline(_vertexShader, fragmentShader));
     bindVertexBufferCompat(renderPass, _quadView, 6);
@@ -481,7 +504,7 @@ class UserRenderGraphPass extends RenderGraphPass {
     required CustomRenderPass pass,
     required Camera camera,
     required ui.Size dimensions,
-    required gpu.Texture destination,
+    required gpu.Texture? destination,
     required RenderScene renderScene,
     required int viewLayerMask,
     required int passIndex,
@@ -498,7 +521,7 @@ class UserRenderGraphPass extends RenderGraphPass {
   final CustomRenderPass _pass;
   final Camera _camera;
   final ui.Size _dimensions;
-  final gpu.Texture _destination;
+  final gpu.Texture? _destination;
   final RenderScene _renderScene;
   final int _viewLayerMask;
   final int _passIndex;
@@ -521,8 +544,9 @@ class UserRenderGraphPass extends RenderGraphPass {
       _time,
     );
     _pass.execute(passContext);
-    if (passContext._wrote) {
-      context.blackboard.set(passContext._chainKey, _destination);
+    final destination = _destination;
+    if (passContext._wrote && destination != null) {
+      context.blackboard.set(passContext._chainKey, destination);
     }
   }
 }

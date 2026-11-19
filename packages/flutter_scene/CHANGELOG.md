@@ -1,5 +1,6 @@
 ## 0.24.4
 
+* `RenderStage.beforeScene` runs a `CustomRenderPass` before anything of the view is drawn, with the frame's camera, so a GPU culling or instance-selection pass can write what the same frame's draws read. It has no color chain: `currentColor` and `applyShader` throw there, and the inputs it declares are not produced for it.
 * A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
 * BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * `SceneView.errorBuilder` shows a failed engine resource load (such as a shader bundle a web build could not fetch) with a `retry` callback, instead of leaving the view on its loading widget.
