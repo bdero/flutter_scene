@@ -2,13 +2,19 @@ part of 'webgpu_backend.dart';
 
 /// Records passes into one `GPUCommandEncoder` and submits them together.
 /// Starting a pass ends the previous one, as on WebGL2.
+/// A pass recording into a command buffer until the buffer starts the next
+/// one or is submitted.
+abstract interface class _WebGpuOpenPass {
+  void _end();
+}
+
 final class _WebGpuCommandBuffer extends CommandBuffer {
   _WebGpuCommandBuffer(this._context)
     : _encoder = _context.device.device.createCommandEncoder();
 
   final _WebGpuContext _context;
   final GPUCommandEncoder _encoder;
-  _WebGpuRenderPass? _active;
+  _WebGpuOpenPass? _active;
   bool _submitted = false;
 
   @override
@@ -17,7 +23,19 @@ final class _WebGpuCommandBuffer extends CommandBuffer {
       throw StateError('This command buffer was already submitted.');
     }
     _active?._end();
-    return _active = _WebGpuRenderPass(_context, _encoder, renderTarget);
+    final pass = _WebGpuRenderPass(_context, _encoder, renderTarget);
+    _active = pass;
+    return pass;
+  }
+
+  _WebGpuComputePass _createComputePass() {
+    if (_submitted) {
+      throw StateError('This command buffer was already submitted.');
+    }
+    _active?._end();
+    final pass = _WebGpuComputePass(_context, _encoder);
+    _active = pass;
+    return pass;
   }
 
   @override
@@ -35,7 +53,7 @@ final class _WebGpuCommandBuffer extends CommandBuffer {
   }
 }
 
-final class _WebGpuRenderPass extends RenderPass {
+final class _WebGpuRenderPass extends RenderPass implements _WebGpuOpenPass {
   _WebGpuRenderPass(this._context, GPUCommandEncoder encoder, this._target) {
     final colors = _target.colorAttachments;
     if (colors.isEmpty) {
@@ -156,6 +174,7 @@ final class _WebGpuRenderPass extends RenderPass {
       ? 'store'
       : 'discard';
 
+  @override
   void _end() {
     if (_ended) return;
     _ended = true;

@@ -60,6 +60,13 @@ extension type GPUSupportedLimits._(JSObject _) implements JSObject {
   external int get minUniformBufferOffsetAlignment;
   external int get maxDynamicUniformBuffersPerPipelineLayout;
   external int get maxUniformBuffersPerShaderStage;
+  external int get minStorageBufferOffsetAlignment;
+  external int get maxComputeInvocationsPerWorkgroup;
+  external int get maxComputeWorkgroupSizeX;
+  external int get maxComputeWorkgroupSizeY;
+  external int get maxComputeWorkgroupSizeZ;
+  external int get maxComputeWorkgroupsPerDimension;
+  external int get maxComputeWorkgroupStorageSize;
 }
 
 extension type GPUDeviceDescriptor._(JSObject _) implements JSObject {
@@ -80,6 +87,7 @@ extension type GPUDevice._(JSObject _) implements JSObject {
   external GPUSampler createSampler(JSObject descriptor);
   external GPUShaderModule createShaderModule(JSObject descriptor);
   external GPURenderPipeline createRenderPipeline(JSObject descriptor);
+  external GPUComputePipeline createComputePipeline(JSObject descriptor);
   external GPUBindGroup createBindGroup(JSObject descriptor);
   external GPUBindGroupLayout createBindGroupLayout(JSObject descriptor);
   external GPUPipelineLayout createPipelineLayout(JSObject descriptor);
@@ -151,6 +159,10 @@ extension type GPURenderPipeline._(JSObject _) implements JSObject {
   external JSObject getBindGroupLayout(int index);
 }
 
+extension type GPUComputePipeline._(JSObject _) implements JSObject {
+  external GPUBindGroupLayout getBindGroupLayout(int index);
+}
+
 extension type GPUBindGroup._(JSObject _) implements JSObject {}
 
 extension type GPUBindGroupLayout._(JSObject _) implements JSObject {}
@@ -195,6 +207,7 @@ extension type GPUCommandBuffer._(JSObject _) implements JSObject {}
 
 extension type GPUCommandEncoder._(JSObject _) implements JSObject {
   external GPURenderPassEncoder beginRenderPass(JSObject descriptor);
+  external GPUComputePassEncoder beginComputePass([JSObject descriptor]);
   external void copyTextureToBuffer(
     JSObject source,
     JSObject destination,
@@ -233,6 +246,13 @@ extension type GPURenderPassEncoder._(JSObject _) implements JSObject {
   external void setStencilReference(int reference);
   external void draw(int vertexCount, [int instanceCount]);
   external void drawIndexed(int indexCount, [int instanceCount]);
+  external void end();
+}
+
+extension type GPUComputePassEncoder._(JSObject _) implements JSObject {
+  external void setPipeline(GPUComputePipeline pipeline);
+  external void setBindGroup(int index, GPUBindGroup bindGroup);
+  external void dispatchWorkgroups(int x, [int y, int z]);
   external void end();
 }
 

@@ -128,6 +128,63 @@ void main() {
     });
   });
 
+  group('storage buffers', () {
+    const wgsl = '''
+@group(0u) @binding(2u) var<uniform> v : Params;
+@group(0u) @binding(1u) var<storage, read_write> v_1 : Output;
+@group(0u) @binding(0u) var<storage, read> v_2 : Input;
+''';
+    final resources = <WgslReflectedResource>[
+      (name: 'Input', binding: 0, kind: WgslResourceKind.storageBuffer),
+      (name: 'Output', binding: 1, kind: WgslResourceKind.storageBuffer),
+      _ubo('Params', 2),
+    ];
+
+    test('keep their bundle binding with no sampler', () {
+      final map = WgslBindingMap.mapped(resources);
+      expect(map['Input']!.textureBinding, 0);
+      expect(map['Input']!.samplerBinding, isNull);
+      expect(map['Input']!.storage, isTrue);
+      expect(map['Params']!.storage, isFalse);
+      expect(map.samplerMappings, isEmpty);
+    });
+
+    test('are classified apart from uniforms', () {
+      expect(parseWgslDeclarations(wgsl).map((d) => d.kind), [
+        WgslDeclarationKind.uniform,
+        WgslDeclarationKind.storage,
+        WgslDeclarationKind.storage,
+      ]);
+    });
+
+    test('verify against the emitted WGSL', () {
+      WgslBindingMap.mapped(resources).verifyAgainstWgsl(wgsl);
+      expect(
+        () => WgslBindingMap.mapped([
+          ...resources.take(1),
+          (name: 'Output', binding: 3, kind: WgslResourceKind.storageBuffer),
+          _ubo('Params', 2),
+        ]).verifyAgainstWgsl(wgsl),
+        throwsA(isA<WgslBindingMismatch>()),
+      );
+    });
+
+    test('a bundle that reflects none names the Flutter it needs', () {
+      expect(
+        () => WgslBindingMap.mapped([
+          _ubo('Params', 2),
+        ]).verifyAgainstWgsl(wgsl, shaderName: 'Scale'),
+        throwsA(
+          isA<WgslBindingMismatch>().having(
+            (e) => e.message,
+            'message',
+            contains('Flutter 3.51'),
+          ),
+        ),
+      );
+    });
+  });
+
   group('parseWgslDeclarations', () {
     const wgsl = '''
 diagnostic(off, derivative_uniformity);

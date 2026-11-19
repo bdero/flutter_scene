@@ -63,6 +63,25 @@ abstract base class WebBackend {
   // TODO(webgpu-async-pipelines): report createRenderPipelineAsync's
   // completion once the WebGPU backend builds pipelines with it.
   bool isPipelineReady(RenderPipeline pipeline) => true;
+
+  /// Whether this backend runs compute shaders. A backend without compute
+  /// leaves the compute members below throwing.
+  bool get supportsCompute => false;
+
+  GpuComputeLimits get computeLimits => GpuComputeLimits.none;
+
+  GpuComputePipeline createComputePipeline(Shader computeShader) =>
+      _noCompute();
+
+  GpuComputePass createComputePass(CommandBuffer commandBuffer) => _noCompute();
+
+  GpuStorageBufferSlot getStorageBufferSlot(Shader shader, String name) =>
+      _noCompute();
+
+  static Never _noCompute() => throw UnsupportedError(
+    'Compute is unsupported on this backend; WebGL2 has none. Check '
+    'supportsCompute first.',
+  );
 }
 
 final WebBackend _backend = useWebGpuBackend
@@ -407,3 +426,61 @@ bool writeGeometryData(
 /// program's link; elsewhere it is always true.
 bool isPipelineReady(RenderPipeline pipeline) =>
     _backend.isPipelineReady(pipeline);
+
+/// Whether the active backend runs compute shaders: WebGPU does, WebGL2
+/// never will.
+bool get supportsCompute => _backend.supportsCompute;
+
+/// The active backend's compute limits.
+GpuComputeLimits get computeLimits => _backend.computeLimits;
+
+/// A pipeline that runs [computeShader]. Check [supportsCompute] first.
+GpuComputePipeline createComputePipeline(Shader computeShader) =>
+    _backend.createComputePipeline(computeShader);
+
+/// Begins a compute pass on [commandBuffer], ending its open pass.
+GpuComputePass createComputePass(CommandBuffer commandBuffer) =>
+    _backend.createComputePass(commandBuffer);
+
+/// The storage buffer whose block is named [name] in [shader].
+GpuStorageBufferSlot getStorageBufferSlot(Shader shader, String name) =>
+    _backend.getStorageBufferSlot(shader, name);
+
+/// A compute pipeline built from one compute shader.
+abstract base class GpuComputePipeline {
+  Shader get shader;
+}
+
+/// A storage buffer a compute shader declares.
+abstract base class GpuStorageBufferSlot {
+  Shader get shader;
+  String get storageBufferName;
+
+  /// The block size, counting a trailing runtime-sized array as empty.
+  int get sizeInBytes;
+
+  /// The stride of the block's trailing runtime-sized array, or 0.
+  int get runtimeArrayStrideInBytes;
+}
+
+/// A pass that dispatches compute shaders. Bindings persist across
+/// dispatches, and each dispatch sees every earlier write.
+abstract base class GpuComputePass {
+  void bindPipeline(GpuComputePipeline pipeline);
+  void bindStorageBuffer(GpuStorageBufferSlot slot, BufferView bufferView);
+  void bindUniform(UniformSlot slot, BufferView bufferView);
+  void bindTexture(
+    UniformSlot slot,
+    Texture texture, {
+    SamplerOptions? sampler,
+  });
+  void clearBindings();
+
+  /// Dispatches workgroups, not invocations.
+  void dispatch(
+    int workgroupCountX, [
+    int workgroupCountY = 1,
+    int workgroupCountZ = 1,
+  ]);
+  void end();
+}
