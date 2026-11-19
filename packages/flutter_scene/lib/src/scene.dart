@@ -1818,6 +1818,13 @@ base class Scene implements SceneGraph {
   Iterable<CustomRenderPass> _passesAt(RenderStage stage) =>
       _renderPasses.where((p) => p.enabled && p.stage == stage);
 
+  // The enabled passes whose [CustomRenderPass.inputs] the engine produces:
+  // every stage but [RenderStage.beforeScene], which runs before any of them
+  // exists.
+  Iterable<CustomRenderPass> get _passesWithInputs => _renderPasses.where(
+    (p) => p.enabled && p.stage != RenderStage.beforeScene,
+  );
+
   /// Screen-space ambient occlusion settings. Off by default; set
   /// [AmbientOcclusionSettings.enabled] to turn it on. Works with perspective
   /// and orthographic cameras.
@@ -3442,8 +3449,8 @@ base class Scene implements SceneGraph {
     // a translucent fish must be in it) and depth of field.
     final patchTranslucentDepth =
         wantDof ||
-        _renderPasses.any(
-          (pass) => pass.enabled && pass.inputs.contains(RenderInput.depth),
+        _passesWithInputs.any(
+          (pass) => pass.inputs.contains(RenderInput.depth),
         );
     final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
     final enableFxaa = effectiveAa == AntiAliasingMode.fxaa && !debugActive;
@@ -3492,8 +3499,8 @@ base class Scene implements SceneGraph {
     // the engine produces depth/normals even without AO/SSR and publishes the
     // shadow uniform for depth-aware passes.
     final customInputs = <RenderInput>{};
-    for (final pass in _renderPasses) {
-      if (pass.enabled) customInputs.addAll(pass.inputs);
+    for (final pass in _passesWithInputs) {
+      customInputs.addAll(pass.inputs);
     }
     if (wantGodRays) customInputs.addAll(_godRaysPass.inputs);
 
@@ -3621,8 +3628,8 @@ base class Scene implements SceneGraph {
         !(capturePlanarReflections &&
             !captureLinearColor &&
             renderScene.planarReflectorComponents.isNotEmpty) &&
-        !_renderPasses.any(
-          (pass) => pass.enabled && pass.inputs.contains(RenderInput.shadowMap),
+        !_passesWithInputs.any(
+          (pass) => pass.inputs.contains(RenderInput.shadowMap),
         );
     if (receiverCullingAllowed) {
       // Receivers past the last cascade never sample the atlas, so an
@@ -3647,6 +3654,28 @@ base class Scene implements SceneGraph {
     }
 
     final graph = RenderGraph();
+    final postTime =
+        DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0;
+
+    // Custom passes whose output this frame's own draws read, before any of
+    // them (shadows, depth prepass, scene). They have no color chain, so they
+    // get no destination.
+    var beforeSceneIndex = 0;
+    for (final pass in _passesAt(RenderStage.beforeScene)) {
+      graph.addPass(
+        UserRenderGraphPass(
+          pass: pass,
+          camera: camera,
+          dimensions: pixelSize,
+          destination: null,
+          renderScene: renderScene,
+          viewLayerMask: view.layerMask,
+          passIndex: beforeSceneIndex++,
+          time: postTime,
+        ),
+      );
+    }
+
     // Directional cascades, shadow-casting spots, and shadow-casting point
     // lights share one atlas (and so one sampler in the lit shader). All tiles
     // use one resolution, the directional light's when it casts, otherwise the
@@ -4059,8 +4088,6 @@ base class Scene implements SceneGraph {
 
     final width = pixelSize.width.toInt();
     final height = pixelSize.height.toInt();
-    final postTime =
-        DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0;
 
     // Volumetric god rays, in HDR right after the scene (and reflections), so
     // the in-scattered light tone-maps with the rest of the frame. Built on the
