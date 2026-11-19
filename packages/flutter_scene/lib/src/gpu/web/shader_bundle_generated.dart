@@ -11,6 +11,7 @@
 library impeller.fb.shaderbundle;
 
 import 'dart:typed_data' show Uint8List;
+
 import 'package:flat_buffers/flat_buffers.dart' as fb;
 
 class ShaderBundleFormatVersion {
@@ -30,14 +31,14 @@ class ShaderBundleFormatVersion {
   static ShaderBundleFormatVersion? _createOrNull(int? value) =>
       value == null ? null : ShaderBundleFormatVersion.fromValue(value);
 
-  static const int minValue = 2;
-  static const int maxValue = 2;
+  static const int minValue = 3;
+  static const int maxValue = 3;
   static bool containsValue(int value) => values.containsKey(value);
 
   static const ShaderBundleFormatVersion kVersion = ShaderBundleFormatVersion._(
-    2,
+    3,
   );
-  static const Map<int, ShaderBundleFormatVersion> values = {2: kVersion};
+  static const Map<int, ShaderBundleFormatVersion> values = {3: kVersion};
 
   static const fb.Reader<ShaderBundleFormatVersion> reader =
       _ShaderBundleFormatVersionReader();
@@ -239,6 +240,56 @@ class _UniformDataTypeReader extends fb.Reader<UniformDataType> {
   @override
   UniformDataType read(fb.BufferContext bc, int offset) =>
       UniformDataType.fromValue(const fb.Uint32Reader().read(bc, offset));
+}
+
+class ShaderResourceAccess {
+  final int value;
+  const ShaderResourceAccess._(this.value);
+
+  factory ShaderResourceAccess.fromValue(int value) {
+    final result = values[value];
+    if (result == null) {
+      throw StateError(
+        'Invalid value $value for bit flag enum ShaderResourceAccess',
+      );
+    }
+    return result;
+  }
+
+  static ShaderResourceAccess? _createOrNull(int? value) =>
+      value == null ? null : ShaderResourceAccess.fromValue(value);
+
+  static const int minValue = 0;
+  static const int maxValue = 2;
+  static bool containsValue(int value) => values.containsKey(value);
+
+  static const ShaderResourceAccess kReadWrite = ShaderResourceAccess._(0);
+  static const ShaderResourceAccess kReadOnly = ShaderResourceAccess._(1);
+  static const ShaderResourceAccess kWriteOnly = ShaderResourceAccess._(2);
+  static const Map<int, ShaderResourceAccess> values = {
+    0: kReadWrite,
+    1: kReadOnly,
+    2: kWriteOnly,
+  };
+
+  static const fb.Reader<ShaderResourceAccess> reader =
+      _ShaderResourceAccessReader();
+
+  @override
+  String toString() {
+    return 'ShaderResourceAccess{value: $value}';
+  }
+}
+
+class _ShaderResourceAccessReader extends fb.Reader<ShaderResourceAccess> {
+  const _ShaderResourceAccessReader();
+
+  @override
+  int get size => 1;
+
+  @override
+  ShaderResourceAccess read(fb.BufferContext bc, int offset) =>
+      ShaderResourceAccess.fromValue(const fb.Int8Reader().read(bc, offset));
 }
 
 class ShaderInput {
@@ -792,6 +843,216 @@ class ShaderUniformTextureObjectBuilder extends fb.ObjectBuilder {
   }
 }
 
+class ShaderStorageBuffer {
+  ShaderStorageBuffer._(this._bc, this._bcOffset);
+  factory ShaderStorageBuffer(List<int> bytes) {
+    final rootRef = fb.BufferContext.fromBytes(bytes);
+    return reader.read(rootRef, 0);
+  }
+
+  static const fb.Reader<ShaderStorageBuffer> reader =
+      _ShaderStorageBufferReader();
+
+  final fb.BufferContext _bc;
+  final int _bcOffset;
+
+  String? get name =>
+      const fb.StringReader().vTableGetNullable(_bc, _bcOffset, 4);
+  int get extRes0 => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 6, 0);
+  int get $set => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 8, 0);
+  int get binding => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 10, 0);
+  ShaderResourceAccess get access => ShaderResourceAccess.fromValue(
+    const fb.Int8Reader().vTableGet(_bc, _bcOffset, 12, 0),
+  );
+  int get sizeInBytes =>
+      const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 14, 0);
+  int get runtimeArrayStride =>
+      const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 16, 0);
+
+  @override
+  String toString() {
+    return 'ShaderStorageBuffer{name: ${name}, extRes0: ${extRes0}, \$set: ${$set}, binding: ${binding}, access: ${access}, sizeInBytes: ${sizeInBytes}, runtimeArrayStride: ${runtimeArrayStride}}';
+  }
+}
+
+class _ShaderStorageBufferReader extends fb.TableReader<ShaderStorageBuffer> {
+  const _ShaderStorageBufferReader();
+
+  @override
+  ShaderStorageBuffer createObject(fb.BufferContext bc, int offset) =>
+      ShaderStorageBuffer._(bc, offset);
+}
+
+class ShaderStorageBufferBuilder {
+  ShaderStorageBufferBuilder(this.fbBuilder);
+
+  final fb.Builder fbBuilder;
+
+  void begin() {
+    fbBuilder.startTable(7);
+  }
+
+  int addNameOffset(int? offset) {
+    fbBuilder.addOffset(0, offset);
+    return fbBuilder.offset;
+  }
+
+  int addExtRes0(int? extRes0) {
+    fbBuilder.addUint64(1, extRes0);
+    return fbBuilder.offset;
+  }
+
+  int addSet(int? $set) {
+    fbBuilder.addUint64(2, $set);
+    return fbBuilder.offset;
+  }
+
+  int addBinding(int? binding) {
+    fbBuilder.addUint64(3, binding);
+    return fbBuilder.offset;
+  }
+
+  int addAccess(ShaderResourceAccess? access) {
+    fbBuilder.addInt8(4, access?.value);
+    return fbBuilder.offset;
+  }
+
+  int addSizeInBytes(int? sizeInBytes) {
+    fbBuilder.addUint64(5, sizeInBytes);
+    return fbBuilder.offset;
+  }
+
+  int addRuntimeArrayStride(int? runtimeArrayStride) {
+    fbBuilder.addUint64(6, runtimeArrayStride);
+    return fbBuilder.offset;
+  }
+
+  int finish() {
+    return fbBuilder.endTable();
+  }
+}
+
+class ShaderStorageBufferObjectBuilder extends fb.ObjectBuilder {
+  final String? _name;
+  final int? _extRes0;
+  final int? _$set;
+  final int? _binding;
+  final ShaderResourceAccess? _access;
+  final int? _sizeInBytes;
+  final int? _runtimeArrayStride;
+
+  ShaderStorageBufferObjectBuilder({
+    String? name,
+    int? extRes0,
+    int? $set,
+    int? binding,
+    ShaderResourceAccess? access,
+    int? sizeInBytes,
+    int? runtimeArrayStride,
+  }) : _name = name,
+       _extRes0 = extRes0,
+       _$set = $set,
+       _binding = binding,
+       _access = access,
+       _sizeInBytes = sizeInBytes,
+       _runtimeArrayStride = runtimeArrayStride;
+
+  /// Finish building, and store into the [fbBuilder].
+  @override
+  int finish(fb.Builder fbBuilder) {
+    final int? nameOffset = _name == null
+        ? null
+        : fbBuilder.writeString(_name!);
+    fbBuilder.startTable(7);
+    fbBuilder.addOffset(0, nameOffset);
+    fbBuilder.addUint64(1, _extRes0);
+    fbBuilder.addUint64(2, _$set);
+    fbBuilder.addUint64(3, _binding);
+    fbBuilder.addInt8(4, _access?.value);
+    fbBuilder.addUint64(5, _sizeInBytes);
+    fbBuilder.addUint64(6, _runtimeArrayStride);
+    return fbBuilder.endTable();
+  }
+
+  /// Convenience method to serialize to byte list.
+  @override
+  Uint8List toBytes([String? fileIdentifier]) {
+    final fbBuilder = fb.Builder(deduplicateTables: false);
+    fbBuilder.finish(finish(fbBuilder), fileIdentifier);
+    return fbBuilder.buffer;
+  }
+}
+
+class WorkgroupSize {
+  WorkgroupSize._(this._bc, this._bcOffset);
+
+  static const fb.Reader<WorkgroupSize> reader = _WorkgroupSizeReader();
+
+  final fb.BufferContext _bc;
+  final int _bcOffset;
+
+  int get x => const fb.Uint32Reader().read(_bc, _bcOffset + 0);
+  int get y => const fb.Uint32Reader().read(_bc, _bcOffset + 4);
+  int get z => const fb.Uint32Reader().read(_bc, _bcOffset + 8);
+
+  @override
+  String toString() {
+    return 'WorkgroupSize{x: ${x}, y: ${y}, z: ${z}}';
+  }
+}
+
+class _WorkgroupSizeReader extends fb.StructReader<WorkgroupSize> {
+  const _WorkgroupSizeReader();
+
+  @override
+  int get size => 12;
+
+  @override
+  WorkgroupSize createObject(fb.BufferContext bc, int offset) =>
+      WorkgroupSize._(bc, offset);
+}
+
+class WorkgroupSizeBuilder {
+  WorkgroupSizeBuilder(this.fbBuilder);
+
+  final fb.Builder fbBuilder;
+
+  int finish(int x, int y, int z) {
+    fbBuilder.putUint32(z);
+    fbBuilder.putUint32(y);
+    fbBuilder.putUint32(x);
+    return fbBuilder.offset;
+  }
+}
+
+class WorkgroupSizeObjectBuilder extends fb.ObjectBuilder {
+  final int _x;
+  final int _y;
+  final int _z;
+
+  WorkgroupSizeObjectBuilder({required int x, required int y, required int z})
+    : _x = x,
+      _y = y,
+      _z = z;
+
+  /// Finish building, and store into the [fbBuilder].
+  @override
+  int finish(fb.Builder fbBuilder) {
+    fbBuilder.putUint32(_z);
+    fbBuilder.putUint32(_y);
+    fbBuilder.putUint32(_x);
+    return fbBuilder.offset;
+  }
+
+  /// Convenience method to serialize to byte list.
+  @override
+  Uint8List toBytes([String? fileIdentifier]) {
+    final fbBuilder = fb.Builder(deduplicateTables: false);
+    fbBuilder.finish(finish(fbBuilder), fileIdentifier);
+    return fbBuilder.buffer;
+  }
+}
+
 class BackendShader {
   BackendShader._(this._bc, this._bcOffset);
   factory BackendShader(List<int> bytes) {
@@ -822,10 +1083,16 @@ class BackendShader {
       ).vTableGetNullable(_bc, _bcOffset, 12);
   List<int>? get shader =>
       const fb.Uint8ListReader().vTableGetNullable(_bc, _bcOffset, 14);
+  List<ShaderStorageBuffer>? get storageBuffers =>
+      const fb.ListReader<ShaderStorageBuffer>(
+        ShaderStorageBuffer.reader,
+      ).vTableGetNullable(_bc, _bcOffset, 16);
+  WorkgroupSize? get workgroupSize =>
+      WorkgroupSize.reader.vTableGetNullable(_bc, _bcOffset, 18);
 
   @override
   String toString() {
-    return 'BackendShader{stage: ${stage}, entrypoint: ${entrypoint}, inputs: ${inputs}, uniformStructs: ${uniformStructs}, uniformTextures: ${uniformTextures}, shader: ${shader}}';
+    return 'BackendShader{stage: ${stage}, entrypoint: ${entrypoint}, inputs: ${inputs}, uniformStructs: ${uniformStructs}, uniformTextures: ${uniformTextures}, shader: ${shader}, storageBuffers: ${storageBuffers}, workgroupSize: ${workgroupSize}}';
   }
 }
 
@@ -843,7 +1110,7 @@ class BackendShaderBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(6);
+    fbBuilder.startTable(8);
   }
 
   int addStage(ShaderStage? stage) {
@@ -876,6 +1143,16 @@ class BackendShaderBuilder {
     return fbBuilder.offset;
   }
 
+  int addStorageBuffersOffset(int? offset) {
+    fbBuilder.addOffset(6, offset);
+    return fbBuilder.offset;
+  }
+
+  int addWorkgroupSize(int offset) {
+    fbBuilder.addStruct(7, offset);
+    return fbBuilder.offset;
+  }
+
   int finish() {
     return fbBuilder.endTable();
   }
@@ -888,6 +1165,8 @@ class BackendShaderObjectBuilder extends fb.ObjectBuilder {
   final List<ShaderUniformStructObjectBuilder>? _uniformStructs;
   final List<ShaderUniformTextureObjectBuilder>? _uniformTextures;
   final List<int>? _shader;
+  final List<ShaderStorageBufferObjectBuilder>? _storageBuffers;
+  final WorkgroupSizeObjectBuilder? _workgroupSize;
 
   BackendShaderObjectBuilder({
     ShaderStage? stage,
@@ -896,12 +1175,16 @@ class BackendShaderObjectBuilder extends fb.ObjectBuilder {
     List<ShaderUniformStructObjectBuilder>? uniformStructs,
     List<ShaderUniformTextureObjectBuilder>? uniformTextures,
     List<int>? shader,
+    List<ShaderStorageBufferObjectBuilder>? storageBuffers,
+    WorkgroupSizeObjectBuilder? workgroupSize,
   }) : _stage = stage,
        _entrypoint = entrypoint,
        _inputs = inputs,
        _uniformStructs = uniformStructs,
        _uniformTextures = uniformTextures,
-       _shader = shader;
+       _shader = shader,
+       _storageBuffers = storageBuffers,
+       _workgroupSize = workgroupSize;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -931,13 +1214,24 @@ class BackendShaderObjectBuilder extends fb.ObjectBuilder {
     final int? shaderOffset = _shader == null
         ? null
         : fbBuilder.writeListUint8(_shader!);
-    fbBuilder.startTable(6);
+    final int? storageBuffersOffset = _storageBuffers == null
+        ? null
+        : fbBuilder.writeList(
+            _storageBuffers!
+                .map((b) => b.getOrCreateOffset(fbBuilder))
+                .toList(),
+          );
+    fbBuilder.startTable(8);
     fbBuilder.addInt8(0, _stage?.value);
     fbBuilder.addOffset(1, entrypointOffset);
     fbBuilder.addOffset(2, inputsOffset);
     fbBuilder.addOffset(3, uniformStructsOffset);
     fbBuilder.addOffset(4, uniformTexturesOffset);
     fbBuilder.addOffset(5, shaderOffset);
+    fbBuilder.addOffset(6, storageBuffersOffset);
+    if (_workgroupSize != null) {
+      fbBuilder.addStruct(7, _workgroupSize!.finish(fbBuilder));
+    }
     return fbBuilder.endTable();
   }
 
