@@ -101,7 +101,7 @@ class SsrPass extends RenderGraphPass {
     final scale = _settings.resolutionScale.clamp(0.1, 1.0);
     final traceWidth = math.max(1, (width * scale).round());
     final traceHeight = math.max(1, (height * scale).round());
-    final reflection = context.texturePool.acquire(
+    final reflection = context.texturePool.acquireScoped(
       TransientTextureDescriptor.color(
         width: traceWidth,
         height: traceHeight,
@@ -206,6 +206,7 @@ class SsrPass extends RenderGraphPass {
     drawCompat(compositePass, 6);
     rendererSubmissions.submit(compositeCmd);
 
+    context.texturePool.releaseScoped(reflection);
     context.blackboard.set(kSceneColorBlackboardKey, output);
   }
 }

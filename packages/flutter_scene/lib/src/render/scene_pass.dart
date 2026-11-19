@@ -478,6 +478,7 @@ class ScenePass extends RenderGraphPass {
         );
       }
       rendererSubmissions.submit(commandBuffer);
+      if (ssaoMap != null) context.texturePool.releaseScoped(ssaoMap);
       _encodeDisplayReferredLayer(context, encoder, depth, width, height);
       context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
       return;

@@ -246,7 +246,7 @@ class SsaoPass extends RenderGraphPass {
       mipLevels = 4;
     }
     final indirect = ambientOcclusionCarriesIndirectLight(_settings);
-    final occlusion = context.texturePool.acquire(
+    final occlusion = context.texturePool.acquireScoped(
       TransientTextureDescriptor.color(
         width: aoWidth,
         height: aoHeight,
@@ -418,7 +418,7 @@ class SsaoBlurPass extends RenderGraphPass {
       required bool finalPass,
       required String debugName,
     }) {
-      final target = context.texturePool.acquire(
+      final target = context.texturePool.acquireScoped(
         TransientTextureDescriptor.color(
           width: aoWidth,
           height: aoHeight,
@@ -468,6 +468,7 @@ class SsaoBlurPass extends RenderGraphPass {
       finalPass: false,
       debugName: 'ssao_blurred_horizontal',
     );
+    context.texturePool.releaseScoped(raw);
     final blurred = blur(
       horizontal,
       0.0,
@@ -475,6 +476,7 @@ class SsaoBlurPass extends RenderGraphPass {
       finalPass: true,
       debugName: 'ssao_blurred',
     );
+    context.texturePool.releaseScoped(horizontal);
 
     context.blackboard.set(kSsaoTextureBlackboardKey, blurred);
   }
