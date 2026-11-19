@@ -267,9 +267,9 @@ Future<TextureSource> loadTexture(
         source,
         assetKey: key,
         bundle: assetBundle,
-        resolveAssetKey: () async =>
-            (await TextureRegistry.load(bundle: bundle))
-                .resolveKey(sourcePath, package: package),
+        resolveAssetKey: () async => (await TextureRegistry.load(
+          bundle: bundle,
+        )).resolveKey(sourcePath, package: package),
         onReload: (assetKey) async {
           source._swap(
             await gpuTextureFromAnyKtx2Async(await loadBytes(assetKey)),
