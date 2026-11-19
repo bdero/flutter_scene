@@ -40,6 +40,18 @@
 ///         irradiance_field: false
 ///         rect_area_lights: false
 /// ```
+///
+/// `material_features` (`flutter_scene_material_features` for an app hook)
+/// leaves out optional material shader families, which otherwise ship in
+/// bundles that load on first use (see [MaterialFeature]):
+///
+/// ```yaml
+/// hooks:
+///   user_defines:
+///     flutter_scene:
+///       material_features:
+///         parallax_occlusion: false
+/// ```
 library;
 
 import 'dart:convert';
@@ -56,6 +68,7 @@ import 'engine_identity.dart';
 import 'generated_assets.dart';
 import 'generated_tree.dart';
 import 'lighting_features.dart';
+import 'material_features.dart';
 import 'wgsl_sidecar.dart' show wgslSidecarPathFor;
 
 /// The package flutter_scene's engine assets are recorded as belonging to.
@@ -63,6 +76,13 @@ const String _engineOwner = 'flutter_scene';
 
 /// The manifest of the engine's shader bundle, relative to flutter_scene's root.
 const String _baseBundleManifest = 'shaders/base.shaderbundle.json';
+
+/// The manifest of the parallax occlusion bundle, which loads on first use.
+const String _parallaxBundleManifest = 'shaders/parallax.shaderbundle.json';
+
+/// The parallax bundle's silhouette entries, left out with
+/// [MaterialFeature.parallaxSilhouette].
+bool isParallaxSilhouetteEntry(String name) => name.startsWith('Parallax');
 
 /// GLSL ES 3.00 for the OpenGL ES dialect. The radiance sampling uses
 /// textureLod, which is core in 300 es; the 1.00 form needs
@@ -110,6 +130,9 @@ Future<void> buildEngineAssets({
     compiledOutLightingFeatures: HookOptions.of(
       buildInput,
     ).compiledOutLightingFeatures,
+    compiledOutMaterialFeatures: HookOptions.of(
+      buildInput,
+    ).compiledOutMaterialFeatures,
   ),
 );
 
@@ -120,15 +143,36 @@ Future<void> _build({
 }) async {
   final debugViews = options.debugViews;
   final lightingOff = options.compiledOutLightingFeatures;
+  final materialOff = options.compiledOutMaterialFeatures;
   // flutter_scene's own root, the parent of its shader include directory.
   final root = (await engineShaderIncludeDirectory(buildInput)).resolve('../');
-  await _buildBaseShaderBundle(
+  await _buildEngineShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
     sourceRoot: root,
+    id: 'base',
+    manifestPath: _baseBundleManifest,
     debugViews: debugViews,
     lightingOff: lightingOff,
+    materialOff: materialOff,
   );
+  if (materialOff.contains(MaterialFeature.parallaxOcclusion)) {
+    _dropEngineShaderBundle(buildInput, 'parallax');
+  } else {
+    await _buildEngineShaderBundle(
+      buildInput: buildInput,
+      buildOutput: buildOutput,
+      sourceRoot: root,
+      id: 'parallax',
+      manifestPath: _parallaxBundleManifest,
+      debugViews: debugViews,
+      lightingOff: lightingOff,
+      materialOff: materialOff,
+      keepEntry: materialOff.contains(MaterialFeature.parallaxSilhouette)
+          ? (name) => !isParallaxSilhouetteEntry(name)
+          : null,
+    );
+  }
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
     buildOutput: buildOutput,
@@ -139,18 +183,43 @@ Future<void> _build({
     fileVariant: await engineIdentity(),
     debugViews: debugViews,
     compiledOutLightingFeatures: lightingOff,
+    compiledOutMaterialFeatures: materialOff,
   );
 }
 
-Future<void> _buildBaseShaderBundle({
+// Drops a bundle a build stopped producing, so a stale copy cannot load.
+void _dropEngineShaderBundle(BuildInput buildInput, String id) {
+  final tree = GeneratedAssetTree.open(
+    buildInput.packageRoot,
+    buildInput.packageName,
+    options: HookOptions.of(buildInput),
+  );
+  final target = shaderBundleTargetKey(buildInput);
+  tree
+    ..drop(GeneratedAssetFamily.shaderBundle, id, target: target)
+    ..drop(GeneratedAssetFamily.wgsl, id, target: target)
+    ..save();
+}
+
+/// Builds the engine shader bundle [id] from the manifest at [manifestPath].
+///
+/// The base bundle carries a marker entry per left-out material feature;
+/// [keepEntry], when given, drops the manifest entries it rejects.
+Future<void> _buildEngineShaderBundle({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
   required Uri sourceRoot,
+  required String id,
+  required String manifestPath,
   required bool debugViews,
   required Set<LightingFeature> lightingOff,
+  required Set<MaterialFeature> materialOff,
+  bool Function(String entry)? keepEntry,
 }) async {
+  final isBase = id == 'base';
+  final markers = isBase ? materialOff : const <MaterialFeature>{};
   final shaders = sourceRoot.resolve('shaders/');
-  final manifestFile = File.fromUri(sourceRoot.resolve(_baseBundleManifest));
+  final manifestFile = File.fromUri(sourceRoot.resolve(manifestPath));
   if (!manifestFile.existsSync()) {
     throw Exception(
       'flutter_scene: the engine shader manifest is missing at '
@@ -176,8 +245,9 @@ Future<void> _buildBaseShaderBundle({
       buildInput,
       // Names the views' layout, so a bundle with them compiled into every
       // entry is rebuilt with twins.
-      'engine bundle=base debug_views=${debugViews ? 'twins' : false} '
-      'lighting_off=${describeCompiledOutLightingFeatures(lightingOff)}',
+      'engine bundle=$id debug_views=${debugViews ? 'twins' : false} '
+      'lighting_off=${describeCompiledOutLightingFeatures(lightingOff)} '
+      'material_off=${describeCompiledOutMaterialFeatures(materialOff)}',
     ),
   );
   for (final file in sources) {
@@ -202,10 +272,11 @@ Future<void> _buildBaseShaderBundle({
   final variant =
       '${await engineIdentity()}'
       '${debugViews ? debugViewsVariantSuffix : ''}'
-      '${lightingFeaturesVariantSuffix(lightingOff)}';
+      '${lightingFeaturesVariantSuffix(lightingOff)}'
+      '${materialFeaturesVariantSuffix(materialOff)}';
   final outputUri = tree.fileUri(
     GeneratedAssetFamily.shaderBundle,
-    nameId: 'base',
+    nameId: id,
     extension: '.shaderbundle',
     variant: variant,
     target: target,
@@ -213,13 +284,13 @@ Future<void> _buildBaseShaderBundle({
   final wgslUri = wgslSidecarsForBuild(buildInput)
       ? Uri.file(wgslSidecarPathFor(outputUri.toFilePath()))
       : null;
-  if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
+  if (tree.isFresh(GeneratedAssetFamily.shaderBundle, id, stamp, [
     outputUri,
     ?wgslUri,
   ], target: target)) {
     tree.recordFile(
       family: GeneratedAssetFamily.shaderBundle,
-      id: 'base',
+      id: id,
       uri: outputUri,
       stamp: stamp,
       owner: _engineOwner,
@@ -228,11 +299,11 @@ Future<void> _buildBaseShaderBundle({
     // Recorded again too, or the sweep in save() deletes it; dropped when the
     // switch is off, or a recorded sidecar outlives it.
     if (wgslUri == null) {
-      tree.drop(GeneratedAssetFamily.wgsl, 'base', target: target);
+      tree.drop(GeneratedAssetFamily.wgsl, id, target: target);
     } else if (File.fromUri(wgslUri).existsSync()) {
       tree.recordFile(
         family: GeneratedAssetFamily.wgsl,
-        id: 'base',
+        id: id,
         uri: wgslUri,
         stamp: stamp,
         owner: _engineOwner,
@@ -248,24 +319,36 @@ Future<void> _buildBaseShaderBundle({
   // of the debug-view wrappers.
   var manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
       .cast<String, Object?>();
+  if (keepEntry != null) {
+    manifest = {
+      for (final MapEntry(:key, :value) in manifest.entries)
+        if (keepEntry(key)) key: value,
+    };
+  }
   var entryRoot = sourceRoot;
-  if (debugViews || lightingOff.isNotEmpty) {
-    entryRoot = hookIntermediateDirectory(buildInput, 'engine_entries');
+  if (debugViews || lightingOff.isNotEmpty || markers.isNotEmpty) {
+    entryRoot = hookIntermediateDirectory(buildInput, 'engine_entries_$id');
     manifest = wrapEngineManifest(
       manifest,
       entryRoot,
       shaders,
       debugViews: debugViews,
       lightingOff: lightingOff,
+      lightingMarkers: isBase,
+      materialOff: markers,
     );
   }
   buildOutput.dependencies.add(manifestFile.uri);
 
-  stdout.writeln('flutter_scene: compiling the engine shader bundle');
+  stdout.writeln(
+    isBase
+        ? 'flutter_scene: compiling the engine shader bundle'
+        : 'flutter_scene: compiling the $id shader bundle',
+  );
   await buildTargetShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
-    bundleName: 'base',
+    bundleName: id,
     manifest: manifest,
     entryRoot: entryRoot,
     manifestDirectory: shaders,
@@ -286,8 +369,10 @@ Future<void> _buildBaseShaderBundle({
 /// `FLUTTER_SCENE_DEBUG_VIEWS`. A material draws with the twin only while a
 /// view is active, so the views cost nothing to compile until then.
 ///
-/// Every wrapper defines each feature in [lightingOff] out, and each one gets
-/// a marker entry ([LightingFeature.markerEntryName]) the runtime reads back.
+/// Every wrapper defines each feature in [lightingOff] out, and with
+/// [lightingMarkers] each one gets a marker entry
+/// ([LightingFeature.markerEntryName]) the runtime reads back. Each feature in
+/// [materialOff] gets a marker entry ([MaterialFeature.markerEntryName]) too.
 ///
 /// Every wrapper includes its original by name, found through [shaders] on the
 /// include path, since the compiler takes no defines per bundle. A wrapper
@@ -299,6 +384,8 @@ Map<String, Object?> wrapEngineManifest(
   Uri shaders, {
   bool debugViews = false,
   Set<LightingFeature> lightingOff = const {},
+  bool lightingMarkers = true,
+  Set<MaterialFeature> materialOff = const {},
 }) {
   final prefix = [
     for (final f in LightingFeature.values)
@@ -328,15 +415,24 @@ Map<String, Object?> wrapEngineManifest(
       };
     }
   }
-  for (final feature in lightingOff) {
-    final name = '${feature.markerEntryName}.frag';
+  void marker(String entry, String key) {
+    final name = '$entry.frag';
     File.fromUri(directory.resolve(name)).writeAsStringSync(
-      '// Records that ${feature.key} was compiled out. Never drawn.\n'
+      '// Records that $key was compiled out. Never drawn.\n'
       'precision mediump float;\n'
       'out vec4 frag_color;\n'
       'void main() {\n  frag_color = vec4(0.0);\n}\n',
     );
-    wrapped[feature.markerEntryName] = {'type': 'fragment', 'file': name};
+    wrapped[entry] = {'type': 'fragment', 'file': name};
+  }
+
+  if (lightingMarkers) {
+    for (final feature in lightingOff) {
+      marker(feature.markerEntryName, feature.key);
+    }
+  }
+  for (final feature in materialOff) {
+    marker(feature.markerEntryName, feature.key);
   }
   return wrapped;
 }

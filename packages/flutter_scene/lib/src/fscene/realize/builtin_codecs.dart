@@ -499,6 +499,19 @@ class MeshCodec extends ComponentCodec {
       'roughness': DoubleValue(m.roughnessFactor),
       'occlusionStrength': DoubleValue(m.occlusionStrength),
       'normalScale': DoubleValue(m.normalScale),
+      if (m.parallaxScale != 0) ...{
+        'parallaxScale': DoubleValue(m.parallaxScale),
+        'parallaxMaxSteps': IntValue(m.parallaxMaxSteps),
+        if (m.parallaxShadowStrength != 0)
+          'parallaxShadowStrength': DoubleValue(m.parallaxShadowStrength),
+        if (m.parallaxSilhouette case final silhouette?) ...{
+          'parallaxSilhouette': StringValue(
+            silhouette.isTiled ? 'tiles' : 'bounds',
+          ),
+          'parallaxSilhouetteMin': Vec2Value(silhouette.min),
+          'parallaxSilhouetteMax': Vec2Value(silhouette.max),
+        },
+      },
       'doubleSided': BoolValue(m.doubleSided),
       'alphaMode': StringValue(m.alphaMode.name),
       'alphaCutoff': DoubleValue(m.alphaCutoff),

@@ -9,6 +9,10 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physical_material.dart';
 import 'package:flutter_scene/src/material/texture_transform_cache.dart';
+import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
+import 'package:flutter_scene/src/generated_assets/material_features.dart';
+import 'package:flutter_scene/src/material/parallax_shaders.dart';
+import 'package:flutter_scene/src/material/parallax_silhouette.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
@@ -79,7 +83,9 @@ class TextureTransform {
 ///    optional per-vertex color, weighted by [vertexColorWeight]).
 ///  * Metallic-roughness: [metallicFactor], [roughnessFactor],
 ///    [metallicRoughnessTexture] (B = metallic, G = roughness).
-///  * Normal: [normalTexture] with [normalScale].
+///  * Normal: [normalTexture] with [normalScale], whose alpha channel is a
+///    height field (1 at the surface, 0 at the deepest point) that
+///    [parallaxScale] turns into parallax occlusion mapping.
 ///  * Emissive: [emissiveFactor], [emissiveTexture].
 ///  * Occlusion: [occlusionTexture] with [occlusionStrength].
 ///  * Lighting: [environment] (overrides the [Scene]-wide environment
@@ -110,7 +116,7 @@ class PhysicallyBasedMaterial extends Material {
        _normalTexture = normalTexture,
        _emissiveTexture = emissiveTexture,
        _occlusionTexture = occlusionTexture {
-    _setStandardShaderNames(lightmapped: false);
+    _setStandardShaderNames(lightmapped: false, parallax: false);
   }
 
   /// Creates a material from normalized imported properties.
@@ -248,7 +254,8 @@ class PhysicallyBasedMaterial extends Material {
   set normalTexture(TextureSource? value) {
     if (identical(_normalTexture, value)) return;
     _normalTexture = value;
-    _markMaterialDataDirty();
+    // The parallax height rides it, so it can switch the parallax entries.
+    _markMaterialDataDirty(variant: true);
   }
 
   /// UV transform applied to [normalTexture].
@@ -273,6 +280,74 @@ class PhysicallyBasedMaterial extends Material {
   double _normalScale = 1.0;
   set normalScale(double value) {
     _normalScale = value;
+    _markMaterialDataDirty();
+  }
+
+  /// Depth of the parallax occlusion height field in UV units of
+  /// [normalTexture], `0` for none (the default).
+  ///
+  /// The height field rides the alpha channel of [normalTexture], `1` at the
+  /// surface and `0` at the deepest point, so it needs no texture of its own;
+  /// a normal map with an opaque alpha is flat. Each fragment marches the view
+  /// ray through the field and every material texture is then sampled where
+  /// the ray lands, so bricks, tiles, and cobbles occlude each other at
+  /// grazing angles. `0.02` to `0.08` suits most surfaces.
+  ///
+  /// The effect lives in its own shaders, which load the first time a
+  /// material turns it on (a scene holds its previous frame meanwhile, and
+  /// `Scene.preload` loads them up front), so materials without it pay
+  /// nothing. Changing the depth between nonzero values never switches
+  /// shaders; animate toward a small depth rather than `0` to avoid a switch.
+  /// A build that sets `parallax_occlusion: false` under the
+  /// `material_features` hook user-define leaves the shaders out, and this
+  /// then does nothing.
+  double get parallaxScale => _parallaxScale;
+  double _parallaxScale = 0.0;
+  set parallaxScale(double value) {
+    final clamped = math.max(value, 0.0);
+    if (clamped == _parallaxScale) return;
+    final variant = (clamped > 0.0) != (_parallaxScale > 0.0);
+    _parallaxScale = clamped;
+    _markMaterialDataDirty(variant: variant);
+  }
+
+  /// Most layers one parallax march takes, `4` to `64`. Defaults to `32`.
+  ///
+  /// The count otherwise follows how many texels the march crosses, so
+  /// head-on and distant surfaces take few layers and this caps grazing ones.
+  /// Unused while [parallaxScale] is `0`.
+  int get parallaxMaxSteps => _parallaxMaxSteps;
+  int _parallaxMaxSteps = 32;
+  set parallaxMaxSteps(int value) {
+    _parallaxMaxSteps = value.clamp(4, 64);
+    _markMaterialDataDirty();
+  }
+
+  /// How strongly the parallax relief shadows itself from the directional
+  /// light, `0` (the default) to `1`. A second march from each hit toward the
+  /// light darkens the sun where the relief blocks it, which grounds deep
+  /// mortar lines and cobbles. Unused while [parallaxScale] is `0`.
+  double get parallaxShadowStrength => _parallaxShadowStrength;
+  double _parallaxShadowStrength = 0.0;
+  set parallaxShadowStrength(double value) {
+    _parallaxShadowStrength = value.clamp(0.0, 1.0);
+    _markMaterialDataDirty();
+  }
+
+  /// Cuts the surface's outline along its parallax relief, or null (the
+  /// default) for a surface whose relief continues past its edges.
+  ///
+  /// Unused while [parallaxScale] is `0`. A silhouetted surface draws like an
+  /// alpha-masked one: a coverage pre-draw cuts it, and the depth prepass and
+  /// shadow maps cut it the same way, at the cost of early depth testing for
+  /// its own draws. A build that sets `parallax_silhouette: false` under the
+  /// `material_features` hook user-define leaves the silhouette shaders out,
+  /// and this then does nothing.
+  ParallaxSilhouette? get parallaxSilhouette => _parallaxSilhouette;
+  ParallaxSilhouette? _parallaxSilhouette;
+  set parallaxSilhouette(ParallaxSilhouette? value) {
+    if (value == _parallaxSilhouette) return;
+    _parallaxSilhouette = value;
     _markMaterialDataDirty();
   }
 
@@ -990,6 +1065,9 @@ class PhysicallyBasedMaterial extends Material {
   // Outside the 0x7f physical-feature mask below: a lightmap picks a shader
   // variant without pulling the material onto the physical path.
   static const int _lightmapFeature = 1 << 7;
+  // Also outside the mask: parallax picks its own standard entries, and its
+  // own twins of the physical ones.
+  static const int _parallaxFeature = 1 << 8;
 
   int _variantKey = 0;
   bool _materialDataDirty = true;
@@ -1000,6 +1078,7 @@ class PhysicallyBasedMaterial extends Material {
     if (!variant) return;
     final previousTransmission = _usesTransmissionVariant;
     _variantKey = _computeVariantKey();
+    _requestParallaxShadersIfNeeded();
     _updateStandardShaderNames();
     _requestPhysicalAssetsIfNeeded();
     if (previousTransmission != _usesTransmissionVariant) {
@@ -1053,6 +1132,7 @@ class PhysicallyBasedMaterial extends Material {
     if (iridescence > 0.0) key |= _iridescenceFeature;
     if (anisotropy != 0.0) key |= _anisotropyFeature;
     if (lightmapTexture != null) key |= _lightmapFeature;
+    if (parallaxScale > 0.0 && normalTexture != null) key |= _parallaxFeature;
 
     final textures = <TextureSource?>[
       specularTexture,
@@ -1094,7 +1174,56 @@ class PhysicallyBasedMaterial extends Material {
   @internal
   @override
   bool get awaitsDeferredResources =>
-      _usesPhysicalVariant && !physicalMaterialResourcesReady;
+      (_usesPhysicalVariant && !physicalMaterialResourcesReady) ||
+      (_wantsParallax && !parallaxShaderLibraryReady);
+
+  /// The bit [variantKey] sets when parallax occlusion is on.
+  @internal
+  @visibleForTesting
+  static int get parallaxVariantBit => _parallaxFeature;
+
+  // Whether the material asks for parallax and the build has it. The shaders
+  // may still be loading; [_usesParallaxVariant] says whether they draw.
+  bool get _wantsParallax {
+    if ((_variantKey & _parallaxFeature) == 0) return false;
+    if (materialFeatureCompiledOut(MaterialFeature.parallaxOcclusion)) {
+      warnMaterialFeatureCompiledOut(MaterialFeature.parallaxOcclusion);
+      return false;
+    }
+    return true;
+  }
+
+  // Whether this material draws with the parallax entries now. Transmission
+  // has no parallax twins.
+  // TODO(parallax-transmission): give PhysicalTransmission parallax twins.
+  bool get _usesParallaxVariant =>
+      _wantsParallax &&
+      parallaxShaderLibraryReady &&
+      !_usesTransmissionVariant &&
+      !_usesLightmapVariant;
+
+  // Whether the silhouette cuts this material's draws.
+  bool get _usesParallaxSilhouette {
+    if (_parallaxSilhouette == null || !_usesParallaxVariant) return false;
+    if (materialFeatureCompiledOut(MaterialFeature.parallaxSilhouette)) {
+      warnMaterialFeatureCompiledOut(MaterialFeature.parallaxSilhouette);
+      return false;
+    }
+    return true;
+  }
+
+  // Starts the parallax bundle loading once a material wants it, and picks
+  // the parallax entries when it lands.
+  void _requestParallaxShadersIfNeeded() {
+    if (!_wantsParallax || parallaxShaderLibraryReady) return;
+    requestParallaxShaderLibrary();
+    final load = parallaxShaderLibraryLoad;
+    if (load == null || identical(load, _parallaxLoadListened)) return;
+    _parallaxLoadListened = load;
+    load.then((_) => _markMaterialDataDirty(variant: true));
+  }
+
+  Future<void>? _parallaxLoadListened;
 
   /// The bit [variantKey] sets when a baked lightmap is bound.
   @internal
@@ -1111,7 +1240,7 @@ class PhysicallyBasedMaterial extends Material {
   /// Whether serialization must preserve physical extension state.
   @internal
   bool get hasPhysicalConfiguration =>
-      (_computeVariantKey() & ~_lightmapFeature) != 0 ||
+      (_computeVariantKey() & ~(_lightmapFeature | _parallaxFeature)) != 0 ||
       _hasScalarSpecularConfiguration ||
       clearcoatRoughness != 0.0 ||
       clearcoatNormalScale != Vector2.all(1.0) ||
@@ -1128,19 +1257,47 @@ class PhysicallyBasedMaterial extends Material {
   bool get _usesTransmissionVariant =>
       (_variantKey & _transmissionFeature) != 0;
 
-  // The standard-path entry pair, swapped when a lightmap is bound so the
-  // shader that samples it is also the one the lightmap is bound to.
+  // The standard-path entries, swapped when a lightmap is bound so the
+  // shader that samples it is also the one the lightmap is bound to, and when
+  // parallax turns on.
   bool _standardShaderNamesLightmapped = false;
+  bool _standardShaderNamesParallax = false;
 
   void _updateStandardShaderNames() {
     final lightmapped = _usesLightmapVariant;
-    if (lightmapped == _standardShaderNamesLightmapped) return;
+    if (lightmapped && _wantsParallax) _warnParallaxLightmap();
+    final parallax = _usesParallaxVariant;
+    if (lightmapped == _standardShaderNamesLightmapped &&
+        parallax == _standardShaderNamesParallax) {
+      return;
+    }
     _standardShaderNamesLightmapped = lightmapped;
-    _setStandardShaderNames(lightmapped: lightmapped);
+    _standardShaderNamesParallax = parallax;
+    _setStandardShaderNames(lightmapped: lightmapped, parallax: parallax);
   }
 
-  void _setStandardShaderNames({required bool lightmapped}) {
-    final prefix = lightmapped ? 'StandardLightmap' : 'Standard';
+  // A lightmap wins over parallax, which has no lightmap entries, since
+  // dropping the bake would change the lighting rather than the detail.
+  // TODO(parallax-lightmap): add lightmap twins to the parallax entries.
+  bool _warnedParallaxLightmap = false;
+  void _warnParallaxLightmap() {
+    if (_warnedParallaxLightmap) return;
+    _warnedParallaxLightmap = true;
+    debugPrint(
+      'PhysicallyBasedMaterial "$name" has a lightmap and parallaxScale, and '
+      'parallax has no lightmap shaders yet, so it draws without parallax.',
+    );
+  }
+
+  void _setStandardShaderNames({
+    required bool lightmapped,
+    required bool parallax,
+  }) {
+    final prefix = parallax
+        ? 'StandardParallax'
+        : lightmapped
+        ? 'StandardLightmap'
+        : 'Standard';
     setFragmentShaderName(
       '${prefix}Fragment',
       cubeName: '${prefix}CubeFragment',
@@ -1184,12 +1341,15 @@ class PhysicallyBasedMaterial extends Material {
     }
     final descriptor = _toDescriptor();
     final prepared = _preparedVariant;
+    final parallax = _usesParallaxVariant;
     if (prepared == null ||
         prepared.transmissive != _usesTransmissionVariant ||
-        prepared.lightmapped != lightmapped) {
+        prepared.lightmapped != lightmapped ||
+        prepared.parallax != parallax) {
       _preparedVariant = PhysicalMaterialVariant.fromDescriptor(
         descriptor,
         lightmapped: lightmapped,
+        parallax: parallax,
       );
     } else {
       prepared.updateDescriptor(descriptor);
@@ -1338,6 +1498,10 @@ class PhysicallyBasedMaterial extends Material {
     ),
     anisotropy: anisotropy,
     anisotropyRotation: anisotropyRotation,
+    parallaxScale: parallaxScale,
+    parallaxMaxSteps: parallaxMaxSteps,
+    parallaxShadowStrength: parallaxShadowStrength,
+    parallaxSilhouette: parallaxSilhouette,
     alphaMode: alphaMode,
     alphaCutoff: alphaCutoff,
     doubleSided: doubleSided,
@@ -1387,6 +1551,7 @@ class PhysicallyBasedMaterial extends Material {
     _alphaCutoff = descriptor.alphaCutoff;
     doubleSided = descriptor.doubleSided;
     _variantKey = _computeVariantKey();
+    _requestParallaxShadersIfNeeded();
     _updateStandardShaderNames();
     _requestPhysicalAssetsIfNeeded();
     _materialDataDirty = true;
@@ -1498,6 +1663,10 @@ class PhysicallyBasedMaterial extends Material {
     );
     _anisotropy = d.anisotropy;
     anisotropyRotation = d.anisotropyRotation;
+    _parallaxScale = d.parallaxScale;
+    _parallaxMaxSteps = d.parallaxMaxSteps.clamp(4, 64);
+    _parallaxShadowStrength = d.parallaxShadowStrength.clamp(0.0, 1.0);
+    _parallaxSilhouette = d.parallaxSilhouette;
   }
 
   void _applyTexture(
@@ -1738,6 +1907,158 @@ class PhysicallyBasedMaterial extends Material {
       transientsBuffer,
       lighting,
     );
+    if (_standardShaderNamesParallax) {
+      _bindParallaxInfo(pass, shader, transientsBuffer);
+    }
+  }
+
+  void _bindParallaxInfo(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+  ) => bindParallaxInfo(
+    pass,
+    shader,
+    transientsBuffer,
+    scale: parallaxScale,
+    maxSteps: parallaxMaxSteps,
+    shadowStrength: parallaxShadowStrength,
+    silhouette: _usesParallaxSilhouette ? parallaxSilhouette : null,
+  );
+
+  // The silhouette entries in the parallax bundle, by pass.
+  static gpu.Shader? _silhouetteShader(String name) =>
+      loadedParallaxShaderLibrary?[name];
+
+  @internal
+  @override
+  gpu.Shader? get coverageSurfaceShader => _usesParallaxSilhouette
+      ? _silhouetteShader('ParallaxCoverageFragment')
+      : null;
+
+  @internal
+  @override
+  void bindCoverageSurface(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+    Lighting lighting,
+  ) {
+    final forward = lighting.cameraForward;
+    _bindSilhouetteSurface(
+      pass,
+      shader,
+      transientsBuffer,
+      cameraPosition: lighting.cameraPosition ?? Vector3.zero(),
+      cameraForward: forward ?? Vector3(0, 0, -1),
+      orthographic: lighting.orthographic && forward != null,
+    );
+  }
+
+  @internal
+  @override
+  gpu.Shader? depthSurfaceShader(DepthSurfaceKind kind) {
+    if (!_usesParallaxSilhouette) return null;
+    return _silhouetteShader(switch (kind) {
+      DepthSurfaceKind.linearDepth => 'ParallaxLinearDepthFragment',
+      DepthSurfaceKind.linearDepthNormal => 'ParallaxLinearDepthNormalFragment',
+      DepthSurfaceKind.shadow => 'ParallaxDepthOnlyFragment',
+    });
+  }
+
+  @internal
+  @override
+  void bindDepthSurface(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer, {
+    required Vector3 cameraPosition,
+    required Vector3 cameraForward,
+    bool orthographic = false,
+  }) {
+    _bindSilhouetteSurface(
+      pass,
+      shader,
+      transientsBuffer,
+      cameraPosition: cameraPosition,
+      cameraForward: cameraForward,
+      orthographic: orthographic,
+    );
+    // The depth-and-normal pass leaves the roughness map to a surface shader.
+    if (identical(
+      shader,
+      _silhouetteShader('ParallaxLinearDepthNormalFragment'),
+    )) {
+      final roughness = resolveTextureSource(metallicRoughnessTexture);
+      pass.bindTexture(
+        shader.cachedUniformSlot('metallic_roughness_texture'),
+        Material.whitePlaceholder(roughness),
+        sampler: samplerOrPlaceholder(
+          roughness,
+          textureSourceSampler(metallicRoughnessTexture) ?? _repeatSampler,
+        ),
+      );
+    }
+  }
+
+  static final Float32List _silhouetteScratch = Float32List(16);
+  static final ByteData _silhouetteBytes = ByteData.sublistView(
+    _silhouetteScratch,
+  );
+
+  // Binds what the silhouette coverage and depth shaders read: the alpha
+  // mask (or one that keeps everything), the parallax controls, the normal
+  // slot's transform and the pass camera, and the normal texture.
+  void _bindSilhouetteSurface(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer, {
+    required Vector3 cameraPosition,
+    required Vector3 cameraForward,
+    required bool orthographic,
+  }) {
+    if (alphaMode == AlphaMode.mask) {
+      bindDepthAlphaMask(pass, shader, transientsBuffer);
+    } else {
+      _maskInfoScratch
+        ..fillRange(0, _maskInfoScratch.length, 0)
+        ..[0] = -1.0
+        ..[1] = 1.0
+        ..[6] = 1.0
+        ..[7] = 1.0
+        ..[8] = 1.0;
+      pass.bindUniform(
+        shader.cachedUniformSlot('MaskInfo'),
+        transientsBuffer.emplace(_maskInfoBytes),
+      );
+      pass.bindTexture(
+        shader.cachedUniformSlot('mask_texture'),
+        Material.whitePlaceholder(null),
+        sampler: _repeatSampler,
+      );
+    }
+    _bindParallaxInfo(pass, shader, transientsBuffer);
+    final surface = _silhouetteScratch
+      ..fillRange(0, _silhouetteScratch.length, 0);
+    packTextureTransformRecord(
+      surface,
+      0,
+      normalTextureTransform,
+      normalTextureTexCoord,
+    );
+    surface
+      ..[8] = cameraPosition.x
+      ..[9] = cameraPosition.y
+      ..[10] = cameraPosition.z
+      ..[12] = cameraForward.x
+      ..[13] = cameraForward.y
+      ..[14] = cameraForward.z
+      ..[15] = orthographic ? 1.0 : 0.0;
+    pass.bindUniform(
+      shader.cachedUniformSlot('ParallaxSurfaceInfo'),
+      transientsBuffer.emplace(_silhouetteBytes),
+    );
+    _bindSlot(pass, shader, 'normal_texture', normalTexture, normal: true);
   }
 
   static final Float32List _fragInfoScratch = Float32List(
@@ -1797,7 +2118,9 @@ class PhysicallyBasedMaterial extends Material {
   double get reflectionRoughnessFactor => roughnessFactor;
 
   @override
-  bool get depthAlphaMasked => alphaMode == AlphaMode.mask;
+  // A silhouette's own depth and coverage shaders apply the mask too.
+  bool get depthAlphaMasked =>
+      alphaMode == AlphaMode.mask && !_usesParallaxSilhouette;
 
   @override
   bool get lodCrossFades => true;

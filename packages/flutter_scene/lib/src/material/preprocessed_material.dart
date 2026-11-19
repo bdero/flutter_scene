@@ -173,6 +173,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     TransientWriter transientsBuffer, {
     required Vector3 cameraPosition,
     required Vector3 cameraForward,
+    bool orthographic = false,
   }) {
     // Surface() may read the camera through either engine block, which the
     // variant always keeps (FragInfo exists only in lit shaders). Both are
@@ -194,6 +195,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       'ViewInfo',
       cameraPosition,
       cameraForward,
+      orthographic: orthographic,
     );
     parameters.bind(pass, shader, transientsBuffer);
     pass.bindUniform(
@@ -208,8 +210,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     TransientWriter transientsBuffer,
     String name,
     Vector3 position,
-    Vector3 forward,
-  ) {
+    Vector3 forward, {
+    bool orthographic = false,
+  }) {
     final slot = shader.cachedUniformSlot(name);
     final size = slot.sizeInBytes;
     if (size == null || size == 0) return;
@@ -225,6 +228,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
     put('camera_position', position);
     put('camera_forward', forward);
+    // ViewInfo's camera_forward.w marks an orthographic camera.
+    final forwardOffset = slot.getMemberOffsetInBytes('camera_forward');
+    if (orthographic && forwardOffset != null && forwardOffset + 16 <= size) {
+      data.setFloat32(forwardOffset + 12, 1.0, Endian.little);
+    }
     pass.bindUniform(slot, transientsBuffer.emplace(data));
   }
 

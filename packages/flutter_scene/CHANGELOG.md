@@ -1,5 +1,11 @@
 ## 0.24.4
 
+* `PhysicallyBasedMaterial.parallaxScale` adds parallax occlusion mapping, marching a height field carried in `normalTexture`'s alpha. `parallaxMaxSteps` caps the march, `parallaxShadowStrength` lets the relief shadow itself from the sun, and `parallaxSilhouette` (`ParallaxSilhouette`) cuts the outline, depth prepass, and shadows along the relief. Its shaders load the first time a material uses it, so other materials pay nothing.
+* `Scene.preload(parallaxOcclusion: true)` loads the parallax shaders up front, and `material_features: {parallax_occlusion: false}` under the hook user-defines leaves them out of the build.
+* `buildTextures(parallaxHeights:)` packs a height image into a normal map's alpha at cook time.
+* `.fmat` materials can `#include <parallax.glsl>` for the same march, self-shadowing, and silhouette helpers.
+* Normal-map mip chains average alpha instead of forcing it opaque, so a packed height field survives minification.
+* A cutout `.fmat`'s shadow pass sees the light's view axis, so a `Surface()` that reads `GetViewDirection()` cuts as the light sees it.
 * A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
 * BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * `SceneView.errorBuilder` shows a failed engine resource load (such as a shader bundle a web build could not fetch) with a `retry` callback, instead of leaving the view on its loading widget.

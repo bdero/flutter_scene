@@ -1,0 +1,50 @@
+{
+  "StandardParallaxFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_parallax.frag"
+  },
+  "StandardParallaxCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_parallax_cube.frag"
+  },
+  "StandardParallaxNoShadowFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_parallax_no_shadow.frag"
+  },
+  "StandardParallaxNoShadowCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_parallax_no_shadow_cube.frag"
+  },
+  "StandardParallaxLeanFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_parallax_lean.frag"
+  },
+  "StandardParallaxLeanCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_parallax_lean_cube.frag"
+  },
+  "StandardParallaxLeanNoShadowFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_parallax_lean_no_shadow.frag"
+  },
+  "StandardParallaxLeanNoShadowCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_parallax_lean_no_shadow_cube.frag"
+  },
+  "ParallaxCoverageFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_parallax_coverage.frag"
+  },
+  "ParallaxDepthOnlyFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_parallax_depth_only.frag"
+  },
+  "ParallaxLinearDepthFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_parallax_linear_depth.frag"
+  },
+  "ParallaxLinearDepthNormalFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_parallax_linear_depth_normal.frag"
+  }
+}
