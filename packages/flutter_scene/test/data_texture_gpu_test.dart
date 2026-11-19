@@ -154,6 +154,20 @@ void main() async {
       : impellerc == null
       ? 'impellerc not found in the SDK cache'
       : false;
+  // Native engines before Flutter 3.50 (and backends without arrays) report
+  // none; the tests below that need arrays skip there, and the last group
+  // checks that arrays are refused cleanly instead.
+  final arraysSupported = skip == false && Texture2DArray.isSupported;
+  final arraySkip = skip != false
+      ? skip
+      : arraysSupported
+      ? false
+      : 'no 2D-array textures on this engine';
+  final noArraySkip = skip != false
+      ? skip
+      : arraysSupported
+      ? 'this engine has 2D-array textures'
+      : false;
 
   late gpu.ShaderLibrary library;
   setUpAll(() async {
@@ -174,13 +188,13 @@ void main() async {
         height: 8,
         format: DataTextureFormat.r8,
       );
-      expect(layers.gpuTexture.textureType, gpu.TextureType.texture2DArray);
+      expect(gpu.isTexture2DArray(layers.gpuTexture), isTrue);
       expect(layers.layerCount, 3);
       expect(layers.byteSize, 8 * 8 * 3);
       expect((await _sampleLayer(library, layers.gpuTexture, 0))[0], 10);
       expect((await _sampleLayer(library, layers.gpuTexture, 1))[0], 120);
       expect((await _sampleLayer(library, layers.gpuTexture, 2))[0], 250);
-    }, skip: skip);
+    }, skip: arraySkip);
 
     test('rewrites one rg8 layer in place', () async {
       final layers = Texture2DArray.fromLayers(
@@ -203,7 +217,7 @@ void main() async {
         (await _sampleLayer(library, layers.gpuTexture, 1)).sublist(0, 2),
         [200, 40],
       );
-    }, skip: skip);
+    }, skip: arraySkip);
 
     test('holds r32Float values', () async {
       final layers = Texture2DArray.fromLayers(
@@ -218,7 +232,7 @@ void main() async {
         (await _sampleLayer(library, layers.gpuTexture, 0))[0],
         inInclusiveRange(127, 128),
       );
-    }, skip: skip);
+    }, skip: arraySkip);
 
     test('rejects a layer of the wrong size', () {
       final layers = Texture2DArray.empty(
@@ -229,7 +243,7 @@ void main() async {
       );
       expect(() => layers.writeLayer(0, Uint8List(15)), throwsArgumentError);
       expect(() => layers.writeLayer(2, Uint8List(16)), throwsRangeError);
-    }, skip: skip);
+    }, skip: arraySkip);
 
     test('32-bit float layers sample nearest unless asked', () {
       final floats = Texture2DArray.empty(
@@ -255,7 +269,7 @@ void main() async {
         sampling: TextureSampling.data,
       );
       expect(filtered.sampledSampler.minFilter, gpu.MinMagFilter.linear);
-    }, skip: skip);
+    }, skip: arraySkip);
   });
 
   group('Texture2D.fromData', () {
@@ -344,6 +358,25 @@ void main() async {
           ),
         ),
       );
-    }, skip: skip);
+    }, skip: arraySkip);
+
+    test('refuse an array material and texture without arrays', () async {
+      expect(
+        () => Texture2DArray.empty(width: 4, height: 4, layerCount: 2),
+        throwsUnsupportedError,
+      );
+      final compiled = await compiler.compile(
+        _arrayMaterial,
+        fileName: 'array.fmat',
+      );
+      final materials = await FmatBytesLibrary.load(
+        compiled.shaderBundle,
+        compiled.sidecar,
+      );
+      expect(
+        () => materials.createMaterial(compiled.entryName),
+        throwsUnsupportedError,
+      );
+    }, skip: noArraySkip);
   });
 }

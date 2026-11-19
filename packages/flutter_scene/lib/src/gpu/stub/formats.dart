@@ -149,7 +149,6 @@ enum TextureType {
   texture2DMultisample,
   textureCube,
   textureExternalOES,
-  texture2DArray,
 }
 
 enum StencilFace { both, front, back }

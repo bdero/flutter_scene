@@ -96,11 +96,16 @@ ByteData dataTextureBytes(TypedData data, int expected, String what) {
 class Texture2DArray implements TextureSource {
   Texture2DArray._(this._texture, this.format, this._sampler);
 
+  /// Whether the active backend can create 2D-array textures. True on the web
+  /// backends, and on Metal and Vulkan with Flutter 3.50 or newer.
+  static bool get isSupported => gpu.supportsTextureArrays;
+
   /// Uploads [layers], each [width] x [height] texels of [format], into a
   /// new 2D-array texture.
   ///
-  /// Throws [UnsupportedError] where the backend has no array textures, and
-  /// [ArgumentError] when a layer is not exactly one layer's bytes.
+  /// Throws [UnsupportedError] where the backend has no array textures (see
+  /// [isSupported]), and [ArgumentError] when a layer is not exactly one
+  /// layer's bytes.
   factory Texture2DArray.fromLayers(
     List<TypedData> layers, {
     required int width,
@@ -134,17 +139,18 @@ class Texture2DArray implements TextureSource {
     DataTextureFormat format = DataTextureFormat.rgba8,
     TextureSampling? sampling,
   }) {
-    if (!gpu.gpuContext.doesSupportTextureArrays) {
-      throw UnsupportedError('This backend has no 2D-array textures.');
+    if (!isSupported) {
+      throw UnsupportedError(
+        'This backend has no 2D-array textures; check '
+        'Texture2DArray.isSupported.',
+      );
     }
-    final texture = gpu.gpuContext.createTexture(
+    final texture = gpu.createTexture2DArray(
       gpu.StorageMode.hostVisible,
       width,
       height,
+      layerCount,
       format: format._pixelFormat,
-      textureType: gpu.TextureType.texture2DArray,
-      enableRenderTargetUsage: false,
-      layerCount: layerCount,
     );
     return Texture2DArray._(
       texture,
@@ -170,7 +176,7 @@ class Texture2DArray implements TextureSource {
 
   int get width => _texture.width;
   int get height => _texture.height;
-  int get layerCount => _texture.layerCount;
+  int get layerCount => gpu.textureLayerCount(_texture);
 
   /// The bytes one layer holds.
   int get layerByteSize => width * height * format.bytesPerTexel;
