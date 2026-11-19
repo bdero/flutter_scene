@@ -361,7 +361,9 @@ class TransientTexturePool {
   ///
   /// Call [releaseScoped] once the frame's last reader has submitted its
   /// command buffer so later passes in the same frame can reuse the physical
-  /// slot. Cross-frame [framesInFlight] isolation is preserved per slot.
+  /// slot. Because aliased targets may retain prior pass pixels, writers must
+  /// clear with [gpu.LoadAction.clear] or overwrite every pixel. Cross-frame
+  /// [framesInFlight] isolation is preserved per slot.
   @internal
   gpu.Texture acquireScoped(TransientTextureDescriptor descriptor) {
     final key = _PhysicalTextureKey(descriptor);
