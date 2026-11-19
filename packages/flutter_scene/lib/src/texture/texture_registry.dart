@@ -229,7 +229,7 @@ String _textureId(String sourcePath) {
 ///
 /// The texture must have been cooked by the `buildTextures` build hook. The
 /// payload transcodes to a device-supported block format
-/// (or decodes to rgba8) off the main isolate, uploads with its full mip
+/// (or decodes to rgba8) in the background, uploads with its full mip
 /// chain, and is cached, so repeated loads of the same source share one GPU
 /// texture. In debug builds the texture hot reloads: editing the source image
 /// re-cooks it and the next hot reload swaps the new texture into every bound
@@ -267,9 +267,9 @@ Future<TextureSource> loadTexture(
         source,
         assetKey: key,
         bundle: assetBundle,
-        resolveAssetKey: () async => (await TextureRegistry.load(
-          bundle: bundle,
-        )).resolveKey(sourcePath, package: package),
+        resolveAssetKey: () async =>
+            (await TextureRegistry.load(bundle: bundle))
+                .resolveKey(sourcePath, package: package),
         onReload: (assetKey) async {
           source._swap(
             await gpuTextureFromAnyKtx2Async(await loadBytes(assetKey)),

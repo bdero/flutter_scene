@@ -7,9 +7,9 @@ import 'dart:typed_data';
 import 'mipmap.dart';
 import 'web_time_slicer.dart';
 
-/// Builds the mip chain for [pixels] on a background isolate (or time-sliced on
-/// the main thread on Web), so large textures neither block callers nor starve
-/// browser event loop turns during bulk texture loads.
+/// Builds the mip chain for [pixels] on a background isolate (in time slices on
+/// the web), so a large texture does not block the caller while it
+/// downsamples.
 ///
 /// The synchronous [generateMipChain] stays for the sync realize path, which
 /// cannot await.
