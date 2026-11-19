@@ -1,6 +1,9 @@
 ## 0.24.4
 
 * `RenderStage.beforeScene` runs a `CustomRenderPass` before the view draws anything, so the same frame's materials can sample what it produces.
+* `Texture2DArray` uploads layered data textures, sampled in `.fmat` materials through `sampler2DArray` parameters, on every backend.
+* `Texture2D.fromData` builds a texture from raw texels in a `DataTextureFormat` (`r8`, `rg8`, `rgba8`, `r32Float`, `rgba16Float`, `rgba32Float`).
+* `r8` and `rg8` textures whose rows are not a multiple of four bytes upload correctly on WebGL2.
 * A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
 * BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * `SceneView.errorBuilder` shows a failed engine resource load (such as a shader bundle a web build could not fetch) with a `retry` callback, instead of leaving the view on its loading widget.

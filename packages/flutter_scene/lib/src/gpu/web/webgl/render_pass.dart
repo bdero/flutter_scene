@@ -125,7 +125,16 @@ final class WebGlRenderPass extends RenderPass {
     }
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
 
-    if (color.sampleCount == 1) {
+    if (color.textureType == TextureType.texture2DArray) {
+      // A layer attaches through its z offset.
+      gl.framebufferTextureLayer(
+        web.WebGL2RenderingContext.FRAMEBUFFER,
+        web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
+        color.webGl.glTexture,
+        mipLevel,
+        slice,
+      );
+    } else if (color.sampleCount == 1) {
       // For a cube the attachment target is the face; for 2D it is TEXTURE_2D.
       gl.framebufferTexture2D(
         web.WebGL2RenderingContext.FRAMEBUFFER,

@@ -47,19 +47,24 @@ final class _WebGpuContext extends GpuContext {
 
   _WebGpuTexture? _blank2d;
   _WebGpuTexture? _blankCube;
+  _WebGpuTexture? _blank2dArray;
 
   /// An opaque black texture of [viewDimension], bound to a texture the
   /// renderer never binds; GL samples an unbound unit the same way.
-  _WebGpuTexture blankTexture(String viewDimension) => viewDimension == 'cube'
-      ? (_blankCube ??= _createBlankTexture(cube: true))
-      : (_blank2d ??= _createBlankTexture(cube: false));
+  _WebGpuTexture blankTexture(String viewDimension) => switch (viewDimension) {
+    'cube' => _blankCube ??= _createBlankTexture(TextureType.textureCube),
+    '2d-array' => _blank2dArray ??= _createBlankTexture(
+      TextureType.texture2DArray,
+    ),
+    _ => _blank2d ??= _createBlankTexture(TextureType.texture2D),
+  };
 
-  _WebGpuTexture _createBlankTexture({required bool cube}) {
+  _WebGpuTexture _createBlankTexture(TextureType textureType) {
     final texture = createTexture(
       StorageMode.hostVisible,
       1,
       1,
-      textureType: cube ? TextureType.textureCube : TextureType.texture2D,
+      textureType: textureType,
       enableRenderTargetUsage: false,
     );
     for (var slice = 0; slice < texture.sliceCount; slice++) {
@@ -145,6 +150,7 @@ final class _WebGpuContext extends GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   }) => _WebGpuTexture._(
     this,
     storageMode,
@@ -161,7 +167,12 @@ final class _WebGpuContext extends GpuContext {
     enableShaderReadUsage: enableShaderReadUsage,
     enableShaderWriteUsage: enableShaderWriteUsage,
     mipLevelCount: mipLevelCount,
+    layerCount: layerCount,
   );
+
+  // Every WebGPU device has 2D arrays.
+  @override
+  bool get doesSupportTextureArrays => true;
 
   @override
   bool supportsTextureCompression(TextureCompressionFamily family) =>

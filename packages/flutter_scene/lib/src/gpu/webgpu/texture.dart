@@ -19,7 +19,14 @@ final class _WebGpuTexture extends Texture {
     required this.enableShaderReadUsage,
     required this.enableShaderWriteUsage,
     required this.mipLevelCount,
+    this.layerCount = 1,
   }) : _format = _gpuFormatFor(format, _context.device) {
+    if (layerCount < 1 ||
+        (layerCount > 1 && textureType != TextureType.texture2DArray)) {
+      throw ArgumentError(
+        'layerCount ($layerCount) must be 1 for textures of type $textureType',
+      );
+    }
     if (textureType == TextureType.textureExternalOES) {
       throw UnsupportedError('External OES textures do not exist on WebGPU.');
     }
@@ -87,6 +94,8 @@ final class _WebGpuTexture extends Texture {
   final bool enableShaderWriteUsage;
   @override
   final int mipLevelCount;
+  @override
+  final int layerCount;
 
   @override
   bool get isValid => !_released;
@@ -101,7 +110,11 @@ final class _WebGpuTexture extends Texture {
   }
 
   @override
-  int get sliceCount => textureType == TextureType.textureCube ? 6 : 1;
+  int get sliceCount => switch (textureType) {
+    TextureType.textureCube => 6,
+    TextureType.texture2DArray => layerCount,
+    _ => 1,
+  };
 
   @override
   int get bytesPerTexel => _format.compressed ? 0 : _format.bytesPerBlock;
@@ -110,7 +123,11 @@ final class _WebGpuTexture extends Texture {
   /// and depth only for a depth-stencil target sampled as a float.
   late final GPUTextureView sampledView = texture.createView(
     _obj({
-      'dimension': textureType == TextureType.textureCube ? 'cube' : '2d',
+      'dimension': switch (textureType) {
+        TextureType.textureCube => 'cube',
+        TextureType.texture2DArray => '2d-array',
+        _ => '2d',
+      },
       if (_format.depth) 'aspect': 'depth-only',
     }),
   );

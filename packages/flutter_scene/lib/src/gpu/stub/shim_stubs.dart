@@ -20,6 +20,7 @@ base class GpuContext {
   bool get doesSupportOffscreenMSAA => _stub();
   bool get doesSupportFramebufferRenderMipmap => _stub();
   bool get doesSupportManuallyMippedTextures => _stub();
+  bool get doesSupportTextureArrays => _stub();
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes) =>
       _stub();
   DeviceBuffer createDeviceBufferWithCopy(ByteData data) => _stub();
@@ -37,6 +38,7 @@ base class GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   }) => _stub();
   bool supportsTextureCompression(TextureCompressionFamily family) => _stub();
   CommandBuffer createCommandBuffer() => _stub();
@@ -101,6 +103,7 @@ base class Texture {
   bool get enableShaderReadUsage => _stub();
   bool get enableShaderWriteUsage => _stub();
   int get mipLevelCount => _stub();
+  int get layerCount => _stub();
   bool get isValid => _stub();
   int get sliceCount => _stub();
   int get bytesPerTexel => _stub();

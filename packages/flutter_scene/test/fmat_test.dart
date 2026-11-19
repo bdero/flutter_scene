@@ -736,6 +736,66 @@ fragment {
     });
   });
 
+  group('array samplers', () {
+    const source = '''
+material {
+  name: "Layers",
+  shading_model: unlit,
+  parameters: [
+    { type: sampler2DArray, name: layers, hint: default_black },
+    { type: sampler2darray, name: unused_layers },
+  ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    float a = texture(layers, vec3(GetUV0(), 2.0)).r;
+    material.base_color = vec4(a, 0.0, 0.0, 1.0);
+  }
+}
+''';
+
+    test('parse with the GLSL spelling and the lowercase alias', () {
+      final m = parseFmat(source);
+      expect(m.parameters.map((p) => p.type), [
+        FmatType.sampler2DArray,
+        FmatType.sampler2DArray,
+      ]);
+      expect(m.parameters.every((p) => p.isSampler), isTrue);
+      expect(m.parameters.first.hint?.kind, FmatHintKind.defaultBlack);
+    });
+
+    test('declare top-level uniforms and fetch with vec3 coordinates', () {
+      final c = compileFmat(source);
+      expect(c.glsl, contains('uniform sampler2DArray layers;'));
+      // The keep-alive fetch must use the coordinate type of each sampler, or
+      // the generated shader fails to compile.
+      expect(c.glsl, contains('texture(unused_layers, vec3(0.0)).x'));
+      expect(c.glsl, isNot(contains('texture(layers, vec2(0.0))')));
+    });
+
+    test('record their types in the sidecar', () {
+      final samplers = (compileFmat(source).sidecar['samplers'] as List)
+          .cast<Map<String, Object?>>();
+      expect(samplers.map((s) => s['type']), [
+        'sampler2DArray',
+        'sampler2DArray',
+      ]);
+    });
+
+    test('take placeholders through hint, not default', () {
+      expect(
+        () => parseFmat('''
+material {
+  name: "Bad",
+  parameters: [ { type: sampler2DArray, name: v, default: 1.0 } ],
+}
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('Samplers take a placeholder via `hint`'),
+      );
+    });
+  });
+
   group('validation', () {
     String wrap(String params, {String shadingModel = 'lit'}) =>
         '''
