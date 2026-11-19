@@ -478,8 +478,8 @@ class ScenePass extends RenderGraphPass {
         );
       }
       rendererSubmissions.submit(commandBuffer);
-      if (ssaoMap != null) context.texturePool.releaseScoped(ssaoMap);
       _encodeDisplayReferredLayer(context, encoder, depth, width, height);
+      if (ssaoMap != null) context.texturePool.releaseScoped(ssaoMap);
       context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
       return;
     }
@@ -602,6 +602,7 @@ class ScenePass extends RenderGraphPass {
     }
 
     _encodeDisplayReferredLayer(context, encoder, depth, width, height);
+    if (ssaoMap != null) context.texturePool.releaseScoped(ssaoMap);
     context.blackboard.set(kSceneColorBlackboardKey, currentColor);
     flushWatch?.stop();
     if (profileRendering) {
