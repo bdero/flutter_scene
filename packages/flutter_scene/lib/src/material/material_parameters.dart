@@ -594,7 +594,7 @@ class MaterialParameters {
     if (_block.lengthInBytes > 0) {
       pass.bindUniform(
         shader.cachedUniformSlot(_blockName),
-        transientsBuffer.emplaceDeduplicated(_block),
+        transientsBuffer.emplace(_block),
       );
     }
   }

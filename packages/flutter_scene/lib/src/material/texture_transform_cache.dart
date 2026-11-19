@@ -1,12 +1,12 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart'
     show TextureTransform;
-import 'package:meta/meta.dart' show internal;
 
-/// Packs one `TextureTransform` record (8 floats / 32 bytes) into [target]
-/// starting at float index [offset].
+/// Packs one `TextureTransform` record (8 floats, 32 bytes) into [target]
+/// at float index [offset].
 @internal
 void packTextureTransformRecord(
   Float32List target,
@@ -24,12 +24,8 @@ void packTextureTransformRecord(
   target[offset + 7] = 0.0;
 }
 
-/// Zero-allocation scalar snapshot cache for 1-slot (`UnlitMaterial`) and
-/// 5-slot (`PhysicallyBasedMaterial`) texture-transform uniform blocks.
-///
-/// Detects both whole-[TextureTransform] replacements and in-place mutations
-/// (`transform.offset.x += ...`) without per-draw allocations or trig calls
-/// while inputs remain unchanged.
+/// A material's packed texture-transform uniform block, repacked only when a
+/// transform is replaced or mutated in place.
 @internal
 final class TextureTransformCache {
   TextureTransformCache.single() : this._(1);
@@ -51,7 +47,8 @@ final class TextureTransformCache {
   final Float64List _scalars;
   final Int32List _texCoords;
 
-  /// Number of repacks performed so far.
+  /// Repacks so far.
+  @visibleForTesting
   int packCount = 0;
 
   bool _isSlotUpToDate(int slot, TextureTransform transform, int texCoord) {

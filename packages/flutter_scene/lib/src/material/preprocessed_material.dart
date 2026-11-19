@@ -198,7 +198,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     parameters.bind(pass, shader, transientsBuffer);
     pass.bindUniform(
       shader.cachedUniformSlot('FragmentKeepAlive'),
-      transientsBuffer.emplaceDeduplicated(_zeroKeepAlive),
+      transientsBuffer.emplace(_zeroKeepAlive),
     );
   }
 
@@ -225,7 +225,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
     put('camera_position', position);
     put('camera_forward', forward);
-    pass.bindUniform(slot, transientsBuffer.emplaceDeduplicated(data));
+    pass.bindUniform(slot, transientsBuffer.emplace(data));
   }
 
   @override
@@ -390,7 +390,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // replaces the outputs, and zero makes it invisible.
     pass.bindUniform(
       vertexShader.cachedUniformSlot('VertexKeepAlive'),
-      transientsBuffer.emplaceDeduplicated(_zeroKeepAlive),
+      transientsBuffer.emplace(_zeroKeepAlive),
     );
   }
 
@@ -460,7 +460,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       _packEngineFragInfo(lighting, lighting.environmentMap);
       pass.bindUniform(
         shader.cachedUniformSlot('FragInfo'),
-        transientsBuffer.emplaceDeduplicated(_fragInfoBytes),
+        transientsBuffer.emplace(_fragInfoBytes),
       );
       // The catcher's generated fragment samples only the shadow atlas, the
       // occlusion chain, and (in its shadow variant) the punctual textures.
@@ -480,7 +480,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         _packEngineFragInfo(lighting, env);
         pass.bindUniform(
           shader.cachedUniformSlot('FragInfo'),
-          transientsBuffer.emplaceDeduplicated(_fragInfoBytes),
+          transientsBuffer.emplace(_fragInfoBytes),
         );
         if (_sceneInputs.isNotEmpty) {
           EngineLightingUniforms.bindSceneInputTextures(
@@ -548,7 +548,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         _usesPlanarReflection) {
       pass.bindUniform(
         shader.cachedUniformSlot('FragmentKeepAlive'),
-        transientsBuffer.emplaceDeduplicated(_zeroKeepAlive),
+        transientsBuffer.emplace(_zeroKeepAlive),
       );
     }
   }
@@ -585,7 +585,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     }
     pass.bindUniform(
       shader.cachedUniformSlot('PlanarReflectionInfo'),
-      transientsBuffer.emplaceDeduplicated(_planarReflectionBytes),
+      transientsBuffer.emplace(_planarReflectionBytes),
     );
     pass.bindTexture(
       shader.cachedUniformSlot('planar_reflection'),
@@ -638,7 +638,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       ..[11] = 0.0;
     pass.bindUniform(
       shader.cachedUniformSlot('MaskInfo'),
-      transientsBuffer.emplaceDeduplicated(_depthMaskBytes),
+      transientsBuffer.emplace(_depthMaskBytes),
     );
     final source = _depthMaskTexture;
     final resolved = resolveTextureSource(source);
