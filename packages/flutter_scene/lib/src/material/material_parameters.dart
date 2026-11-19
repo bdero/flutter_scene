@@ -25,9 +25,12 @@ class _ParamSlot {
 }
 
 class _SamplerSlot {
-  _SamplerSlot(this.defaultPlaceholder);
+  _SamplerSlot(this.defaultPlaceholder, [this.type = FmatType.sampler2d]);
 
   final FmatHintKind? defaultPlaceholder;
+
+  /// The declared sampler type, which the bound texture's type must match.
+  final FmatType type;
   gpu.Texture? texture;
   gpu.SamplerOptions? sampler;
 }
@@ -100,14 +103,7 @@ class MaterialParameters {
       if (defaultValue != null) defaults[name] = defaultValue;
     }
 
-    final samplers = <String, _SamplerSlot>{};
-    for (final raw in (metadata['samplers'] as List?) ?? const []) {
-      final s = (raw as Map).cast<String, Object?>();
-      final hint = (s['hint'] as Map?)?.cast<String, Object?>();
-      samplers[s['name'] as String] = _SamplerSlot(
-        _hintKind(hint?['kind'] as String?),
-      );
-    }
+    final samplers = _samplerSlotsFromMetadata(metadata);
 
     final params = MaterialParameters._(
       blockName,
@@ -129,6 +125,7 @@ class MaterialParameters {
     required Map<String, ({FmatType type, int offset, bool sourceColor})>
     parameters,
     Map<String, FmatHintKind?> samplers = const {},
+    Map<String, FmatType> samplerTypes = const {},
     Map<String, Object> defaults = const {},
   }) {
     final layout = {
@@ -140,7 +137,8 @@ class MaterialParameters {
         ),
     };
     final samplerSlots = {
-      for (final e in samplers.entries) e.key: _SamplerSlot(e.value),
+      for (final e in samplers.entries)
+        e.key: _SamplerSlot(e.value, samplerTypes[e.key] ?? FmatType.sampler2d),
     };
     final params = MaterialParameters._(
       blockName,
@@ -247,21 +245,12 @@ class MaterialParameters {
       if (defaultValue != null) newDefaults[name] = defaultValue;
     }
 
-    final newSamplerHints = <String, FmatHintKind?>{};
-    for (final raw in (metadata['samplers'] as List?) ?? const []) {
-      final s = (raw as Map).cast<String, Object?>();
-      final hint = (s['hint'] as Map?)?.cast<String, Object?>();
-      newSamplerHints[s['name'] as String] = _hintKind(
-        hint?['kind'] as String?,
-      );
-    }
-
     _applyRefresh(
       newBlockName,
       slot.sizeInBytes ?? 0,
       newLayout,
       newDefaults,
-      newSamplerHints,
+      _samplerSlotsFromMetadata(metadata),
     );
   }
 
@@ -276,6 +265,7 @@ class MaterialParameters {
     parameters,
     Map<String, Object> defaults = const {},
     Map<String, FmatHintKind?> samplers = const {},
+    Map<String, FmatType> samplerTypes = const {},
   }) {
     final layout = {
       for (final e in parameters.entries)
@@ -285,7 +275,27 @@ class MaterialParameters {
           sourceColor: e.value.sourceColor,
         ),
     };
-    _applyRefresh(blockName, blockSizeBytes, layout, defaults, samplers);
+    _applyRefresh(blockName, blockSizeBytes, layout, defaults, {
+      for (final e in samplers.entries)
+        e.key: _SamplerSlot(e.value, samplerTypes[e.key] ?? FmatType.sampler2d),
+    });
+  }
+
+  /// The sampler slots a sidecar entry declares, unbound. A sidecar written
+  /// before sampler types were recorded declares only 2D samplers.
+  static Map<String, _SamplerSlot> _samplerSlotsFromMetadata(
+    Map<String, Object?> metadata,
+  ) {
+    final slots = <String, _SamplerSlot>{};
+    for (final raw in (metadata['samplers'] as List?) ?? const []) {
+      final s = (raw as Map).cast<String, Object?>();
+      final hint = (s['hint'] as Map?)?.cast<String, Object?>();
+      slots[s['name'] as String] = _SamplerSlot(
+        _hintKind(hint?['kind'] as String?),
+        FmatType.fromToken((s['type'] as String?) ?? '') ?? FmatType.sampler2d,
+      );
+    }
+    return slots;
   }
 
   void _applyRefresh(
@@ -293,7 +303,7 @@ class MaterialParameters {
     int newBlockSizeBytes,
     Map<String, _ParamSlot> newLayout,
     Map<String, Object> newDefaults,
-    Map<String, FmatHintKind?> newSamplerHints,
+    Map<String, _SamplerSlot> newSamplerSlots,
   ) {
     final newBlock = ByteData(newBlockSizeBytes);
 
@@ -320,12 +330,13 @@ class MaterialParameters {
       }
     }
 
-    // Rebuild samplers, preserving user-bound textures by name.
+    // Rebuild samplers, preserving user-bound textures by name while the
+    // sampler keeps its type.
     final newSamplers = <String, _SamplerSlot>{};
-    for (final entry in newSamplerHints.entries) {
-      final samplerSlot = _SamplerSlot(entry.value);
+    for (final entry in newSamplerSlots.entries) {
+      final samplerSlot = entry.value;
       final old = _samplers[entry.key];
-      if (old != null) {
+      if (old != null && old.type == samplerSlot.type) {
         samplerSlot.texture = old.texture;
         samplerSlot.sampler = old.sampler;
       }
@@ -435,6 +446,7 @@ class MaterialParameters {
     if (slot == null) {
       throw ArgumentError('Unknown sampler parameter "$name".');
     }
+    _checkTextureType(name, slot.type, texture);
     _overridden.add(name);
     _assigned[name] = texture;
     slot.texture = texture;
@@ -535,7 +547,8 @@ class MaterialParameters {
       // Samplers are declared separately (see _samplers) and never appear in
       // _layout, so _slot never returns one of these for a plain parameter.
       FmatType.sampler2d ||
-      FmatType.samplerCube => throw StateError('unreachable: sampler type'),
+      FmatType.samplerCube ||
+      FmatType.sampler2DArray => throw StateError('unreachable: sampler type'),
     };
   }
 
@@ -610,7 +623,7 @@ class MaterialParameters {
       final slot = entry.value;
       pass.bindTexture(
         shader.cachedUniformSlot(entry.key),
-        slot.texture ?? _placeholder(slot.defaultPlaceholder),
+        slot.texture ?? _placeholder(slot.type, slot.defaultPlaceholder),
         sampler: slot.sampler ?? _defaultSampler,
       );
     }
@@ -714,14 +727,64 @@ class MaterialParameters {
     }
   }
 
-  gpu.Texture _placeholder(FmatHintKind? kind) => switch (kind) {
-    FmatHintKind.defaultNormal => Material.normalPlaceholder(null),
-    FmatHintKind.defaultBlack => Material.getBlackPlaceholderTexture(),
-    FmatHintKind.defaultTransparent =>
-      Material.getTransparentPlaceholderTexture(),
-    // White is the neutral fallback for default_white and for no hint.
-    _ => Material.whitePlaceholder(null),
-  };
+  /// Throws when [texture] cannot be bound to a sampler of [type]. Metal and
+  /// Vulkan reject a 2D-array texture on a 2D sampler (and the reverse) at
+  /// draw time, and WebGL2 samples it as black, so the mismatch is caught
+  /// where it is made.
+  static void _checkTextureType(
+    String name,
+    FmatType type,
+    gpu.Texture texture,
+  ) {
+    final isArray = texture.textureType == gpu.TextureType.texture2DArray;
+    final String? expected = switch (type) {
+      FmatType.sampler2DArray when !isArray => 'a 2D-array texture',
+      FmatType.sampler2d when isArray => 'a 2D texture',
+      _ => null,
+    };
+    if (expected != null) {
+      throw ArgumentError(
+        'Sampler "$name" is a ${type.glslType} and needs $expected, but a '
+        '${texture.textureType.name} texture was set.',
+      );
+    }
+  }
+
+  gpu.Texture _placeholder(FmatType type, FmatHintKind? kind) {
+    if (type == FmatType.sampler2DArray) {
+      return _arrayPlaceholders[kind] ??= _arrayPlaceholder(kind);
+    }
+    return switch (kind) {
+      FmatHintKind.defaultNormal => Material.normalPlaceholder(null),
+      FmatHintKind.defaultBlack => Material.getBlackPlaceholderTexture(),
+      FmatHintKind.defaultTransparent =>
+        Material.getTransparentPlaceholderTexture(),
+      // White is the neutral fallback for default_white and for no hint.
+      _ => Material.whitePlaceholder(null),
+    };
+  }
+
+  /// One-layer 1x1 placeholders for array samplers, which cannot take the 2D
+  /// ones [Material] keeps, keyed by hint.
+  static final Map<FmatHintKind?, gpu.Texture> _arrayPlaceholders = {};
+
+  static gpu.Texture _arrayPlaceholder(FmatHintKind? kind) {
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      1,
+      1,
+      textureType: gpu.TextureType.texture2DArray,
+      enableRenderTargetUsage: false,
+    );
+    final rgba = switch (kind) {
+      FmatHintKind.defaultNormal => 0xFFFF7F7F,
+      FmatHintKind.defaultBlack => 0xFF000000,
+      FmatHintKind.defaultTransparent => 0x00000000,
+      _ => 0xFFFFFFFF,
+    };
+    texture.overwrite(Uint32List.fromList([rgba]).buffer.asByteData());
+    return texture;
+  }
 }
 
 // sRGB -> linear matching pbr.glsl's SRGBToLinear on the GPU.

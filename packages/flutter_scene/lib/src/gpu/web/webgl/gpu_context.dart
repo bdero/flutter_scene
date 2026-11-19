@@ -34,6 +34,10 @@ final class WebGlContext extends GpuContext {
     // polled instead of waited on (WebGlRenderPipeline.isLinkComplete).
     _parallelShaderCompile =
         _gl.getExtension('KHR_parallel_shader_compile') != null;
+    // Uploads are tightly packed, as flutter_gpu takes them. GL's default
+    // row alignment of 4 would skew any r8 or rg8 texture whose rows are not
+    // a multiple of four bytes.
+    _gl.pixelStorei(web.WebGL2RenderingContext.UNPACK_ALIGNMENT, 1);
     // Cache extensions we rely on for later phases.
     _gl.getExtension('EXT_color_buffer_float');
     _gl.getExtension('OES_texture_float_linear');
@@ -111,6 +115,11 @@ final class WebGlContext extends GpuContext {
   // mipmap min filters sample correctly.
   @override
   bool get doesSupportManuallyMippedTextures => true;
+
+  // TEXTURE_2D_ARRAY is core WebGL2, and the GLSL ES 3.00 bundles declare
+  // sampler2DArray as written.
+  @override
+  bool get doesSupportTextureArrays => true;
 
   final Map<TextureCompressionFamily, bool> _compressionSupport = {};
 
@@ -232,6 +241,7 @@ final class WebGlContext extends GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   }) {
     final resolvedType =
         textureType ??
@@ -250,6 +260,7 @@ final class WebGlContext extends GpuContext {
       enableShaderReadUsage,
       enableShaderWriteUsage,
       mipLevelCount,
+      layerCount: layerCount,
     );
   }
 

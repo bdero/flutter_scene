@@ -87,6 +87,7 @@ abstract base class GpuContext {
   bool get doesSupportOffscreenMSAA;
   bool get doesSupportFramebufferRenderMipmap;
   bool get doesSupportManuallyMippedTextures;
+  bool get doesSupportTextureArrays;
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes);
   DeviceBuffer createDeviceBufferWithCopy(ByteData data);
   HostBuffer createHostBuffer({
@@ -103,6 +104,7 @@ abstract base class GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   });
   bool supportsTextureCompression(TextureCompressionFamily family);
   CommandBuffer createCommandBuffer();
@@ -153,7 +155,13 @@ abstract base class Texture {
   bool get enableShaderReadUsage;
   bool get enableShaderWriteUsage;
   int get mipLevelCount;
+
+  /// The layers of a [TextureType.texture2DArray]; 1 for every other type.
+  int get layerCount;
   bool get isValid;
+
+  /// The slices [overwrite] addresses: 6 cube faces or the layers of an
+  /// array.
   int get sliceCount;
   int get bytesPerTexel;
   int getMipLevelSizeInBytes(int mipLevel);
