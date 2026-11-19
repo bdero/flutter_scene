@@ -5,7 +5,7 @@
 /// looks up its bind group from the bound buffer/texture IDs and sampler keys.
 /// Keeping the binding slots epoch-stamped in flat arrays makes `clearBindings`
 /// O(1), and keying bind groups by unboxed `Uint32List` words avoids boxing
-/// integers or allocating temporary lists per draw (especially under WasmGC).
+/// integers or allocating temporary lists per draw.
 ///
 /// Pure Dart, so it is testable without a browser.
 library;
@@ -85,24 +85,16 @@ final class PassBindingTable<
     _uniformEpochs[binding] = explicit ? _epoch : -_epoch;
   }
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   bool hasUniform(int binding) {
     if (binding < 0 || binding >= _uniformEpochs.length) return false;
     final e = _uniformEpochs[binding];
     return e == _epoch || e == -_epoch;
   }
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   B uniformBuffer(int binding) => _uniformBuffers[binding]! as B;
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   int uniformOffset(int binding) => _uniformOffsets[binding];
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   int uniformLength(int binding) => _uniformLengths[binding];
 
   /// Binds [texture] and [sampler] at [binding]. When [explicit] is false, an
@@ -122,20 +114,14 @@ final class PassBindingTable<
     _textureEpochs[binding] = explicit ? _epoch : -_epoch;
   }
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   bool hasTexture(int binding) {
     if (binding < 0 || binding >= _textureEpochs.length) return false;
     final e = _textureEpochs[binding];
     return e == _epoch || e == -_epoch;
   }
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   T texture(int binding) => _textures[binding]! as T;
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   S? sampler(int binding) => _samplers[binding] as S?;
 
   /// Binds a vertex [buffer] at [offset] to [slot].
@@ -148,17 +134,11 @@ final class PassBindingTable<
     _vertexEpochs[slot] = _epoch;
   }
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   bool hasVertexBuffer(int slot) =>
       slot >= 0 && slot < _vertexEpochs.length && _vertexEpochs[slot] == _epoch;
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   B vertexBuffer(int slot) => _vertexBuffers[slot]! as B;
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   int vertexOffset(int slot) => _vertexOffsets[slot];
 
   void _growUniforms(int minLength) {

@@ -184,7 +184,8 @@ final class _WebGpuShader extends Shader {
       ]);
     texturesByName.clear();
     for (final t in textures) {
-      texturesByName[t.name] = t;
+      // First declaration wins, as the linear search it replaces did.
+      texturesByName.putIfAbsent(t.name, () => t);
     }
     inputs
       ..clear()
@@ -303,8 +304,6 @@ final class _WebGpuUniformSlot extends UniformSlot {
     return this;
   }
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   _UniformBlock? _uniformIn(_WebGpuShader target) {
     if (identical(target, shader)) {
       if (_ownGeneration != target.generation) _syncOwn();
@@ -317,8 +316,6 @@ final class _WebGpuUniformSlot extends UniformSlot {
     return _cachePaired(target)._pairedUniform;
   }
 
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   _TextureSlot? _textureIn(_WebGpuShader target) {
     if (identical(target, shader)) {
       if (_ownGeneration != target.generation) _syncOwn();

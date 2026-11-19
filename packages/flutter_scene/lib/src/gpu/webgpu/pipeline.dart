@@ -126,235 +126,89 @@ final class _RenderState {
 /// Everything a variant depends on beyond its pipeline's shaders and vertex
 /// layout, normalized so states that build the same GPURenderPipeline share a
 /// key.
-///
-/// Single-target passes and shaders with ten or fewer sampled textures keep
-/// their blend and sample state inline as ints, so probing [_WebGpuRenderPipeline._variants]
-/// through [_VariantKey._probe] allocates nothing on a cache hit.
 final class _VariantKey {
-  _VariantKey._probe()
-    : target = _TargetShape._(-1, const [], null, 1),
-      raster = 0,
-      stencil = 0,
-      stencilMasks = 0,
-      blend0 = 0,
-      extraBlends = const [],
-      extraBlendCount = 0,
-      samplePrimary = 0,
-      sampleOverflow = const [],
-      sampleOverflowCount = 0,
-      hashCode = 0;
+  _VariantKey._(
+    this.target,
+    this.raster,
+    this.stencil,
+    this.stencilMasks,
+    this.blends,
+    this.samples,
+  ) : hashCode = Object.hash(
+        target.id,
+        raster,
+        stencil,
+        stencilMasks,
+        Object.hashAll(blends),
+        samples,
+      );
 
-  _VariantKey._owned({
-    required this.target,
-    required this.raster,
-    required this.stencil,
-    required this.stencilMasks,
-    required this.blend0,
-    required this.extraBlends,
-    required this.extraBlendCount,
-    required this.samplePrimary,
-    required this.sampleOverflow,
-    required this.sampleOverflowCount,
-    required this.hashCode,
-  });
-
-  _TargetShape target;
-  int raster;
-  int stencil;
-  int stencilMasks;
-  int blend0;
-  List<int> extraBlends;
-  int extraBlendCount;
-  int samplePrimary;
-  List<int> sampleOverflow;
-  int sampleOverflowCount;
-
-  @override
-  int hashCode;
-
-  final List<int> _extraBlendScratch = [];
-
-  void bind(
+  factory _VariantKey(
     _RenderState state,
-    _TargetShape targetShape,
-    int primarySamples,
-    List<int> overflowSamples,
-    int overflowCount, {
+    _TargetShape target,
+    GpuSampleSignature samples, {
     required bool float32Blendable,
   }) {
-    var r = state.raster;
-    final topology =
-        PrimitiveType.values[_RenderState._get(r, _RenderState._topology, 3)];
+    var raster = state.raster;
+    final topology = PrimitiveType
+        .values[_RenderState._get(raster, _RenderState._topology, 3)];
     if (topology != PrimitiveType.triangleStrip &&
         topology != PrimitiveType.lineStrip) {
-      r = _RenderState._put(r, _RenderState._stripUint32, 1, 0);
+      raster = _RenderState._put(raster, _RenderState._stripUint32, 1, 0);
     }
-    var st = state.stencil;
+    var stencil = state.stencil;
     var masks = state.stencilMasks;
-    final attachment = targetShape.depthStencil;
+    final attachment = target.depthStencil;
     if (attachment == null || !attachment.depth) {
-      r = _RenderState._put(r, _RenderState._depthWrite, 1, 0);
-      r = _RenderState._put(
-        r,
+      raster = _RenderState._put(raster, _RenderState._depthWrite, 1, 0);
+      raster = _RenderState._put(
+        raster,
         _RenderState._depthCompare,
         3,
         CompareFunction.always.index,
       );
     }
     if (attachment == null || !attachment.stencil) {
-      st = 0;
+      stencil = 0;
       masks = 0;
     }
-
-    final colorCount = targetShape.colorFormats.length;
-    final int firstBlend;
-    final List<int> restBlends;
-    final int restBlendCount;
-    if (colorCount == 0) {
-      firstBlend = -1;
-      restBlends = const [];
-      restBlendCount = 0;
-    } else {
-      firstBlend = _normalizedBlend(
-        state,
-        targetShape,
-        0,
-        float32Blendable: float32Blendable,
-      );
-      if (colorCount == 1) {
-        restBlends = const [];
-        restBlendCount = 0;
-      } else {
-        restBlendCount = colorCount - 1;
-        while (_extraBlendScratch.length < restBlendCount) {
-          _extraBlendScratch.add(0);
-        }
-        for (var i = 1; i < colorCount; i++) {
-          _extraBlendScratch[i - 1] = _normalizedBlend(
-            state,
-            targetShape,
-            i,
-            float32Blendable: float32Blendable,
-          );
-        }
-        restBlends = _extraBlendScratch;
-      }
-    }
-
-    target = targetShape;
-    raster = r;
-    stencil = st;
-    stencilMasks = masks;
-    blend0 = firstBlend;
-    extraBlends = restBlends;
-    extraBlendCount = restBlendCount;
-    samplePrimary = primarySamples;
-    sampleOverflow = overflowCount == 0 ? const [] : overflowSamples;
-    sampleOverflowCount = overflowCount;
-    hashCode = _computeHash(
-      targetShape.id,
-      r,
-      st,
-      masks,
-      firstBlend,
-      restBlends,
-      restBlendCount,
-      primarySamples,
-      overflowSamples,
-      overflowCount,
-    );
+    final blends = [
+      for (var i = 0; i < target.colorFormats.length; i++)
+        switch (i < state.blends.length ? state.blends[i] : 0) {
+          final b when b & 1 == 0 => 0,
+          // WebGPU rejects blending into a 32-bit float target without the
+          // feature; Metal blends there. Draw unblended rather than nothing.
+          _ when target.colorFormats[i].float32 && !float32Blendable => 0,
+          final b => b,
+        },
+    ];
+    return _VariantKey._(target, raster, stencil, masks, blends, samples);
   }
 
-  void release() {
-    sampleOverflow = const [];
-    sampleOverflowCount = 0;
-  }
+  final _TargetShape target;
+  final int raster;
+  final int stencil;
+  final int stencilMasks;
+  final List<int> blends;
+  final GpuSampleSignature samples;
 
-  _VariantKey snapshot() => _VariantKey._owned(
-    target: target,
-    raster: raster,
-    stencil: stencil,
-    stencilMasks: stencilMasks,
-    blend0: blend0,
-    extraBlends: extraBlendCount == 0
-        ? const []
-        : List<int>.unmodifiable(extraBlends.sublist(0, extraBlendCount)),
-    extraBlendCount: extraBlendCount,
-    samplePrimary: samplePrimary,
-    sampleOverflow: sampleOverflowCount == 0
-        ? const []
-        : List<int>.unmodifiable(
-            sampleOverflow.sublist(0, sampleOverflowCount),
-          ),
-    sampleOverflowCount: sampleOverflowCount,
-    hashCode: hashCode,
-  );
-
-  static int _normalizedBlend(
-    _RenderState state,
-    _TargetShape target,
-    int index, {
-    required bool float32Blendable,
-  }) {
-    final b = index < state.blends.length ? state.blends[index] : 0;
-    if (b & 1 == 0) return 0;
-    // WebGPU rejects blending into a 32-bit float target without the feature;
-    // Metal blends there. Draw unblended rather than nothing.
-    if (target.colorFormats[index].float32 && !float32Blendable) return 0;
-    return b;
-  }
-
-  static int _computeHash(
-    int targetId,
-    int raster,
-    int stencil,
-    int stencilMasks,
-    int blend0,
-    List<int> extraBlends,
-    int extraBlendCount,
-    int samplePrimary,
-    List<int> sampleOverflow,
-    int sampleOverflowCount,
-  ) {
-    final base = Object.hash(
-      targetId,
-      raster,
-      stencil,
-      stencilMasks,
-      blend0,
-      samplePrimary,
-    );
-    if (extraBlendCount == 0 && sampleOverflowCount == 0) return base;
-    var extra = base;
-    for (var i = 0; i < extraBlendCount; i++) {
-      extra = Object.hash(extra, extraBlends[i]);
-    }
-    for (var i = 0; i < sampleOverflowCount; i++) {
-      extra = Object.hash(extra, sampleOverflow[i]);
-    }
-    return Object.hash(extra, extraBlendCount, sampleOverflowCount);
-  }
+  @override
+  final int hashCode;
 
   @override
   bool operator ==(Object other) {
-    if (identical(this, other)) return true;
     if (other is! _VariantKey ||
         other.hashCode != hashCode ||
         !identical(other.target, target) ||
         other.raster != raster ||
         other.stencil != stencil ||
         other.stencilMasks != stencilMasks ||
-        other.blend0 != blend0 ||
-        other.extraBlendCount != extraBlendCount ||
-        other.samplePrimary != samplePrimary ||
-        other.sampleOverflowCount != sampleOverflowCount) {
+        other.blends.length != blends.length ||
+        other.samples != samples) {
       return false;
     }
-    for (var i = 0; i < extraBlendCount; i++) {
-      if (other.extraBlends[i] != extraBlends[i]) return false;
-    }
-    for (var i = 0; i < sampleOverflowCount; i++) {
-      if (other.sampleOverflow[i] != sampleOverflow[i]) return false;
+    for (var i = 0; i < blends.length; i++) {
+      if (other.blends[i] != blends[i]) return false;
     }
     return true;
   }
@@ -426,11 +280,9 @@ final class _VariantKey {
 
   List<Map<String, Object?>> get colorTargets => [
     for (var i = 0; i < target.colorFormats.length; i++)
-      switch (i == 0 ? blend0 : extraBlends[i - 1]) {
-        final b => {
-          'format': target.colorFormats[i].name,
-          if (b != 0) 'blend': _blend(b),
-        },
+      {
+        'format': target.colorFormats[i].name,
+        if (blends[i] != 0) 'blend': _blend(blends[i]),
       },
   ];
 
@@ -638,13 +490,13 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
   late List<_SampledTexture> _sampled;
   late Int32List _uniformSizes;
 
-  // 1-entry MRU for consecutive single-target draws with <= 10 sampled textures.
+  // The last single-target variant drawn, with the raw state that chose it.
   _TargetShape? _mruTarget;
-  int _mruRawRaster = -1;
-  int _mruRawStencil = -1;
-  int _mruRawStencilMasks = -1;
-  int _mruRawBlend0 = -1;
-  int _mruSamplePrimary = -1;
+  int _mruRaster = -1;
+  int _mruStencil = -1;
+  int _mruStencilMasks = -1;
+  int _mruBlend0 = -1;
+  int _mruSamples = -1;
   _PipelineVariant? _mruVariant;
 
   /// The size a uniform block at [binding] binds with, from either stage.
@@ -652,16 +504,12 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
   /// Rounded up to 16 bytes: the reflection can stop at the last member
   /// (60 bytes, say) while WGSL pads a uniform struct to its 16-byte
   /// alignment, and WebGPU rejects a binding smaller than the padded struct.
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   int uniformSize(int binding) => binding >= 0 && binding < _uniformSizes.length
       ? _uniformSizes[binding]
       : 16;
 
   /// The textures this pipeline samples, in signature order. A pass resolves
   /// one [GpuSampleSlot] per entry.
-  @pragma('vm:prefer-inline')
-  @pragma('wasm:prefer-inline')
   List<_SampledTexture> get sampledTextures {
     _refresh();
     return _sampled;
@@ -720,65 +568,48 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
     _fragmentGeneration = fragmentShader.generation;
   }
 
-  /// Zero-allocation fast path for [_WebGpuRenderPass._prepare] using packed
-  /// 30-bit sample-signature lanes.
-  _PipelineVariant variantForCodes(
+  /// The variant for a draw with [state] into [target], whose sampled
+  /// textures resolved to the codes packed in [samples].
+  _PipelineVariant variantForLanes(
     _RenderState state,
     _TargetShape target,
-    int samplePrimary,
-    List<int> sampleOverflow,
-    int sampleOverflowCount,
+    GpuSampleLanes samples,
   ) {
     _refresh();
     if (_interfaceMismatch case final mismatch?) {
       throw _RefusedPipeline(mismatch);
     }
-    final singleTargetFastPath =
-        target.colorFormats.length == 1 && sampleOverflowCount == 0;
-    final rawBlend0 = singleTargetFastPath ? state.blends[0] : -1;
-    if (singleTargetFastPath) {
-      final mru = _mruVariant;
-      if (mru != null &&
-          identical(_mruTarget, target) &&
-          _mruRawRaster == state.raster &&
-          _mruRawStencil == state.stencil &&
-          _mruRawStencilMasks == state.stencilMasks &&
-          _mruRawBlend0 == rawBlend0 &&
-          _mruSamplePrimary == samplePrimary) {
-        return _checkVariant(mru);
-      }
+    // Consecutive draws of a pipeline nearly always repeat their state, so
+    // the common single-target case skips building a key.
+    final mruEligible =
+        target.colorFormats.length == 1 && samples.overflowCount == 0;
+    if (mruEligible &&
+        identical(_mruTarget, target) &&
+        _mruRaster == state.raster &&
+        _mruStencil == state.stencil &&
+        _mruStencilMasks == state.stencilMasks &&
+        _mruBlend0 == state.blends[0] &&
+        _mruSamples == samples.primary) {
+      return _checkVariant(_mruVariant!);
     }
-
-    final probe = _context._variantProbe
-      ..bind(
-        state,
-        target,
-        samplePrimary,
-        sampleOverflow,
-        sampleOverflowCount,
-        float32Blendable: _context.float32Blendable,
-      );
-    var variant = _variants[probe];
-    if (variant == null) {
-      final key = probe.snapshot();
-      probe.release();
-      final slots = _slotsFromLanes(
-        samplePrimary,
-        key.sampleOverflow,
-        _sampled.length,
-      );
-      variant = _variants[key] = _build(key, slots);
-    } else {
-      probe.release();
-    }
-
-    if (singleTargetFastPath) {
+    final signature = samples.toSignature();
+    final key = _VariantKey(
+      state,
+      target,
+      signature,
+      float32Blendable: _context.float32Blendable,
+    );
+    final variant = _variants[key] ??= _build(key, [
+      for (var i = 0; i < _sampled.length; i++)
+        sampleSlotFromCode(signature.codeAt(i)),
+    ]);
+    if (mruEligible) {
       _mruTarget = target;
-      _mruRawRaster = state.raster;
-      _mruRawStencil = state.stencil;
-      _mruRawStencilMasks = state.stencilMasks;
-      _mruRawBlend0 = rawBlend0;
-      _mruSamplePrimary = samplePrimary;
+      _mruRaster = state.raster;
+      _mruStencil = state.stencil;
+      _mruStencilMasks = state.stencilMasks;
+      _mruBlend0 = state.blends[0];
+      _mruSamples = samples.primary;
       _mruVariant = variant;
     }
     return _checkVariant(variant);
@@ -797,14 +628,11 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
         '${slots.length}.',
       );
     }
-    final signature = GpuSampleSignature(slots);
-    return variantForCodes(
-      state,
-      target,
-      signature.primary,
-      signature.overflow,
-      signature.overflow.length,
-    );
+    final samples = GpuSampleLanes();
+    for (final slot in slots) {
+      samples.add(sampleSlotCode(slot));
+    }
+    return variantForLanes(state, target, samples);
   }
 
   _PipelineVariant _checkVariant(_PipelineVariant variant) {
@@ -819,26 +647,6 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
       );
     }
     return variant;
-  }
-
-  static List<GpuSampleSlot> _slotsFromLanes(
-    int primary,
-    List<int> overflow,
-    int count,
-  ) {
-    final slots = <GpuSampleSlot>[];
-    var lane = primary;
-    var shift = 0;
-    var overflowIndex = 0;
-    for (var i = 0; i < count; i++) {
-      if (shift == 30) {
-        lane = overflow[overflowIndex++];
-        shift = 0;
-      }
-      slots.add(sampleSlotFromCode((lane >> shift) & 7));
-      shift += 3;
-    }
-    return slots;
   }
 
   /// Why [fragmentShader] reads a varying [vertexShader] does not write, at
