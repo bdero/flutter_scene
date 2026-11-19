@@ -15,9 +15,7 @@ final class _WebGpuHost extends GpuHost {
     textureToImage: true,
     imageToTexture: false,
     presentAsImage: true,
-    // TODO(webgpu-compute): WebGPU has compute; report it once the shim has
-    // a compute API.
-    compute: false,
+    compute: true,
   );
 
   @override

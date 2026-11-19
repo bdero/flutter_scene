@@ -22,6 +22,7 @@ import 'package:web/web.dart' as web;
 import '../../generated_assets/generated_asset_fetch_web.dart';
 import '../shared/encoded_image_types.dart';
 import '../shared/gpu_capabilities.dart';
+import '../shared/gpu_compute_limits.dart';
 import '../shared/gpu_pass_cache.dart';
 import '../shared/gpu_sample_types.dart';
 import '../shared/shader_library_sources.dart';
@@ -33,6 +34,7 @@ import 'webgpu_interop.dart';
 import 'webgpu_presenter.dart';
 
 part 'buffer.dart';
+part 'compute.dart';
 part 'context.dart';
 part 'encoded_image.dart';
 part 'formats.dart';
@@ -219,4 +221,22 @@ final class _WebGpuBackend extends WebBackend {
   @override
   Surface createSurface({required int width, required int height}) =>
       _WebGpuSurface(WebGpuPresenter(context.device), width, height);
+
+  @override
+  bool get supportsCompute => true;
+
+  @override
+  GpuComputeLimits get computeLimits => context.computeLimits;
+
+  @override
+  GpuComputePipeline createComputePipeline(Shader computeShader) =>
+      _WebGpuComputePipeline(context, computeShader as _WebGpuShader);
+
+  @override
+  GpuComputePass createComputePass(CommandBuffer commandBuffer) =>
+      (commandBuffer as _WebGpuCommandBuffer)._createComputePass();
+
+  @override
+  GpuStorageBufferSlot getStorageBufferSlot(Shader shader, String name) =>
+      (shader as _WebGpuShader).getStorageBufferSlot(name);
 }
