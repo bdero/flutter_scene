@@ -57,6 +57,14 @@ final class WebGlRenderPass extends RenderPass {
   web.WebGLFramebuffer? _fbo;
   bool _finished = false;
 
+  bool? _blendEnabled;
+  (BlendOperation, BlendOperation)? _blendOperations;
+  (BlendFactor, BlendFactor, BlendFactor, BlendFactor)? _blendFactors;
+  bool? _depthWriteEnabled;
+  CompareFunction? _depthCompare;
+  CullMode _cullMode = CullMode.none;
+  WindingOrder _windingOrder = WindingOrder.clockwise;
+
   void _ensureVao() {
     final gl = _gpuContext._gl;
     _vao ??= gl.createVertexArray();
@@ -723,6 +731,8 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setColorBlendEnable(bool enable, {int colorAttachmentIndex = 0}) {
+    if (_blendEnabled == enable) return;
+    _blendEnabled = enable;
     final gl = _gpuContext._gl;
     if (enable) {
       gl.enable(web.WebGL2RenderingContext.BLEND);
@@ -737,25 +747,47 @@ final class WebGlRenderPass extends RenderPass {
     int colorAttachmentIndex = 0,
   }) {
     final gl = _gpuContext._gl;
-    gl.blendEquationSeparate(
-      _glBlendOp(equation.colorBlendOperation),
-      _glBlendOp(equation.alphaBlendOperation),
-    );
-    gl.blendFuncSeparate(
-      _glBlendFactor(equation.sourceColorBlendFactor),
-      _glBlendFactor(equation.destinationColorBlendFactor),
-      _glBlendFactor(equation.sourceAlphaBlendFactor),
-      _glBlendFactor(equation.destinationAlphaBlendFactor),
-    );
+    if (_blendOperations?.$1 != equation.colorBlendOperation ||
+        _blendOperations?.$2 != equation.alphaBlendOperation) {
+      gl.blendEquationSeparate(
+        _glBlendOp(equation.colorBlendOperation),
+        _glBlendOp(equation.alphaBlendOperation),
+      );
+      _blendOperations = (
+        equation.colorBlendOperation,
+        equation.alphaBlendOperation,
+      );
+    }
+    if (_blendFactors?.$1 != equation.sourceColorBlendFactor ||
+        _blendFactors?.$2 != equation.destinationColorBlendFactor ||
+        _blendFactors?.$3 != equation.sourceAlphaBlendFactor ||
+        _blendFactors?.$4 != equation.destinationAlphaBlendFactor) {
+      gl.blendFuncSeparate(
+        _glBlendFactor(equation.sourceColorBlendFactor),
+        _glBlendFactor(equation.destinationColorBlendFactor),
+        _glBlendFactor(equation.sourceAlphaBlendFactor),
+        _glBlendFactor(equation.destinationAlphaBlendFactor),
+      );
+      _blendFactors = (
+        equation.sourceColorBlendFactor,
+        equation.destinationColorBlendFactor,
+        equation.sourceAlphaBlendFactor,
+        equation.destinationAlphaBlendFactor,
+      );
+    }
   }
 
   @override
   void setDepthWriteEnable(bool enable) {
+    if (_depthWriteEnabled == enable) return;
+    _depthWriteEnabled = enable;
     _gpuContext._gl.depthMask(enable);
   }
 
   @override
   void setDepthCompareOperation(CompareFunction compareFunction) {
+    if (_depthCompare == compareFunction) return;
+    _depthCompare = compareFunction;
     final gl = _gpuContext._gl;
     // GL skips depth writes while the test is disabled, so `always` keeps
     // the test on with GL_ALWAYS, as Impeller's GLES backend does.
@@ -831,6 +863,8 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setCullMode(CullMode cullMode) {
+    if (_cullMode == cullMode) return;
+    _cullMode = cullMode;
     final gl = _gpuContext._gl;
     switch (cullMode) {
       case CullMode.none:
@@ -856,6 +890,8 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setWindingOrder(WindingOrder windingOrder) {
+    if (_windingOrder == windingOrder) return;
+    _windingOrder = windingOrder;
     // Inverted relative to the requested order: the generated GLES vertex
     // shaders multiply gl_Position.y by `_impeller_y_flip = -1`, which mirrors
     // triangle winding while storing render targets top-down.
