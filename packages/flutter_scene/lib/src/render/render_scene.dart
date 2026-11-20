@@ -173,6 +173,18 @@ class RenderItem {
   gpu.Texture? previousJointsTexture;
   int jointsTextureWidth = 0;
 
+  /// The owning node's skin, or null for an unskinned node. Refreshed with
+  /// [jointsTexture].
+  Skin? skin;
+
+  /// [preSkinnedSource]'s vertices skinned by this frame's compute pass, or
+  /// null to skin in the vertex shader. Set by `ComputeSkinning.dispatch`.
+  gpu.BufferView? preSkinnedVertices;
+
+  /// The geometry [preSkinnedVertices] were skinned from. A draw of another
+  /// (a level of detail) skins in its vertex shader.
+  Geometry? preSkinnedSource;
+
   /// Applies this item's joints texture to [drawnGeometry] (which differs
   /// from [geometry] when a level of detail was selected). No-op for
   /// unskinned items. Render passes call this immediately before the
@@ -182,6 +194,9 @@ class RenderItem {
     final texture = jointsTexture;
     if (texture == null) return;
     drawnGeometry.setJointsTexture(texture, jointsTextureWidth);
+    drawnGeometry.setPreSkinnedVertices(
+      identical(drawnGeometry, preSkinnedSource) ? preSkinnedVertices : null,
+    );
   }
 
   /// The owning node's live morph target weights, or null for an unmorphed

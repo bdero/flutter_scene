@@ -1100,6 +1100,22 @@ abstract class Geometry {
   /// nodes carries the correct skeleton for every draw.
   void setJointsTexture(gpu.Texture? texture, int width) {}
 
+  /// Hands [SkinnedGeometry] this draw's vertices already skinned by a compute
+  /// pass, or null to skin in the vertex shader. Set right before each draw's
+  /// bind, like [setJointsTexture]. The default does nothing.
+  @internal
+  void setPreSkinnedVertices(gpu.BufferView? vertices) {}
+
+  /// The single interleaved vertex stream, or null when the vertices are split
+  /// across several (or not uploaded).
+  @internal
+  gpu.BufferView? get interleavedVertexStream =>
+      _vertexStreams.length == 1 ? _vertexStreams.first : null;
+
+  /// The number of vertices uploaded.
+  @internal
+  int get uploadedVertexCount => _vertexCount;
+
   /// Binds vertex/index buffers and per-frame uniforms onto [pass] in
   /// preparation for a draw call.
   ///
@@ -1339,14 +1355,20 @@ abstract class Geometry {
   /// the depth-style passes bind only the position stream with
   /// [bindPositionStream].
   @internal
-  void bindGeometryBuffers(gpu.RenderPass pass) {
+  void bindGeometryBuffers(gpu.RenderPass pass) => _bindGeometryBuffers(pass);
+
+  // [firstStream] stands in for the first vertex stream (a pre-skinned copy).
+  void _bindGeometryBuffers(
+    gpu.RenderPass pass, {
+    gpu.BufferView? firstStream,
+  }) {
     _requireVertices();
     assert(_checkDeclaredLayout());
     var slot = 0;
     for (; slot < _vertexStreams.length; slot++) {
       bindVertexBufferCompat(
         pass,
-        _vertexStreams[slot],
+        slot == 0 ? firstStream ?? _vertexStreams[0] : _vertexStreams[slot],
         _vertexCount,
         slot: slot,
       );
@@ -1774,6 +1796,7 @@ class SkinnedGeometry extends Geometry {
 
   gpu.Texture? _jointsTexture;
   int _jointsTextureWidth = 0;
+  gpu.BufferView? _preSkinnedVertices;
 
   /// Creates a [SkinnedGeometry] preconfigured with the `SkinnedVertex`
   /// shader from [baseShaderLibrary].
@@ -1824,6 +1847,11 @@ class SkinnedGeometry extends Geometry {
   }
 
   @override
+  void setPreSkinnedVertices(gpu.BufferView? vertices) {
+    _preSkinnedVertices = vertices;
+  }
+
+  @override
   void bind(
     gpu.RenderPass pass,
     TransientWriter transientsBuffer,
@@ -1847,7 +1875,10 @@ class SkinnedGeometry extends Geometry {
       sampler: _jointsSampler,
     );
 
-    bindGeometryBuffers(pass);
+    // Vertices a compute pass already skinned draw with skinning off, which
+    // the shader's identity skin matrix then passes through unchanged.
+    final preSkinned = _preSkinnedVertices;
+    _bindGeometryBuffers(pass, firstStream: preSkinned);
 
     // Skinned vertex UBO. The model transform is identity on purpose:
     // the joint matrices from Skin.getJointsTexture are already full
@@ -1861,7 +1892,7 @@ class SkinnedGeometry extends Geometry {
       ..[32] = cameraPosition.x
       ..[33] = cameraPosition.y
       ..[34] = cameraPosition.z
-      ..[35] = _jointsTexture != null ? 1 : 0
+      ..[35] = preSkinned == null ? 1 : 0
       ..[36] = _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0
       ..[37] = depthBias
       // std140 places the depth offset vec4 at the next 16-byte boundary.

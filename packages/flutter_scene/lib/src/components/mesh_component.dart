@@ -287,6 +287,7 @@ class MeshComponent extends Component {
         item.previousJointsTexture = skin.getPreviousJointsTexture();
         item.jointsTexture = jointsTexture;
         item.jointsTextureWidth = jointsTextureWidth;
+        item.skin = skin;
       }
       final morphWeights = node.internalMorphWeights;
       item.morphWeights = morphWeights;
