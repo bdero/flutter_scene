@@ -256,34 +256,19 @@ class TransientTextureDescriptor {
   );
 }
 
-class _PhysicalTextureKey {
-  const _PhysicalTextureKey(this.descriptor);
-
-  final TransientTextureDescriptor descriptor;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _PhysicalTextureKey &&
-      other.descriptor.width == descriptor.width &&
-      other.descriptor.height == descriptor.height &&
-      other.descriptor.format == descriptor.format &&
-      other.descriptor.sampleCount == descriptor.sampleCount &&
-      other.descriptor.storageMode == descriptor.storageMode &&
-      other.descriptor.enableShaderReadUsage ==
-          descriptor.enableShaderReadUsage &&
-      other.descriptor.attachmentKey == descriptor.attachmentKey;
-
-  @override
-  int get hashCode => Object.hash(
-    descriptor.width,
-    descriptor.height,
-    descriptor.format,
-    descriptor.sampleCount,
-    descriptor.storageMode,
-    descriptor.enableShaderReadUsage,
-    descriptor.attachmentKey,
-  );
-}
+/// [descriptor] without its debug name, so textures of the same physical
+/// shape share a key.
+TransientTextureDescriptor _physicalKey(
+  TransientTextureDescriptor descriptor,
+) => TransientTextureDescriptor(
+  width: descriptor.width,
+  height: descriptor.height,
+  format: descriptor.format,
+  sampleCount: descriptor.sampleCount,
+  storageMode: descriptor.storageMode,
+  enableShaderReadUsage: descriptor.enableShaderReadUsage,
+  attachmentKey: descriptor.attachmentKey,
+);
 
 class _AliasedSlot {
   _AliasedSlot(int framesInFlight)
@@ -308,7 +293,7 @@ class TransientTexturePool {
 
   final int framesInFlight;
   final Map<TransientTextureDescriptor, List<gpu.Texture?>> _rings = {};
-  final Map<_PhysicalTextureKey, List<_AliasedSlot>> _aliasedPools = {};
+  final Map<TransientTextureDescriptor, List<_AliasedSlot>> _aliasedPools = {};
   final Map<gpu.Texture, _AliasedSlot> _activeScopedSlots = Map.identity();
   int _frame = 0;
 
@@ -366,7 +351,7 @@ class TransientTexturePool {
   /// [framesInFlight] isolation is preserved per slot.
   @internal
   gpu.Texture acquireScoped(TransientTextureDescriptor descriptor) {
-    final key = _PhysicalTextureKey(descriptor);
+    final key = _physicalKey(descriptor);
     final slots = _aliasedPools.putIfAbsent(key, () => <_AliasedSlot>[]);
     _AliasedSlot? chosen;
     for (var i = 0; i < slots.length; i++) {
