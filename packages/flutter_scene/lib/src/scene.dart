@@ -206,9 +206,9 @@ int get defaultMaxGpuFramesInFlight {
   };
 }
 
-/// Miniature logical region for [Scene.warmUp], matching an already-presented
-/// view's aspect ratio (clamped to `16..128` in height) so directional shadow
-/// cascades do not rebake, or `64x64` when no frame has presented yet.
+/// The region [Scene.warmUp] renders, 64 wide at the presented view's aspect
+/// (16 to 128 tall) so cached shadow cascades stay valid, or 64x64 before any
+/// frame has presented.
 @visibleForTesting
 ui.Rect resolveWarmUpRegion({
   required int lastSwapchainWidth,
@@ -2226,10 +2226,9 @@ base class Scene implements SceneGraph {
     // it first so the compiles find it idle.
     await awaitRasterThread();
     if (_disposed) return;
-    // Encode one real frame into an ephemeral scratch surface whose final
-    // color output is discarded without `Texture.asImage` readback or touching
-    // `surface`'s live view rings/pools (preserving two-slot full-resolution
-    // transient pools).
+    // Encode real frames into a scratch surface that is never presented, so
+    // the live surface keeps its targets. A small area is enough because
+    // pipeline identity is resolution-independent.
     final warmUpRegion = resolveWarmUpRegion(
       lastSwapchainWidth: surface.lastSwapchainColorTexture(0)?.width ?? 0,
       lastSwapchainHeight: surface.lastSwapchainColorTexture(0)?.height ?? 0,
