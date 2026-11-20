@@ -28,7 +28,8 @@ layout(binding = 1) readonly buffer Triangles {
 }
 triangles;
 
-// Two per material: diffuse albedo, then emission.
+// Two per material: diffuse albedo with 1 in w when double-sided, then
+// emission.
 layout(binding = 2) readonly buffer Materials {
   vec4 data[];
 }
@@ -235,11 +236,21 @@ void main() {
     vec3 e1 = triangles.data[hit * 3 + 1].xyz;
     vec3 e2 = triangles.data[hit * 3 + 2].xyz;
     int material = int(v0.w);
-    vec3 albedo = materials.data[material * 2].rgb;
+    vec4 surface = materials.data[material * 2];
+    vec3 albedo = surface.rgb;
     vec3 emission = materials.data[material * 2 + 1].rgb;
-    // Two-sided, so the normal faces back along the ray.
     vec3 normal = normalize(cross(e1, e2));
-    if (dot(normal, direction) > 0.0) normal = -normal;
+    if (dot(normal, direction) > 0.0) {
+      if (surface.w < 0.5) {
+        // A one-sided back face means the probe sits inside geometry. Record
+        // a dark, short hit so the receiver's visibility test rejects it.
+        // TODO(gi-trace-relocation): move such probes out of geometry
+        // instead of only darkening them.
+        rays.data[index] = vec4(0.0, 0.0, 0.0, min(t, max_distance) * 0.2);
+        return;
+      }
+      normal = -normal;
+    }
     float epsilon = 1e-3 * min(info.grid_spacing.x,
                                min(info.grid_spacing.y, info.grid_spacing.z));
     vec3 position = origin + direction * t + normal * epsilon;
