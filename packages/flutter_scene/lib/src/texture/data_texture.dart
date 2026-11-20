@@ -174,8 +174,13 @@ class Texture2DArray implements TextureSource {
   @override
   gpu.SamplerOptions get sampledSampler => _sampler;
 
+  /// The width of each layer in texels.
   int get width => _texture.width;
+
+  /// The height of each layer in texels.
   int get height => _texture.height;
+
+  /// The number of layers.
   int get layerCount => gpu.textureLayerCount(_texture);
 
   /// The bytes one layer holds.
