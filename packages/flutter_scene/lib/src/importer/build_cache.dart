@@ -21,7 +21,7 @@ import '../generated_assets/lighting_features.dart';
 /// [sceneGeneratorFingerprint]), so outputs cached by an older flutter_scene
 /// revision are rebuilt. A change to the importer, the texture encoder, the
 /// `.fmat` compiler, or the `scene` format rebuilds on its own.
-const int buildCacheRevision = 8;
+const int buildCacheRevision = 9;
 
 /// Disables the per-input build cache, so every source is reconverted. Only
 /// reaches a builder driven directly; see [HookOptions] for the pubspec form a
