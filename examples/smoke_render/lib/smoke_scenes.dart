@@ -990,6 +990,14 @@ void _paintThroughExternalTarget(
   );
 }
 
+/// The stereo scene with its two eyes, for the external-target comparison
+/// test.
+({Scene scene, Camera left, Camera right}) buildStereoPairScene() {
+  final built = _stereoScene();
+  final eyes = _stereoEyes(built.camera);
+  return (scene: built.scene, left: eyes.left, right: eyes.right);
+}
+
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Two off-axis eyes in one view group, rendered into one caller-owned
   // texture the way an XR runtime takes a frame, so the frame culls once,

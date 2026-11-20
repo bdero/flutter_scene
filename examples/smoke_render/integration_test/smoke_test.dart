@@ -1,19 +1,28 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
+import 'package:flutter/rendering.dart' hide RenderView;
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/noise.dart';
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu_shim;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/env_prefilter.dart'
     show radiancePrefilterPending;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/frame_transients.dart'
     show rendererSubmissions;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/region_copy.dart'
+    show copyTextureToRegion;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/shadow_pass.dart'
+    show debugDisableSharedShadowTiles;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart'
     show StandardKtx2Upload;
@@ -31,9 +40,13 @@ const _androidManifestChannel = MethodChannel(
   'dev.bdero.smoke_render/android_manifest',
 );
 
-/// Restricts the run to one scene, for iterating on it locally without
-/// paying for the whole matrix. Pass `--dart-define=SMOKE_ONLY=<id>`.
+/// Restricts the run to some scenes, for iterating on them locally without
+/// paying for the whole matrix. Pass `--dart-define=SMOKE_ONLY=<id>` or
+/// several ids separated by commas.
 const _onlyScene = String.fromEnvironment('SMOKE_ONLY');
+final Set<String> _onlyScenes = _onlyScene.isEmpty
+    ? const {}
+    : _onlyScene.split(',').toSet();
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -66,7 +79,7 @@ void main() {
   }
 
   for (final smoke in kSmokeScenes) {
-    if (_onlyScene.isNotEmpty && smoke.id != _onlyScene) continue;
+    if (_onlyScenes.isNotEmpty && !_onlyScenes.contains(smoke.id)) continue;
     testWidgets('${smoke.id} renders a sane frame', (tester) async {
       if (await alreadyPassed(smoke.id)) {
         // ignore: avoid_print
@@ -390,6 +403,260 @@ void main() {
       await markPassed(smoke.id);
     });
   }
+
+  // The stereo pair in a plain texture against the other ways to render it:
+  // the same group onto a canvas, every view with its own shadow atlas, a
+  // leased surface frame, one eye alone, an sRGB target, and a background
+  // behind the image. Runs alone with SMOKE_ONLY=external_targets.
+  testWidgets('external targets agree across lease, encoding and sharing', (
+    tester,
+  ) async {
+    if (_onlyScenes.isNotEmpty && !_onlyScenes.contains('external_targets')) {
+      return;
+    }
+    // One ordinary frame first, so the backend context exists (see above).
+    await tester.pumpWidget(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await Scene.preload(smaa: true);
+
+    const width = 512, height = 512, half = width ~/ 2;
+    const leftHalf = Rect.fromLTWH(0, 0, 0.5, 1);
+    const rightHalf = Rect.fromLTWH(0.5, 0, 0.5, 1);
+    final built = buildStereoPairScene();
+    final scene = built.scene;
+
+    gpu_shim.Texture texture(
+      int w,
+      int h, [
+      gpu_shim.PixelFormat format = gpu_shim.PixelFormat.r8g8b8a8UNormInt,
+    ]) => gpu_shim.gpuContext.createTexture(
+      gpu_shim.StorageMode.devicePrivate,
+      w,
+      h,
+      format: format,
+      enableRenderTargetUsage: true,
+      enableShaderReadUsage: true,
+    );
+    List<RenderView> pair(ExternalRenderTarget target) => [
+      RenderView(
+        camera: built.left,
+        externalTarget: target,
+        viewport: leftHalf,
+      ),
+      RenderView(
+        camera: built.right,
+        externalTarget: target,
+        viewport: rightHalf,
+      ),
+    ];
+    // A few frames, so nothing still warming up is in the one compared.
+    // Fewer on Android, whose emulator watchdog ends sustained software
+    // rendering.
+    final frames = !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+        ? 2
+        : 3;
+    Future<void> render(List<RenderView> Function() views) async {
+      for (var i = 0; i < frames; i++) {
+        final frame = scene.renderViewsToTargets([RenderViewGroup(views())]);
+        expect(frame.skipped, isFalse);
+        await frame.whenGpuDone;
+      }
+    }
+
+    // Shadow draws per view in the frame last rendered.
+    List<int> shadowDraws() => [
+      for (final view in scene.renderStats.latest!.views)
+        for (final pass in view.passes)
+          if (pass.name == 'ShadowPass') pass.counters.draws,
+    ];
+
+    // The reference, both eyes in one plain texture.
+    final plain = texture(width, height);
+    final plainTarget = ExternalRenderTarget.texture(plain);
+    await render(() => pair(plainTarget));
+    final reference = await _rgbaBytes(plain.asImage());
+    final sharedDraws = shadowDraws();
+
+    // The same group drawn onto a canvas.
+    Uint8List canvasPixels = Uint8List(0);
+    for (var i = 0; i < frames; i++) {
+      final recorder = ui.PictureRecorder();
+      scene.renderViewGroups(
+        [
+          RenderViewGroup([
+            RenderView(camera: built.left, viewport: leftHalf),
+            RenderView(camera: built.right, viewport: rightHalf),
+          ]),
+        ],
+        Canvas(recorder),
+        region: Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+        pixelRatio: 1.0,
+      );
+      final image = await recorder.endRecording().toImage(width, height);
+      if (i == frames - 1) canvasPixels = await _rgbaBytes(image);
+      image.dispose();
+      await FrameCompletion.afterSubmissions().whenGpuDone;
+    }
+
+    // Every view rendering its own atlas must draw the same picture.
+    debugDisableSharedShadowTiles = true;
+    final Uint8List unshared;
+    final List<int> unsharedDraws;
+    try {
+      await render(() => pair(plainTarget));
+      unshared = await _rgbaBytes(plain.asImage());
+      unsharedDraws = shadowDraws();
+    } finally {
+      debugDisableSharedShadowTiles = false;
+    }
+
+    // Both eyes in one leased surface frame, a fresh lease per frame. The
+    // format is named because the context default can be one the engine's
+    // surfaces refuse (an extended-range format on Metal).
+    const surfaceFormat = gpu_shim.PixelFormat.r8g8b8a8UNormInt;
+    final surface = gpu_shim.gpuContext.createImageSurface(
+      width,
+      height,
+      format: surfaceFormat,
+    );
+    ExternalRenderTarget? leased;
+    await render(
+      () => pair(
+        leased = ExternalRenderTarget.surfaceFrame(surface.acquireNextFrame()),
+      ),
+    );
+    final leasedStatus = leased!.presentStatus;
+    final leasedSpent = leased!.isSpent;
+    final surfaceImage = surface.currentImage;
+    expect(surfaceImage, isNotNull, reason: 'the surface presented nothing');
+    final leasedPixels = await _rgbaBytes(surfaceImage!);
+
+    // An eye filling a frame of its own takes the path with no copy.
+    final eyeSurface = gpu_shim.gpuContext.createImageSurface(
+      half,
+      height,
+      format: surfaceFormat,
+    );
+    await render(
+      () => [
+        RenderView(
+          camera: built.left,
+          externalTarget: ExternalRenderTarget.surfaceFrame(
+            eyeSurface.acquireNextFrame(),
+          ),
+        ),
+      ],
+    );
+    final eyePixels = await _rgbaBytes(eyeSurface.currentImage!);
+
+    // A call that throws hands the lease back unpresented.
+    final abandoned = ExternalRenderTarget.surfaceFrame(
+      surface.acquireNextFrame(),
+    );
+    final texturesBefore = surface.debugBackingTextureCount;
+    expect(
+      () => scene.renderViewsToTargets([
+        RenderViewGroup([...pair(abandoned), RenderView(camera: built.left)]),
+      ]),
+      throwsArgumentError,
+    );
+    expect(abandoned.isSpent, isTrue, reason: 'the lease was not ended');
+    expect(abandoned.presentStatus, isNull, reason: 'a thrown frame presented');
+    surface.acquireNextFrame().discard();
+    expect(
+      surface.debugBackingTextureCount,
+      texturesBefore,
+      reason: 'the discarded image was not reused',
+    );
+    expect(
+      () => scene.renderViewsToTargets([RenderViewGroup(pair(abandoned))]),
+      throwsStateError,
+      reason: 'a spent target rendered again',
+    );
+
+    // An sRGB target, read the way a compositor does: through a sampler,
+    // which decodes it. That must be the reference in linear light.
+    final srgb = texture(
+      width,
+      height,
+      gpu_shim.PixelFormat.r8g8b8a8UNormIntSRGB,
+    );
+    final srgbTarget = ExternalRenderTarget.texture(srgb);
+    expect(srgbTarget.encodesSrgb, isTrue);
+    await render(() => pair(srgbTarget));
+    final sampled = texture(width, height);
+    copyTextureToRegion(
+      srgb,
+      sampled,
+      Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+    );
+    await FrameCompletion.afterSubmissions().whenGpuDone;
+    final srgbSampled = await _rgbaBytes(sampled.asImage());
+
+    // A background shows wherever the scene left the target clear.
+    const background = Color(0xFF204060);
+    final backed = texture(width, height);
+    final backedTarget = ExternalRenderTarget.texture(
+      backed,
+      backgroundColor: background,
+    );
+    await render(() => pair(backedTarget));
+    final backedPixels = await _rgbaBytes(backed.asImage());
+
+    // The scene covers a small part of each eye, so the differences are
+    // taken over the pixels it drew, not diluted by the clear ones.
+    final canvasDiff = _coveredDiff(canvasPixels, reference, reference);
+    final unsharedDiff = _coveredDiff(unshared, reference, reference);
+    final leasedDiff = _coveredDiff(leasedPixels, reference, reference);
+    final leftReference = _columns(reference, width, height, 0, half);
+    final eyeDiff = _coveredDiff(eyePixels, leftReference, leftReference);
+    final srgbDiff = _coveredDiff(
+      srgbSampled,
+      _linearized(reference),
+      reference,
+    );
+    final srgbUndecoded = _coveredDiff(srgbSampled, reference, reference);
+    final backedDiff = _meanAbsDiff(backedPixels, _over(reference, background));
+    final clearPixels = 1.0 - _coverage(reference);
+    // ignore: avoid_print
+    print(
+      'SMOKE external_targets: shadowDraws shared=$sharedDraws '
+      'unshared=$unsharedDraws canvasDiff=${canvasDiff.toStringAsFixed(3)} '
+      'unsharedDiff=${unsharedDiff.toStringAsFixed(3)} '
+      'leasedDiff=${leasedDiff.toStringAsFixed(3)} status=$leasedStatus '
+      'eyeDiff=${eyeDiff.toStringAsFixed(3)} '
+      'srgbDiff=${srgbDiff.toStringAsFixed(3)} '
+      'srgbUndecoded=${srgbUndecoded.toStringAsFixed(3)} '
+      'backedDiff=${backedDiff.toStringAsFixed(3)} '
+      'clear=${clearPixels.toStringAsFixed(3)} '
+      'surfaceTextures=${surface.debugBackingTextureCount}',
+    );
+
+    expect(sharedDraws, hasLength(2));
+    expect(sharedDraws[0], greaterThan(0), reason: 'no shadow casters drew');
+    expect(sharedDraws[1], 0, reason: 'the second eye rendered an atlas');
+    expect(unsharedDraws, [sharedDraws[0], sharedDraws[0]]);
+    expect(canvasDiff, lessThan(0.5), reason: 'the canvas pair differs');
+    expect(unsharedDiff, lessThan(0.5), reason: 'sharing changed the shadows');
+    expect(leasedStatus, gpu_shim.GpuPresentStatus.success);
+    expect(leasedSpent, isTrue);
+    expect(leasedDiff, lessThan(0.5), reason: 'the leased frame differs');
+    expect(eyeDiff, lessThan(0.5), reason: 'the direct leased eye differs');
+    expect(srgbDiff, lessThan(1.0), reason: 'the sRGB target is not linear');
+    expect(
+      srgbUndecoded,
+      greaterThan(5.0),
+      reason: 'the sRGB target was written without decoding',
+    );
+    expect(clearPixels, inExclusiveRange(0.05, 0.99), reason: 'bad coverage');
+    expect(backedDiff, lessThan(1.0), reason: 'the background is off');
+    expect(_coverage(backedPixels), 1.0, reason: 'the background left a hole');
+  });
 
   testWidgets('ETC1S block uploads sample like their decoded pixels', (
     tester,
@@ -1013,6 +1280,99 @@ _frameStats(ByteData rgba, int w, int h) {
     foregroundMeanLuma: fgCount == 0 ? 0.0 : fgLumaSum / fgCount,
     distinctColors: colors.length,
   );
+}
+
+Future<Uint8List> _rgbaBytes(ui.Image image) async {
+  final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+  return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+}
+
+/// Mean absolute channel difference between two RGBA buffers, in 0..255.
+double _meanAbsDiff(Uint8List a, Uint8List b) {
+  expect(a.length, b.length, reason: 'pixel buffers differ in size');
+  var sum = 0;
+  for (var i = 0; i < a.length; i++) {
+    sum += (a[i] - b[i]).abs();
+  }
+  return sum / a.length;
+}
+
+/// [rgba], display-encoded and premultiplied, as premultiplied linear light.
+Uint8List _linearized(Uint8List rgba) {
+  double decode(double c) =>
+      c <= 0.04045 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+  final out = Uint8List(rgba.length);
+  for (var i = 0; i < rgba.length; i += 4) {
+    final alpha = rgba[i + 3] / 255.0;
+    out[i + 3] = rgba[i + 3];
+    if (alpha == 0.0) continue;
+    for (var c = 0; c < 3; c++) {
+      final straight = rgba[i + c] / 255.0 / alpha;
+      out[i + c] = (decode(straight) * alpha * 255.0).round().clamp(0, 255);
+    }
+  }
+  return out;
+}
+
+/// [rgba], premultiplied, over the opaque [background].
+Uint8List _over(Uint8List rgba, Color background) {
+  final under = [
+    background.r * background.a,
+    background.g * background.a,
+    background.b * background.a,
+    background.a,
+  ];
+  final out = Uint8List(rgba.length);
+  for (var i = 0; i < rgba.length; i += 4) {
+    final clear = 1.0 - rgba[i + 3] / 255.0;
+    for (var c = 0; c < 4; c++) {
+      out[i + c] = (rgba[i + c] + under[c] * clear * 255.0).round().clamp(
+        0,
+        255,
+      );
+    }
+  }
+  return out;
+}
+
+/// Mean absolute channel difference between [a] and [b] over the pixels
+/// [mask] covers, in 0..255.
+double _coveredDiff(Uint8List a, Uint8List b, Uint8List mask) {
+  expect(a.length, b.length, reason: 'pixel buffers differ in size');
+  expect(a.length, mask.length, reason: 'the mask differs in size');
+  var sum = 0;
+  var covered = 0;
+  for (var i = 0; i < a.length; i += 4) {
+    if (mask[i + 3] == 0) continue;
+    covered++;
+    for (var c = 0; c < 4; c++) {
+      sum += (a[i + c] - b[i + c]).abs();
+    }
+  }
+  return covered == 0 ? double.infinity : sum / (covered * 4);
+}
+
+/// The columns [x0, x0 + count) of a [width] by [height] RGBA buffer.
+Uint8List _columns(Uint8List rgba, int width, int height, int x0, int count) {
+  final out = Uint8List(count * height * 4);
+  for (var y = 0; y < height; y++) {
+    out.setRange(
+      y * count * 4,
+      (y + 1) * count * 4,
+      rgba,
+      (y * width + x0) * 4,
+    );
+  }
+  return out;
+}
+
+/// The fraction of pixels with any coverage.
+double _coverage(Uint8List rgba) {
+  var covered = 0;
+  for (var i = 3; i < rgba.length; i += 4) {
+    if (rgba[i] != 0) covered++;
+  }
+  return covered / (rgba.length ~/ 4);
 }
 
 /// The color pass's counters for the frame [scene] last rendered, or null
