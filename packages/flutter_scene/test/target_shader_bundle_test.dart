@@ -42,4 +42,43 @@ void main() {
     expect(shader.openglDesktop, isNull);
     expect(shader.vulkan?.shader, everyElement(5));
   });
+
+  test('shader bundle trimming keeps compute reflection', () {
+    final source = fb.ShaderBundleObjectBuilder(
+      formatVersion: fb.ShaderBundleFormatVersion.kVersion.value,
+      shaders: [
+        fb.ShaderObjectBuilder(
+          name: 'Kernel',
+          metalDesktop: fb.BackendShaderObjectBuilder(
+            stage: fb.ShaderStage.kCompute,
+            entrypoint: 'main',
+            shader: List<int>.filled(16, 1),
+            storageBuffers: [
+              fb.ShaderStorageBufferObjectBuilder(
+                name: 'Output',
+                binding: 2,
+                access: fb.ShaderResourceAccess.kReadWrite,
+                sizeInBytes: 0,
+                runtimeArrayStride: 4,
+              ),
+            ],
+            workgroupSize: fb.WorkgroupSizeObjectBuilder(x: 64, y: 1, z: 1),
+          ),
+        ),
+      ],
+    ).toBytes('IPSB');
+
+    final trimmed = trimShaderBundle(source, const {
+      ShaderBundleBackend.metalDesktop,
+    });
+    final backend = fb.ShaderBundle(trimmed).shaders!.single.metalDesktop!;
+
+    final storage = backend.storageBuffers!.single;
+    expect(storage.name, 'Output');
+    expect(storage.binding, 2);
+    expect(storage.access, fb.ShaderResourceAccess.kReadWrite);
+    expect(storage.runtimeArrayStride, 4);
+    final size = backend.workgroupSize!;
+    expect([size.x, size.y, size.z], [64, 1, 1]);
+  });
 }

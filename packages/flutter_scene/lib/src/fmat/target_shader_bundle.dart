@@ -481,8 +481,31 @@ fb.BackendShaderObjectBuilder? _copyBackend(fb.BackendShader? shader) {
     uniformStructs: shader.uniformStructs?.map(_copyUniformStruct).toList(),
     uniformTextures: shader.uniformTextures?.map(_copyUniformTexture).toList(),
     shader: shader.shader,
+    // Format 3 compute reflection. Absent from older bundles, so copied only
+    // when present.
+    storageBuffers: shader.storageBuffers?.map(_copyStorageBuffer).toList(),
+    workgroupSize: switch (shader.workgroupSize) {
+      final size? => fb.WorkgroupSizeObjectBuilder(
+        x: size.x,
+        y: size.y,
+        z: size.z,
+      ),
+      null => null,
+    },
   );
 }
+
+fb.ShaderStorageBufferObjectBuilder _copyStorageBuffer(
+  fb.ShaderStorageBuffer buffer,
+) => fb.ShaderStorageBufferObjectBuilder(
+  name: buffer.name,
+  extRes0: buffer.extRes0,
+  $set: buffer.$set,
+  binding: buffer.binding,
+  access: buffer.access,
+  sizeInBytes: buffer.sizeInBytes,
+  runtimeArrayStride: buffer.runtimeArrayStride,
+);
 
 fb.ShaderInputObjectBuilder _copyInput(fb.ShaderInput input) =>
     fb.ShaderInputObjectBuilder(
