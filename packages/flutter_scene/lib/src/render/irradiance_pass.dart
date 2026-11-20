@@ -48,6 +48,11 @@ class IrradianceFieldState {
   /// This frame's layout, or null before the first update.
   IrradianceFieldLayout? get layout => _layout;
 
+  /// The irradiance and depth-moment accumulators the blend reads, which a
+  /// feed fills each frame. Null before the first update.
+  gpu.Texture? get irradianceAccumulator => _irradianceAccumulator;
+  gpu.Texture? get depthAccumulator => _depthAccumulator;
+
   /// This frame's lattice placement, or null before the first update.
   IrradianceGridPlacement? get placement => _placement;
 

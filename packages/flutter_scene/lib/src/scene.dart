@@ -86,6 +86,7 @@ import 'render/smaa_pass.dart';
 import 'render/post_effect_pass.dart';
 import 'render/irradiance_field.dart';
 import 'render/irradiance_pass.dart';
+import 'render/irradiance_trace.dart';
 import 'render/render_graph.dart';
 import 'render/render_graph_capture.dart';
 import 'render/render_stats.dart';
@@ -2020,6 +2021,7 @@ base class Scene implements SceneGraph {
       GlobalIlluminationSettings();
 
   final IrradianceFieldState _irradianceField = IrradianceFieldState();
+  final IrradianceTraceState _irradianceTrace = IrradianceTraceState();
 
   /// The probe lattice the global-illumination field is filling this frame,
   /// or null when the field is off or has not run a frame yet.
@@ -5278,18 +5280,30 @@ base class Scene implements SceneGraph {
       final shStrip = _crossfadeEnvironment == null || _crossfadeBlend <= 0.0
           ? environmentMap.diffuseShTexture
           : null;
+      // Traced where the device has compute (and the feed is on), which sees
+      // the whole static scene rather than only what is on screen.
       graph.addPass(
-        IrradianceInjectPass(
-          state: _irradianceField,
-          settings: settings,
-          dimensions: pixelSize,
-          cameraPosition: camera.position,
-          cameraRight: cameraRight,
-          cameraUp: cameraUp,
-          cameraForward: cameraForward,
-          projection: projection,
-          sceneRadiance: _ssgiHistoryColor,
-        ),
+        _irradianceTrace.available
+            ? IrradianceTracePass(
+                field: _irradianceField,
+                trace: _irradianceTrace,
+                settings: settings,
+                renderScene: renderScene,
+                environment: environmentMap,
+                environmentTransform: environmentTransform,
+                environmentIntensity: environmentIntensity,
+              )
+            : IrradianceInjectPass(
+                state: _irradianceField,
+                settings: settings,
+                dimensions: pixelSize,
+                cameraPosition: camera.position,
+                cameraRight: cameraRight,
+                cameraUp: cameraUp,
+                cameraForward: cameraForward,
+                projection: projection,
+                sceneRadiance: _ssgiHistoryColor,
+              ),
       );
       graph.addPass(
         IrradianceBlendPass(

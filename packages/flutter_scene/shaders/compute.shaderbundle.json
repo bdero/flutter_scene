@@ -2,5 +2,13 @@
   "SkinVertices": {
     "type": "compute",
     "file": "shaders/flutter_scene_skin_vertices.comp"
+  },
+  "GiTrace": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_gi_trace.comp"
+  },
+  "GiGather": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_gi_gather.comp"
   }
 }
