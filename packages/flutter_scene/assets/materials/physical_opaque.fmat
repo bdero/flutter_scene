@@ -109,6 +109,40 @@ fragment {
   }
 
   void Surface(inout MaterialInputs material) {
+#ifdef FLUTTER_SCENE_PARALLAX_OCCLUSION
+    // One parallax march in the normal slot's UVs, carried back to raw
+    // channel space so every slot applies its own transform on top. Only the
+    // Parallax entries define it (see shaders/parallax.glsl).
+    // TODO(parallax-uv-channels): the offset is measured on the normal slot's
+    // channel; a slot reading the other channel is displaced by it anyway.
+    highp vec2 parallax_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.normal_uv_set),
+        material_params.normal_uv_transform,
+        material_params.normal_uv_rotation);
+    ParallaxRay parallax_ray = ParallaxBeginEngineRay(
+        normal_texture, GetWorldNormal(), v_viewvector, GetViewDirection(),
+        parallax_uv);
+    ParallaxHit parallax_hit =
+        ParallaxEngineMarch(normal_texture, parallax_ray);
+    highp vec2 parallax_offset = UntransformMaterialUvOffset(
+        parallax_hit.offset, material_params.normal_uv_transform,
+        vec2(cos(material_params.normal_uv_rotation),
+             sin(material_params.normal_uv_rotation)));
+    if (parallax_info.params.z > 0.0 &&
+        frag_info.has_directional_light > 0.5) {
+      material.parallax_sun_visibility = mix(
+          1.0,
+          ParallaxSelfShadow(
+              normal_texture, parallax_ray, parallax_hit,
+              -normalize(frag_info.directional_light_direction.xyz)),
+          parallax_info.params.z);
+    }
+#define SLOT_TEXTURE(tex, uv, transform, rotation)                         \
+  ParallaxSlotTexture(tex, uv, true, parallax_offset, transform,            \
+                      vec4(cos(rotation), sin(rotation), 0.0, 0.0))
+#else
+#define SLOT_TEXTURE(tex, uv, transform, rotation) texture(tex, uv)
+#endif
     vec2 base_uv = ApplyMaterialUvTransform(
         GetUV(material_params.base_color_uv_set),
         material_params.base_color_uv_transform,
@@ -122,7 +156,9 @@ fragment {
         material_params.normal_uv_transform,
         material_params.normal_uv_rotation);
 
-    vec4 base = texture(base_color_texture, base_uv);
+    vec4 base = SLOT_TEXTURE(base_color_texture, base_uv,
+                             material_params.base_color_uv_transform,
+                             material_params.base_color_uv_rotation);
     vec4 vertex_color = GetVertexColor();
     vec3 color = SRGBToLinear(base.rgb) * vertex_color.rgb *
                  material_params.base_color_factor.rgb;
@@ -134,13 +170,21 @@ fragment {
     }
     material.base_color = vec4(color, alpha);
 
-    vec4 mr = texture(metallic_roughness_texture, mr_uv);
+    vec4 mr = SLOT_TEXTURE(metallic_roughness_texture, mr_uv,
+                           material_params.metallic_roughness_uv_transform,
+                           material_params.metallic_roughness_uv_rotation);
     material.metallic = clamp(mr.b * material_params.metallic_factor, 0.0, 1.0);
     material.roughness = clamp(mr.g * material_params.roughness_factor,
                                kMinRoughness, 1.0);
+#ifdef FLUTTER_SCENE_PARALLAX_OCCLUSION
+    material.normal = ParallaxPerturbNormal(
+        normal_texture, GetWorldNormal(), v_viewvector, normal_uv,
+        parallax_hit.offset, vec2(material_params.normal_scale));
+#else
     material.normal = PerturbNormal(normal_texture, GetWorldNormal(),
                                     v_viewvector, normal_uv,
                                     material_params.normal_scale);
+#endif
     material.emissive = material_params.emissive_factor *
                         material_params.emissive_strength;
 
@@ -177,11 +221,22 @@ fragment {
         material_params.feature_c_uv_transform,
         material_params.feature_c_uv_rotation);
     ApplyFeature(material, material_params.feature_a,
-                 texture(feature_texture_a, feature_a_uv), feature_a_uv);
+                 SLOT_TEXTURE(feature_texture_a, feature_a_uv,
+                              material_params.feature_a_uv_transform,
+                              material_params.feature_a_uv_rotation),
+                 feature_a_uv);
     ApplyFeature(material, material_params.feature_b,
-                 texture(feature_texture_b, feature_b_uv), feature_b_uv);
+                 SLOT_TEXTURE(feature_texture_b, feature_b_uv,
+                              material_params.feature_b_uv_transform,
+                              material_params.feature_b_uv_rotation),
+                 feature_b_uv);
     ApplyFeature(material, material_params.feature_c,
-                 texture(feature_texture_c, feature_c_uv), feature_c_uv);
+                 SLOT_TEXTURE(feature_texture_c, feature_c_uv,
+                              material_params.feature_c_uv_transform,
+                              material_params.feature_c_uv_rotation),
+                 feature_c_uv);
+    // TODO(parallax-clearcoat-normal): sample the clearcoat normal at the
+    // parallax hit too, which needs a displaced PerturbNormal per slot.
     if (material_params.feature_a == 7) {
       material.clearcoat_normal = PerturbNormal(
           feature_texture_a, GetWorldNormal(), v_viewvector, feature_a_uv,

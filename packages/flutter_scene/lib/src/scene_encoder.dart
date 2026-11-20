@@ -878,7 +878,9 @@ base class SceneEncoder {
   // Whether an opaque draw of [material] at cross-fade coverage [fade] cuts
   // itself out, and so takes the coverage pre-draw.
   static bool _cutsOut(Material material, double fade) =>
-      material.depthAlphaMasked || (fade != 1.0 && material.lodCrossFades);
+      material.depthAlphaMasked ||
+      material.coverageSurfaceShader != null ||
+      (fade != 1.0 && material.lodCrossFades);
 
   // MaskInfo for a cross-fade without an alpha mask: a cutoff no alpha falls
   // below, over the white placeholder.
@@ -1085,7 +1087,7 @@ base class SceneEncoder {
       if (!fallback && _cutsOut(material, fade)) {
         coveragePipeline = tryResolvePipeline(
           materialVertex ?? geometry.vertexShader,
-          _coverageShader,
+          material.coverageSurfaceShader ?? _coverageShader,
           vertexLayout: geometry.instancedVertexLayoutFor(
             material.instanceAttributes,
             material.vertexAttributesFor(materialVertex),
@@ -1571,12 +1573,24 @@ base class SceneEncoder {
   // Binds the coverage pre-draw's fragment inputs: the cross-fade [fade] and
   // the material's alpha mask, or a mask that keeps everything.
   void _bindCoverage(Material material, double fade) {
-    final shader = _coverageShader;
+    final surface = material.coverageSurfaceShader;
+    final shader = surface ?? _coverageShader;
     _coverageInfoScratch[0] = fade;
     _renderPass.bindUniform(
       shader.getUniformSlot('CoverageInfo'),
       _transientsBuffer.emplace(_coverageInfoBytes),
     );
+    // A material's own coverage shader binds its mask with the rest of what
+    // it reads.
+    if (surface != null) {
+      material.bindCoverageSurface(
+        _renderPass,
+        surface,
+        _transientsBuffer,
+        _lighting,
+      );
+      return;
+    }
     if (material.depthAlphaMasked) {
       material.bindDepthAlphaMask(_renderPass, shader, _transientsBuffer);
       return;
@@ -1712,7 +1726,7 @@ base class SceneEncoder {
         material: material,
         vertexShader: materialVertex ?? geometry.vertexShader,
         fragmentShader: _coveragePass
-            ? _coverageShader
+            ? material.coverageSurfaceShader ?? _coverageShader
             : material.fragmentShaderForLighting(_lighting),
         pipeline: pipeline,
         batchedItems: batchedItems,

@@ -26,6 +26,8 @@ import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/planar_reflection.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/material/parallax_shaders.dart'
+    show isParallaxEntryName, loadedParallaxShaderLibrary;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
@@ -914,7 +916,8 @@ abstract class Material {
   /// Binds what a [depthSurfaceShader] reads besides the pass's own info
   /// block: the material parameters and any engine block its `Surface()`
   /// kept, filled with the pass camera at [cameraPosition] looking along
-  /// [cameraForward].
+  /// [cameraForward]. [orthographic] says the pass camera is orthographic,
+  /// so every view ray runs along [cameraForward].
   @internal
   void bindDepthSurface(
     gpu.RenderPass pass,
@@ -922,7 +925,29 @@ abstract class Material {
     TransientWriter transientsBuffer, {
     required Vector3 cameraPosition,
     required Vector3 cameraForward,
+    bool orthographic = false,
   }) {}
+
+  /// The material's own fragment for the main pass's coverage pre-draw, or
+  /// null for the engine's. A non-null shader also makes the material's opaque
+  /// draws take the pre-draw, like an alpha mask, so a surface that cuts
+  /// itself out by more than its alpha (a parallax silhouette) still never
+  /// discards in its lit shader.
+  ///
+  /// The shader declares the engine coverage shader's `CoverageInfo`, which
+  /// the encoder binds, and [bindCoverageSurface] binds everything else,
+  /// its alpha mask included.
+  @internal
+  gpu.Shader? get coverageSurfaceShader => null;
+
+  /// Binds what a [coverageSurfaceShader] reads besides `CoverageInfo`.
+  @internal
+  void bindCoverageSurface(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+    Lighting lighting,
+  ) {}
 
   /// Binds the mask texture and MaskInfo parameters consumed by the masked
   /// depth fragment shaders; [shader] is the masked variant the pass drew
@@ -941,10 +966,15 @@ final Expando<String> _baseShaderNames = Expando('base shader name');
 final Expando<gpu.Shader> _debugViewsTwins = Expando('debug views twin');
 
 gpu.Shader? _baseShader(String name) {
-  final shader = baseShaderLibrary[name];
+  final shader = _engineLibraryFor(name)?[name];
   if (shader != null) _baseShaderNames[shader] = name;
   return shader;
 }
+
+// The parallax entries live in their own lazily loaded bundle, null until it
+// loads.
+gpu.ShaderLibrary? _engineLibraryFor(String name) =>
+    isParallaxEntryName(name) ? loadedParallaxShaderLibrary : baseShaderLibrary;
 
 gpu.Shader _debugViewsTwin(gpu.Shader shader) {
   final cached = _debugViewsTwins[shader];
@@ -953,7 +983,7 @@ gpu.Shader _debugViewsTwin(gpu.Shader shader) {
   final twin =
       (name == null
           ? null
-          : baseShaderLibrary['$name$debugViewsEntrySuffix']) ??
+          : _engineLibraryFor(name)?['$name$debugViewsEntrySuffix']) ??
       shader;
   return _debugViewsTwins[shader] = twin;
 }

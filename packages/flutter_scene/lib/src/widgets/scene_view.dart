@@ -11,6 +11,8 @@ import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/physical_material_variant.dart'
     show retryFailedPhysicalMaterialResources;
+import 'package:flutter_scene/src/material/parallax_shaders.dart'
+    show retryFailedParallaxShaderLibrary;
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 import 'package:flutter_scene/src/widgets/declarative.dart';
@@ -623,6 +625,7 @@ class _SceneViewState extends State<SceneView>
     if (!mounted || _loadError == null) return;
     setState(() => _loadError = null);
     retryFailedPhysicalMaterialResources();
+    retryFailedParallaxShaderLibrary();
     _startRevealWatch();
   }
 

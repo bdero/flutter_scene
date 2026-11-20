@@ -13,6 +13,7 @@ import '../generated_assets/engine_identity.dart'
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
 import '../generated_assets/lighting_features.dart';
+import '../generated_assets/material_features.dart';
 import '../generated_assets/wgsl_sidecar.dart' show wgslSidecarPathFor;
 import 'fmat.dart';
 import 'fmat_emitter.dart'
@@ -20,6 +21,8 @@ import 'fmat_emitter.dart'
         depthSurfaceEntryName,
         kDebugViewsDefine,
         kLightmapDefine,
+        kParallaxOcclusionDefine,
+        parallaxEntryName,
         kRadianceCubeDefine,
         materialHasDepthSurface,
         lightmapEntryName,
@@ -138,6 +141,7 @@ const _frameworkShaderFiles = <String>[
   'noise.glsl',
   'normals.glsl',
   'octahedral.glsl',
+  'parallax.glsl',
   'pbr.glsl',
   'scene_inputs.glsl',
   'smaa.glsl',
@@ -229,6 +233,7 @@ Future<void> buildBundledPhysicalMaterials({
   String? fileVariant,
   bool debugViews = false,
   Set<LightingFeature> compiledOutLightingFeatures = const {},
+  Set<MaterialFeature> compiledOutMaterialFeatures = const {},
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -246,6 +251,13 @@ Future<void> buildBundledPhysicalMaterials({
   // TODO(lightmap-transmission): generate the axis for PhysicalTransmission
   // too if a transmissive lightmapped surface ever comes up.
   lightmapVariantMaterials: const {'PhysicalOpaque'},
+  // Parallax occlusion goes on opaque surfaces (bricks, tiles, cobbles).
+  // TODO(parallax-transmission): generate the axis for PhysicalTransmission
+  // if parallax on refractive surfaces ever comes up.
+  parallaxVariantMaterials:
+      compiledOutMaterialFeatures.contains(MaterialFeature.parallaxOcclusion)
+      ? const {}
+      : const {'PhysicalOpaque'},
   sourceRoot: sourceRoot,
   owner: owner,
   pruneGeneratedTree: pruneGeneratedTree,
@@ -263,6 +275,7 @@ Future<void> _buildMaterials({
   required MaterialAssetMode assetMode,
   bool generateShadowVariants = false,
   Set<String> lightmapVariantMaterials = const {},
+  Set<String> parallaxVariantMaterials = const {},
   Uri? sourceRoot,
   String? owner,
   bool pruneGeneratedTree = true,
@@ -400,7 +413,8 @@ Future<void> _buildMaterials({
       'shadows=$generateShadowVariants debug_views=$debugViews '
       'lighting_off='
       '${describeCompiledOutLightingFeatures(compiledOutLightingFeatures)} '
-      'lightmaps=${(lightmapVariantMaterials.toList()..sort()).join(',')}',
+      'lightmaps=${(lightmapVariantMaterials.toList()..sort()).join(',')} '
+      'parallax=${(parallaxVariantMaterials.toList()..sort()).join(',')}',
     ),
   );
   for (final materialPath in materialPaths) {
@@ -493,6 +507,9 @@ Future<void> _buildMaterials({
         generateShadowVariant: hasShadowVariant,
         generateLightmapVariant:
             lightmapVariantMaterials.contains(entryName) &&
+            compiled.material.shadingModel != FmatShadingModel.unlit,
+        generateParallaxVariant:
+            parallaxVariantMaterials.contains(entryName) &&
             compiled.material.shadingModel != FmatShadingModel.unlit,
         debugViews: debugViews,
         compiledOutLightingFeatures: compiledOutLightingFeatures,
@@ -652,6 +669,7 @@ Map<String, String> emitFragmentShaderVariants(
   FmatCompilation compiled, {
   required bool generateShadowVariant,
   bool generateLightmapVariant = false,
+  bool generateParallaxVariant = false,
   bool debugViews = false,
   Set<LightingFeature> compiledOutLightingFeatures = const {},
 }) {
@@ -671,6 +689,11 @@ Map<String, String> emitFragmentShaderVariants(
     entryName: base,
     if (generateLightmapVariant)
       lightmapEntryName(entryName): [...base, kLightmapDefine],
+    // No lightmap twin: baked surfaces with parallax are rare.
+    // TODO(parallax-lightmap): add the Lightmap axis to the Parallax entries
+    // if a baked parallax surface comes up.
+    if (generateParallaxVariant)
+      parallaxEntryName(entryName): [...base, kParallaxOcclusionDefine],
   };
   // The unsuffixed entry is the no-shadow fast path. The Shadow entry keeps
   // the complete sampler layout used when the scene binds a shadow atlas.

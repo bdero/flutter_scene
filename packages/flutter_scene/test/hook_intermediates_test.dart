@@ -221,7 +221,7 @@ void main() {
         isEmpty,
       );
     },
-    timeout: const Timeout(Duration(minutes: 5)),
+    timeout: const Timeout(Duration(minutes: 10)),
   );
 
   test('builds for two targets at once each ship their own backends', () async {

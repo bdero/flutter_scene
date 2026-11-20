@@ -28,6 +28,7 @@ import 'package:flutter_scene/src/scene_encoder.dart'
     show cachedRenderPipeline, drawOrRejectPipeline, tryResolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/pass_camera.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
 import 'package:flutter_scene/src/material/vertex_attributes.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
@@ -384,6 +385,9 @@ class _DepthPrepassEncoder {
   final DepthRaster _raster;
   final Vector3 _cameraPosition;
   final Vector3 _cameraForward;
+  late final bool _orthographic = PassCamera.fromViewProjection(
+    _cameraTransform,
+  ).orthographic;
   final int _layerMask;
   final List<Plane> _cullingPlanes;
   final bool _writeNormals;
@@ -628,6 +632,7 @@ class _DepthPrepassEncoder {
         _transientsBuffer,
         cameraPosition: _cameraPosition,
         cameraForward: _cameraForward,
+        orthographic: _orthographic,
       );
     } else if (masked) {
       item.material.bindDepthAlphaMask(

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
@@ -84,6 +85,13 @@ String textureDataAssetName(String relativeTexturePath) =>
 /// [encoding] picks the stored format and [encodings] overrides it per
 /// source path; see [TextureEncoding].
 ///
+/// [parallaxHeights] maps a normal map's source path to a height image whose
+/// red channel (1 at the surface, 0 at the deepest point) is packed into the
+/// normal map's alpha at cook time, the height field
+/// `PhysicallyBasedMaterial.parallaxScale` reads. The normal map must be
+/// listed in [contents] as [TextureContent.normal], and the height image is
+/// resampled to its size when they differ.
+///
 /// Source images must be block-aligned (width and height multiples of 4);
 /// misaligned images fail the build, or are resampled up to the next multiple
 /// when [alignForCompression] is set.
@@ -114,18 +122,29 @@ void buildTextures({
   Map<String, TextureEncoding> encodings = const {},
   TextureAssetMode assetMode = TextureAssetMode.generatedTree,
   bool alignForCompression = false,
+  Map<String, String> parallaxHeights = const {},
 }) {
   // A typo here would silently cook a normal map with the sRGB color
   // downsample (or in the wrong format), so unknown keys fail the build.
   for (final (name, keys) in [
     ('contents', contents.keys),
     ('encodings', encodings.keys),
+    ('parallaxHeights', parallaxHeights.keys),
   ]) {
     final unknown = keys.where((key) => !textures.contains(key)).toList();
     if (unknown.isNotEmpty) {
       throw Exception(
         '$name names sources that are not listed in textures: '
         '${unknown.join(', ')}. Fix the path or add it to textures.',
+      );
+    }
+  }
+  for (final normal in parallaxHeights.keys) {
+    if (contents[normal] != TextureContent.normal) {
+      throw Exception(
+        'parallaxHeights packs a height field into $normal, which must be '
+        'listed in contents as TextureContent.normal so its mips keep the '
+        'height.',
       );
     }
   }
@@ -221,13 +240,25 @@ void buildTextures({
     ).createSync(recursive: true);
 
     final content = contents[inputFilePath] ?? TextureContent.color;
+    final heightPath = parallaxHeights[inputFilePath];
+    final heightFile = heightPath == null
+        ? null
+        : File(packageRoot.resolve(heightPath).toFilePath());
+    if (heightFile != null && !heightFile.existsSync()) {
+      throw Exception(
+        'Parallax height source not found: $heightPath (for $inputFilePath)',
+      );
+    }
+    final heightStamp = heightFile == null
+        ? ''
+        : ' height=${sourceFingerprint(heightFile, strict: options.strictHashing)}';
     final encodingStamp = textureEncoding.isEtc1s
         ? ' encoding=etc1s/${textureEncoding.quality}'
         : '';
     final stamp =
         'rev=$buildCacheRevision gen=${textureGeneratorFingerprint()} '
         'texture content=${content.name}'
-        '$encodingStamp '
+        '$encodingStamp$heightStamp '
         'src=${sourceFingerprint(sourceFile, strict: options.strictHashing)}';
     final stampFile = File('${outputTextureUri.toFilePath()}.inputs');
     // The generated tree ships every file in it, so the stamp lives in the
@@ -265,6 +296,26 @@ void buildTextures({
       }
       final rgba = source.convert(numChannels: 4, format: img.Format.uint8);
       final pixels = rgba.getBytes(order: img.ChannelOrder.rgba);
+      if (heightFile != null) {
+        final height = img.decodeImage(heightFile.readAsBytesSync());
+        if (height == null) {
+          throw Exception('Could not decode image: $heightPath');
+        }
+        final sized = height.width == rgba.width && height.height == rgba.height
+            ? height
+            : img.copyResize(
+                height,
+                width: rgba.width,
+                height: rgba.height,
+                interpolation: img.Interpolation.linear,
+              );
+        packParallaxHeight(
+          pixels,
+          sized
+              .convert(numChannels: 4, format: img.Format.uint8)
+              .getBytes(order: img.ChannelOrder.rgba),
+        );
+      }
       // TODO(etc1s-fscene-textures): textures embedded in .fscene/.fsceneb
       // still cook to the engine's format; offer ETC1S to scene builds too.
       writeGeneratedBytes(
@@ -299,6 +350,7 @@ void buildTextures({
     );
 
     buildOutput.dependencies.add(sourceUri);
+    if (heightFile != null) buildOutput.dependencies.add(heightFile.uri);
     if (emitDataAssets) {
       buildOutput.assets.data.add(
         DataAsset(
@@ -314,5 +366,20 @@ void buildTextures({
     tree
       ..pruneMissingSources()
       ..save();
+  }
+}
+
+/// Writes [heightRgba]'s red channel into [normalRgba]'s alpha, in place. Both
+/// are tightly packed RGBA8 images of the same size. The packing
+/// `PhysicallyBasedMaterial.parallaxScale` reads its height field from.
+void packParallaxHeight(Uint8List normalRgba, Uint8List heightRgba) {
+  if (normalRgba.length != heightRgba.length) {
+    throw ArgumentError(
+      'The height image must match the normal map in size '
+      '(${heightRgba.length} bytes against ${normalRgba.length}).',
+    );
+  }
+  for (var i = 3; i < normalRgba.length; i += 4) {
+    normalRgba[i] = heightRgba[i - 3];
   }
 }

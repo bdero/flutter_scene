@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
+import 'package:flutter_scene/src/render/pass_camera.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -105,9 +106,11 @@ class ShadowEncoder {
   // shader ignores it, so it is harmless for materials without a vertex stage.
   final Vector3 _cameraPosition;
 
-  // The forward handed to a surface depth fragment; a shadow pass has no
-  // view axis, and no cutout decision depends on it.
-  static final Vector3 _shadowForward = Vector3(0, -1, 0);
+  // The light's view, handed to a surface depth fragment so a cut that
+  // depends on the view (a parallax silhouette) cuts as the light sees it.
+  late final PassCamera _lightView = PassCamera.fromViewProjection(
+    _lightSpaceMatrix,
+  );
 
   static final gpu.Shader _depthShader =
       baseShaderLibrary['DepthOnlyFragment']!;
@@ -542,8 +545,11 @@ class ShadowEncoder {
         _renderPass,
         fragmentShader,
         _transientsBuffer,
-        cameraPosition: _cameraPosition,
-        cameraForward: _shadowForward,
+        cameraPosition: _lightView.orthographic
+            ? _cameraPosition
+            : _lightView.position,
+        cameraForward: _lightView.forward,
+        orthographic: _lightView.orthographic,
       );
     } else if (masked) {
       item.material.bindDepthAlphaMask(

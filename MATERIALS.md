@@ -304,6 +304,45 @@ you and available in `Surface()`: `SRGBToLinear`, the Cook-Torrance BRDF pieces
 (`FresnelSchlick`, `DistributionGGX`, ...), `PerturbNormal` (normal-map
 perturbation), and `SamplePrefilteredRadiance`.
 
+**Parallax occlusion.** `#include <parallax.glsl>` at the top of the
+`fragment` block for the march `PhysicallyBasedMaterial.parallaxScale` uses.
+The height field rides a texture's alpha (1 at the surface, 0 at the deepest
+point), the packing `buildTextures(parallaxHeights:)` produces, so it costs no
+sampler against the budget below.
+
+```glsl
+fragment {
+#include <parallax.glsl>
+
+  void Surface(inout MaterialInputs material) {
+    highp vec2 uv = GetUV0();
+    // Before any branch: the march takes screen-space derivatives.
+    ParallaxRay ray = ParallaxBeginSurfaceRay(normal_height, uv, 0.06);
+    ParallaxHit hit =
+        ParallaxMarch(normal_height, ray, ParallaxLayerCount(normal_height, ray, 32));
+    vec4 albedo = textureGrad(albedo_texture, uv + hit.offset, dFdx(uv), dFdy(uv));
+    material.base_color = vec4(SRGBToLinear(albedo.rgb), 1.0);
+    material.normal = ParallaxPerturbNormal(normal_height, GetWorldNormal(),
+                                            v_viewvector, uv, hit.offset, vec2(1.0));
+    PrepareMaterial(material);
+  }
+}
+```
+
+Sample every texture at `uv + hit.offset` with the undisplaced UV's gradients
+(`textureGrad`), or the mip level spikes where the march jumps between relief
+layers. `ParallaxOcclusionOffset(tex, uv, scale, max_steps)` is the one-call
+form, and `ParallaxSelfShadow(tex, ray, hit, light_dir)` darkens the relief
+where it blocks a light.
+
+For a silhouette, declare `alpha_to_coverage: true` and set the alpha to 0
+where `ParallaxInsideSilhouette(ray, hit, vec4(0, 0, 1, 1), 1.0)` is false (a
+UV box; mode 2 with `zw` a tile size cuts at atlas tiles). The engine runs a
+cutout material's `Surface()` in the depth prepass and shadow maps too, and
+`ParallaxBeginSurfaceRay` marches from the camera of whichever pass is
+drawing, so the outline cuts the same way in the shadow. Spot and point light
+shadows still march toward the scene camera.
+
 For a `lit` material, fill `base_color` / `metallic` / `roughness` / `normal` /
 `occlusion` / `emissive` and the engine produces the lit color (image-based
 lighting plus the scene's directional light, with shadows). For an `unlit`

@@ -15,6 +15,7 @@ import 'dart:isolate';
 import 'package:hooks/hooks.dart';
 
 import '../generated_assets/lighting_features.dart';
+import '../generated_assets/material_features.dart';
 
 /// Bump when the hooks' generated output changes for the same inputs and the
 /// code that caused it is not covered by a generator fingerprint (see
@@ -65,6 +66,7 @@ final class HookOptions {
     this.rebuildEverything = false,
     this.debugViews = false,
     this.compiledOutLightingFeatures = const {},
+    this.compiledOutMaterialFeatures = const {},
   });
 
   /// Reads the options declared for the package [input] is building.
@@ -83,6 +85,10 @@ final class HookOptions {
     compiledOutLightingFeatures: parseCompiledOutLightingFeatures(
       input.userDefines['lighting_features'] ??
           input.userDefines['flutter_scene_lighting_features'],
+    ),
+    compiledOutMaterialFeatures: parseCompiledOutMaterialFeatures(
+      input.userDefines['material_features'] ??
+          input.userDefines['flutter_scene_material_features'],
     ),
   );
 
@@ -103,6 +109,11 @@ final class HookOptions {
   /// materials, from `lighting_features` (flutter_scene's own hook) or
   /// `flutter_scene_lighting_features` (an app hook).
   final Set<LightingFeature> compiledOutLightingFeatures;
+
+  /// The optional material features left out of the build, from
+  /// `material_features` (flutter_scene's own hook) or
+  /// `flutter_scene_material_features` (an app hook).
+  final Set<MaterialFeature> compiledOutMaterialFeatures;
 }
 
 /// Whether the cache is disabled via [kDisableBuildCacheEnv].
