@@ -9,7 +9,8 @@
 
 uniform StripInfo {
   // x: the first atlas row past this head region. The draw covers the whole
-  // atlas and discards below it.
+  // atlas and discards below it. y: 1 when the traced feed owns the state
+  // rows, which it copies in itself.
   vec4 extent;
 }
 info;
@@ -30,10 +31,12 @@ void main() {
     frag_color = texelFetch(sh_strip, ivec2(coord.x, min(coord.y, rows - 1)),
                             0);
   } else {
-    // Reserved for per-probe state (relocation offset in rgb, validity in
-    // alpha). Every probe is valid until relocation exists.
-    // TODO(gi-probe-state): write relocation offsets and a bake's per-probe
-    // validity here.
-    frag_color = vec4(0.0, 0.0, 0.0, 1.0);
+    // Per-probe state, a relocation offset in rgb and inactivity in alpha.
+    // Zero leaves every probe where the lattice puts it, active.
+    // TODO(gi-probe-state): carry a bake's per-probe state too.
+    if (info.extent.y > 0.5) {
+      discard;
+    }
+    frag_color = vec4(0.0);
   }
 }

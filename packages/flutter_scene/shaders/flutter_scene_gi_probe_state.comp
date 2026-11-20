@@ -1,0 +1,144 @@
+// Relocates and classifies each scheduled probe from its traced rays. One
+// invocation per probe.
+//
+// A probe whose rays mostly hit one-sided back faces sits inside geometry, so
+// it steps out past the nearest back face. One that sits too close to a front
+// face steps away from it, and one with room to spare drifts back toward its
+// lattice point. Offsets stay within 45% of a cell, so a probe never leaves
+// its cage, and a probe that is still inside geometry is marked inactive,
+// which the receiver weights to zero.
+//
+// Writes the persistent state and, as packed halves, the state strip texels
+// the atlas copies in.
+
+layout(local_size_x = 64) in;
+
+layout(std430) buffer;
+
+#include <irradiance_field.glsl>
+
+// One per (probe, ray): radiance, then hit distance, negated for back faces.
+layout(binding = 0) readonly buffer Rays {
+  vec4 data[];
+}
+rays;
+
+// Two per probe: relocation offset and inactivity, then the lattice index
+// that offset belongs to (w is 1 once written).
+layout(binding = 1) buffer ProbeStates {
+  vec4 data[];
+}
+probe_states;
+
+// One per probe, the state strip texel: offset.xy, then offset.z and
+// inactivity, as packed halves.
+layout(binding = 2) writeonly buffer StateTexels {
+  uvec2 data[];
+}
+state_texels;
+
+// This frame's ray directions, shared by every probe.
+layout(binding = 3) readonly buffer Directions {
+  vec4 data[];
+}
+directions;
+
+uniform StateInfo {
+  // xyz: probe spacing. w: the distance a probe keeps from front faces.
+  vec4 grid_spacing;
+  // xyz: lattice index of the volume's minimum-corner probe. w: rays per
+  // probe.
+  vec4 grid_anchor;
+  // xyz: probe counts per axis.
+  vec4 grid_counts;
+  // x: the first scheduled probe. y: scheduled probes. z: 1 to forget every
+  // offset, for a field reset.
+  vec4 schedule;
+}
+info;
+
+// Share of back face hits past which a probe counts as inside geometry.
+const float kBackfaceShare = 0.25;
+
+// How far an offset may move a probe, as a fraction of a cell.
+const float kMaxOffset = 0.45;
+
+void main() {
+  if (gl_GlobalInvocationID.x >= uint(info.schedule.y)) {
+    return;
+  }
+  uint probe_index = uint(info.schedule.x) + gl_GlobalInvocationID.x;
+  float probe = float(probe_index);
+  vec3 counts = info.grid_counts.xyz;
+  vec3 slot = vec3(mod(probe, counts.x),
+                   mod(floor(probe / counts.x), counts.y),
+                   floor(probe / (counts.x * counts.y)));
+  vec3 lattice = info.grid_anchor.xyz +
+                 ProbeWrapSlot(slot - info.grid_anchor.xyz, counts);
+
+  vec4 state = probe_states.data[probe_index * 2u];
+  vec4 owner = probe_states.data[probe_index * 2u + 1u];
+  vec3 offset = info.schedule.z < 0.5 && owner.w > 0.5 &&
+                        all(equal(owner.xyz, lattice))
+                    ? state.xyz
+                    : vec3(0.0);
+
+  float ray_count = info.grid_anchor.w;
+  uint first = probe_index * uint(ray_count);
+  float backfaces = 0.0;
+  float closest_back = 1e30;
+  vec3 closest_back_direction = vec3(0.0);
+  float closest_front = 1e30;
+  vec3 closest_front_direction = vec3(0.0);
+  float farthest_front = 0.0;
+  vec3 farthest_front_direction = vec3(0.0);
+  for (float r = 0.0; r < ray_count; r += 1.0) {
+    float distance = rays.data[first + uint(r)].w;
+    vec3 direction = directions.data[uint(r)].xyz;
+    if (distance < 0.0) {
+      backfaces += 1.0;
+      // The trace stored a fifth of the real distance.
+      distance = -distance * 5.0;
+      if (distance < closest_back) {
+        closest_back = distance;
+        closest_back_direction = direction;
+      }
+    } else {
+      if (distance < closest_front) {
+        closest_front = distance;
+        closest_front_direction = direction;
+      }
+      if (distance > farthest_front) {
+        farthest_front = distance;
+        farthest_front_direction = direction;
+      }
+    }
+  }
+
+  float keep_away = info.grid_spacing.w;
+  bool inside = backfaces > kBackfaceShare * ray_count;
+  vec3 moved = offset;
+  if (inside && closest_back < 1e30) {
+    moved = offset +
+            closest_back_direction * (closest_back + keep_away * 0.5);
+  } else if (closest_front < keep_away) {
+    // Away from the near face, if the far side is not the same way.
+    if (dot(closest_front_direction, farthest_front_direction) <= 0.0) {
+      moved = offset +
+              farthest_front_direction * min(farthest_front, keep_away);
+    }
+  } else if (dot(offset, offset) > 0.0) {
+    float back = min(closest_front - keep_away, length(offset));
+    moved = offset - normalize(offset) * back;
+  }
+  if (all(lessThanEqual(abs(moved / info.grid_spacing.xyz),
+                        vec3(kMaxOffset)))) {
+    offset = moved;
+  }
+
+  float inactive = inside ? 1.0 : 0.0;
+  probe_states.data[probe_index * 2u] = vec4(offset, inactive);
+  probe_states.data[probe_index * 2u + 1u] = vec4(lattice, 1.0);
+  state_texels.data[probe_index] =
+      uvec2(packHalf2x16(offset.xy), packHalf2x16(vec2(offset.z, inactive)));
+}
