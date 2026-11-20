@@ -1,5 +1,5 @@
-// Renders the irradiance_field room (an emissive red wall on the left, an
-// emissive green wall on the right, a sun) with the field off, fed by the
+// Renders the irradiance_field room (an emissive green wall on the left of
+// the frame, an emissive red wall on the right, a sun) with the field off, fed by the
 // screen-space scatter, and fed by the compute trace, saving each frame and
 // the colour bleed each one measures to build/smoke/.
 //
@@ -98,7 +98,7 @@ void main() {
       final width = image.width;
       final height = image.height;
       // The back wall and floor between the side walls, split down the
-      // middle: bleed shows as the left half redder and the right greener.
+      // middle. Bleed shows as the right half redder and the left greener.
       List<double> mean(int x0, int x1) {
         final sum = [0.0, 0.0, 0.0];
         var count = 0;
@@ -121,9 +121,9 @@ void main() {
         'injected': passes.contains('IrradianceInjectPass'),
         'left': left,
         'right': right,
-        // Positive when the left half leans red against green more than the
-        // right half does.
-        'bleed': (left[0] - left[1]) - (right[0] - right[1]),
+        // Positive when the right half leans red against green more than the
+        // left half does.
+        'bleed': (right[0] - right[1]) - (left[0] - left[1]),
       };
     }
 
