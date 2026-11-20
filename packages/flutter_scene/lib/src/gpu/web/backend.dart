@@ -242,6 +242,10 @@ abstract base class RenderPipeline {
 
 abstract base class CommandBuffer {
   RenderPass createRenderPass(RenderTarget renderTarget);
+
+  /// Copies tightly packed texels from [source] into [destination], after
+  /// every pass recorded before it.
+  void copyBufferToTexture(BufferView source, TextureRegion destination);
   void submit({CompletionCallback? completionCallback});
 }
 
