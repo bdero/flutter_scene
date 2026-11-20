@@ -1,5 +1,5 @@
-/// Builds flutter_scene's own engine assets, the base shader bundle and the
-/// physical material bundle.
+/// Builds flutter_scene's own engine assets, the engine shader bundles (base,
+/// parallax, and compute) and the physical material bundle.
 ///
 /// flutter_scene's own `hook/build.dart` calls [buildOwnEngineAssets], so a
 /// consumer needs no hook of their own. It writes into flutter_scene's own
@@ -83,6 +83,12 @@ const String _parallaxBundleManifest = 'shaders/parallax.shaderbundle.json';
 /// The parallax bundle's silhouette entries, left out with
 /// [MaterialFeature.parallaxSilhouette].
 bool isParallaxSilhouetteEntry(String name) => name.startsWith('Parallax');
+
+/// The manifest of the engine's compute shaders, relative to flutter_scene's
+/// root. Kept out of the base bundle so a device without compute never loads
+/// them, and built for every target anyway, since every compiler accepts a
+/// compute entry (OpenGL ES gets an unused GLSL ES 3.10 variant).
+const String _computeBundleManifest = 'shaders/compute.shaderbundle.json';
 
 /// GLSL ES 3.00 for the OpenGL ES dialect. The radiance sampling uses
 /// textureLod, which is core in 300 es; the 1.00 form needs
@@ -173,6 +179,17 @@ Future<void> _build({
           : null,
     );
   }
+  // No lit or debug-view entries, so neither option reaches it.
+  await _buildEngineShaderBundle(
+    buildInput: buildInput,
+    buildOutput: buildOutput,
+    sourceRoot: root,
+    id: 'compute',
+    manifestPath: _computeBundleManifest,
+    debugViews: false,
+    lightingOff: const {},
+    materialOff: const {},
+  );
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
     buildOutput: buildOutput,
