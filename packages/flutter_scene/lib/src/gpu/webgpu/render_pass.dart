@@ -39,6 +39,79 @@ final class _WebGpuCommandBuffer extends CommandBuffer {
   }
 
   @override
+  void copyBufferToTexture(BufferView source, TextureRegion destination) {
+    if (_submitted) {
+      throw StateError('This command buffer was already submitted.');
+    }
+    _active?._end();
+    _active = null;
+    final texture = destination.texture as _WebGpuTexture;
+    final format = texture._format;
+    if (format.compressed || format.depth) {
+      throw UnsupportedError(
+        'copyBufferToTexture supports uncompressed color formats only, not '
+        '${format.name}.',
+      );
+    }
+    final mip = destination.mipLevel;
+    final levelWidth = texture._mipExtent(texture.width, mip);
+    final levelHeight = texture._mipExtent(texture.height, mip);
+    final width = destination.width < 0
+        ? levelWidth - destination.x
+        : destination.width;
+    final height = destination.height < 0
+        ? levelHeight - destination.y
+        : destination.height;
+    if (destination.x < 0 ||
+        destination.y < 0 ||
+        width <= 0 ||
+        height <= 0 ||
+        destination.x + width > levelWidth ||
+        destination.y + height > levelHeight) {
+      throw Exception(
+        'Texture copy destination region exceeds the destination texture size',
+      );
+    }
+    final rowBytes = width * format.bytesPerBlock;
+    if (source.offsetInBytes < 0 ||
+        source.lengthInBytes < rowBytes * height ||
+        source.offsetInBytes + source.lengthInBytes >
+            source.buffer.sizeInBytes) {
+      throw Exception('BufferView range is out of bounds');
+    }
+    final buffer = (source.buffer as _WebGpuDeviceBuffer).buffer;
+    void copy(int offset, int y, int rows, int? bytesPerRow) =>
+        _encoder.copyBufferToTexture(
+          _obj({
+            'buffer': buffer,
+            'offset': offset,
+            'bytesPerRow': ?bytesPerRow,
+          }),
+          _obj({
+            'texture': texture.texture,
+            'mipLevel': mip,
+            'origin': [destination.x, y, destination.slice],
+          }),
+          _arr([width, rows, 1]),
+        );
+    // WebGPU wants a 256-byte row pitch for a multi-row copy, and the source
+    // is tightly packed, so a misaligned pitch copies a row at a time.
+    if (source.offsetInBytes % format.bytesPerBlock != 0) {
+      throw Exception(
+        'The BufferView offset must be a multiple of the texel size '
+        '(${format.bytesPerBlock} bytes)',
+      );
+    }
+    if (rowBytes % 256 == 0) {
+      copy(source.offsetInBytes, destination.y, height, rowBytes);
+      return;
+    }
+    for (var row = 0; row < height; row++) {
+      copy(source.offsetInBytes + row * rowBytes, destination.y + row, 1, null);
+    }
+  }
+
+  @override
   void submit({CompletionCallback? completionCallback}) {
     if (_submitted) {
       throw StateError('This command buffer was already submitted.');

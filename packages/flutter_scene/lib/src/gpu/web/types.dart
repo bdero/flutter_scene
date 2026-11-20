@@ -16,6 +16,29 @@ class BufferView {
   final int lengthInBytes;
 }
 
+/// A region of one mip level and slice of a [Texture], the destination of
+/// [CommandBuffer.copyBufferToTexture]. A width or height of -1 spans the rest
+/// of the level from [x] or [y].
+base class TextureRegion {
+  const TextureRegion(
+    this.texture, {
+    this.x = 0,
+    this.y = 0,
+    this.width = -1,
+    this.height = -1,
+    this.mipLevel = 0,
+    this.slice = 0,
+  });
+
+  final Texture texture;
+  final int x;
+  final int y;
+  final int width;
+  final int height;
+  final int mipLevel;
+  final int slice;
+}
+
 // ---------------------------------------------------------------------------
 // Render-target value types (mirroring flutter_gpu).
 // ---------------------------------------------------------------------------

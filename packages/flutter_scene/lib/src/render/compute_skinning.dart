@@ -1,13 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
-import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/constants.dart';
-import 'package:flutter_scene/src/material/shader_interface.dart'
-    show markEngineShaderLibrary;
+import 'package:flutter_scene/src/render/engine_compute_shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
@@ -44,7 +41,6 @@ class ComputeSkinning {
   static const int _workgroupSize = 64;
 
   _Shaders? _shaders;
-  Future<void>? _loading;
   bool _failed = false;
   int _frame = 0;
 
@@ -177,60 +173,40 @@ class ComputeSkinning {
     }
   }
 
-  // The loaded shaders, starting the load when this device can use them.
+  // The shaders once the engine's compute library has loaded, starting the
+  // load when this device can use them.
   _Shaders? _readyShaders() {
-    if (!computeSkinningEnabled || _failed || !gpu.supportsCompute) return null;
+    if (!computeSkinningEnabled || _failed) return null;
     final shaders = _shaders;
     if (shaders != null) return shaders;
-    _loading ??= _load().then<void>(
-      (loaded) => _shaders = loaded,
-      onError: (Object error, StackTrace stack) {
-        _failed = true;
-        FlutterError.reportError(
-          FlutterErrorDetails(
-            exception: error,
-            stack: stack,
-            library: 'flutter_scene',
-            context: ErrorDescription(
-              'while loading the compute shaders. Skinned meshes skin in their '
-              'vertex shader instead',
-            ),
+    final library = EngineComputeShaders.request();
+    if (library == null) return null;
+    try {
+      final shader =
+          library['SkinVertices'] ??
+          (throw StateError('The compute bundle has no SkinVertices entry.'));
+      return _shaders = _Shaders(
+        pipeline: gpu.createComputePipeline(shader),
+        sourceVertices: gpu.getStorageBufferSlot(shader, 'SourceVertices'),
+        jointMatrices: gpu.getStorageBufferSlot(shader, 'JointMatrices'),
+        skinnedVertices: gpu.getStorageBufferSlot(shader, 'SkinnedVertices'),
+        skinInfo: shader.cachedUniformSlot('SkinInfo'),
+      );
+    } catch (error, stack) {
+      _failed = true;
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'flutter_scene',
+          context: ErrorDescription(
+            'while preparing the compute skinning shader. Skinned meshes skin '
+            'in their vertex shader instead',
           ),
-        );
-      },
-    );
-    return null;
-  }
-
-  static Future<_Shaders> _load() async {
-    final key = (await loadGeneratedAssetIndex()).resolveFirstKey(
-      GeneratedAssetFamily.shaderBundle,
-      'compute',
-      package: 'flutter_scene',
-    );
-    if (key == null) {
-      throw StateError(
-        'The engine compute shader bundle is missing. flutter_scene\'s build '
-        'hook compiles it with the base bundle, so rebuild the app.',
+        ),
       );
+      return null;
     }
-    final library = await gpu.loadShaderLibraryAsync(key);
-    final shader = library?['SkinVertices'];
-    if (library == null || shader == null) {
-      throw StateError(
-        'Could not load the engine compute shaders from "$key". They are '
-        'compiled for the engine that built the app, so rebuild after '
-        'changing Flutter versions.',
-      );
-    }
-    markEngineShaderLibrary(library);
-    return _Shaders(
-      pipeline: gpu.createComputePipeline(shader),
-      sourceVertices: gpu.getStorageBufferSlot(shader, 'SourceVertices'),
-      jointMatrices: gpu.getStorageBufferSlot(shader, 'JointMatrices'),
-      skinnedVertices: gpu.getStorageBufferSlot(shader, 'SkinnedVertices'),
-      skinInfo: shader.cachedUniformSlot('SkinInfo'),
-    );
   }
 
   /// Forgets the loaded shaders and any failure, so a test can drive the load
@@ -238,7 +214,6 @@ class ComputeSkinning {
   @visibleForTesting
   void debugReset() {
     _shaders = null;
-    _loading = null;
     _failed = false;
   }
 
@@ -250,8 +225,8 @@ class ComputeSkinning {
   /// Completes at once on a device that skins in the vertex shader.
   @visibleForTesting
   Future<void> debugWaitUntilReady() async {
+    await EngineComputeShaders.whenLoaded();
     _readyShaders();
-    await _loading;
   }
 }
 
