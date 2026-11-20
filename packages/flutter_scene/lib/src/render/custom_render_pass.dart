@@ -63,16 +63,12 @@ ByteData packPostShadowInfo(
 /// {@category Rendering}
 enum RenderStage {
   /// Before anything of the view is drawn (its shadows, depth prepass and
-  /// scene), with this frame's camera. For a pass whose output the frame's
-  /// own draws read: a GPU culling or instance-selection pass that writes a
-  /// buffer or texture a material samples later in the same frame.
+  /// scene), with this frame's camera, for output the same frame's draws
+  /// read, such as a [RenderPassContext.drawObjects] mask a material samples.
   ///
-  /// There is no color chain yet: [RenderPassContext.currentColor] and
-  /// [RenderPassContext.applyShader] throw at this stage, and the pass's
-  /// [CustomRenderPass.inputs] are not produced for it (none of them exists
-  /// before the scene is drawn). [RenderPassContext.drawObjects] works, and
-  /// the pass may record GPU work of its own (a compute-style full-screen
-  /// draw into its own texture).
+  /// There is no color chain, so [RenderPassContext.currentColor] and
+  /// [RenderPassContext.applyShader] throw here, and the pass's
+  /// [CustomRenderPass.inputs] are not produced for it.
   beforeScene,
 
   /// Right after the scene is drawn (opaque and transparent), on the linear

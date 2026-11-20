@@ -104,9 +104,9 @@ The built-in pipeline is a fixed sequence; you turn stages on and tune
 them, you do not reorder them. From `Scene.render` for one view, in order:
 
 1. User `CustomRenderPass`es at `RenderStage.beforeScene` run, before
-   anything of the view is drawn, for work the frame's own draws read
-   (a GPU culling or instance-selection pass writing a buffer or texture
-   that a material samples). They have no color chain to advance.
+   anything of the view is drawn, for output the frame's own draws read
+   (such as a `drawObjects` mask a material samples). They have no color
+   chain to advance.
 2. Shadow map (cascades and/or spot shadows), when a shadow-casting light
    needs one.
 3. The depth prepass (and ambient occlusion, if enabled), when a
