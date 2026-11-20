@@ -1,0 +1,5 @@
+// The traced irradiance feed for backends whose prefiltered radiance is a
+// roughness-mip cubemap. Same body as flutter_scene_gi_trace.comp, with the
+// cube sampler selected.
+#define FLUTTER_SCENE_RADIANCE_CUBE
+#include <flutter_scene_gi_trace.comp>

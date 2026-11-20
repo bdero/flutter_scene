@@ -6,75 +6,92 @@ import 'package:flutter_scene/src/global_illumination.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/material/physically_based_material.dart';
-import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/render/engine_compute_shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
-import 'package:flutter_scene/src/render/gi_bvh.dart';
+import 'package:flutter_scene/src/render/gi_scene.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
 import 'package:flutter_scene/src/render/irradiance_pass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart';
 
-/// Whether the irradiance field is fed by tracing probe rays against the
-/// scene in a compute pass, where the device supports compute, instead of by
-/// scattering the visible screen.
-///
-/// TODO(gi-trace): promote to a [GlobalIlluminationSettings] option once the
-/// traced feed covers dynamic meshes, textured albedo, and punctual lights.
+/// Forces the traced feed on wherever compute is available, whatever the
+/// scene's [GlobalIlluminationSettings.feed], for tests.
 @visibleForTesting
 bool tracedIrradianceEnabled = false;
+
+/// How many times each frame's trace is dispatched, so a test can read its
+/// GPU cost off the difference in completion times.
+@visibleForTesting
+int debugTraceRepeats = 1;
+
+/// How many times each frame's gathers are dispatched, as [debugTraceRepeats]
+/// is for the trace.
+@visibleForTesting
+int debugGatherRepeats = 1;
+
+/// Called with the wall time from each trace submission to its completion.
+@visibleForTesting
+void Function(Duration elapsed)? debugOnTraceCompleted;
 
 /// Rays each probe traces per frame.
 const int kTracedRaysPerProbe = 64;
 
 const int _workgroupSize = 64;
 
-// Each frame rewrites the sky buffer, so one per frame in flight.
+// Each frame rewrites its uploads, so one set per frame in flight.
 const int _ringSize = 3;
 
-/// The traced feed's scene and buffers, owned by the scene beside its
-/// [IrradianceFieldState].
-///
-/// Static meshes are gathered into a BVH whenever the set of them, their
-/// transforms, or their materials change.
-///
-/// TODO(gi-trace-dynamic): skinned and morphed meshes are left out. Add them
-/// as a second level (instanced BLASes under a TLAS) refit each frame, which
-/// compute skinning's world-space output can feed.
-/// TODO(gi-trace-build): the build runs on the UI thread. Move it to an
-/// isolate for large scenes.
+// The roughness band a miss reads the sky at. A probe ray stands for about
+// a 64th of the sphere, so a blurred band keeps the sky from aliasing.
+const double _skyRoughness = 0.35;
+
+/// The traced feed's scene, shaders, and buffers, owned by the scene beside
+/// its [IrradianceFieldState].
 class IrradianceTraceState {
   _Shaders? _shaders;
   bool _failed = false;
 
-  int _sceneSignature = 0;
-  int _nodeCount = 0;
-  gpu.DeviceBuffer? _nodes;
-  gpu.DeviceBuffer? _triangles;
-  gpu.DeviceBuffer? _materials;
+  final GiScene _scene = GiScene();
 
   IrradianceFieldLayout? _layout;
   gpu.DeviceBuffer? _rays;
   gpu.DeviceBuffer? _irradianceTexels;
   gpu.DeviceBuffer? _depthTexels;
+  gpu.DeviceBuffer? _probeStates;
+  gpu.DeviceBuffer? _stateTexels;
   bool _bounceReady = false;
+  bool _resetStates = true;
 
-  final List<gpu.DeviceBuffer?> _sky = List.filled(_ringSize, null);
+  final _Ring _tlas = _Ring();
+  final _Ring _instances = _Ring();
+  final _Ring _materials = _Ring();
+  final _Ring _lights = _Ring();
+  final _Ring _tileInfo = _Ring();
+  final _Ring _directions = _Ring();
   int _frame = 0;
   final math.Random _random = math.Random(1);
 
-  /// Whether this frame can feed the field by tracing, which starts loading
-  /// the compute shaders the first time it is asked.
-  bool get available {
-    if (!tracedIrradianceEnabled || _failed) return false;
+  /// Whether this frame can feed the field by tracing with [settings], which
+  /// starts loading the compute shaders the first time it is asked.
+  bool availableFor(GlobalIlluminationSettings settings) {
+    if (_failed) return false;
+    if (!tracedIrradianceEnabled && settings.feed != IrradianceFeed.rayTraced) {
+      return false;
+    }
     return _readyShaders() != null;
   }
 
-  /// Drops the accumulated bounce, for when the field resets.
-  void invalidate() => _bounceReady = false;
+  /// Drops the accumulated bounce and probe offsets, for when the field
+  /// resets.
+  void invalidate() {
+    _bounceReady = false;
+    _resetStates = true;
+  }
 
   _Shaders? _readyShaders() {
     final shaders = _shaders;
@@ -103,205 +120,134 @@ class IrradianceTraceState {
     );
   }
 
-  // Rebuilds the BVH when the static scene changed since the last frame.
-  void _prepareScene(RenderScene scene) {
-    final included = <RenderItem>[];
-    var signature = 17;
-    for (final item in scene.items) {
-      if (!_traceable(item)) continue;
-      included.add(item);
-      signature = Object.hash(
-        signature,
-        identityHashCode(item.geometry),
-        item.geometry.localBoundsVersion,
-        Object.hashAll(item.worldTransform.storage),
-        _materialKey(item.material),
-      );
-    }
-    if (_nodes != null && signature == _sceneSignature) return;
-    _sceneSignature = signature;
-
-    final positions = <double>[];
-    final triangleMaterials = <int>[];
-    final materialData = <double>[];
-    final materialIndex = <Object, int>{};
-    for (final item in included) {
-      final mesh = item.geometry.extractMeshData();
-      final material = materialIndex.putIfAbsent(
-        _materialKey(item.material),
-        () {
-          materialData.addAll(_materialEntry(item.material));
-          return materialData.length ~/ 8 - 1;
-        },
-      );
-      final transform = item.worldTransform;
-      // A mirroring transform flips the winding, so swap two corners to keep
-      // front faces counter-clockwise.
-      final order = transform.determinant() < 0
-          ? const [0, 2, 1]
-          : const [0, 1, 2];
-      final source = mesh.positions;
-      final indices = mesh.indices;
-      final cornerCount = indices?.length ?? mesh.vertexCount;
-      final corner = Vector3.zero();
-      for (var c = 0; c + 2 < cornerCount; c += 3) {
-        for (var k = 0; k < 3; k++) {
-          final v = indices == null ? c + order[k] : indices[c + order[k]];
-          corner.setValues(source[v * 3], source[v * 3 + 1], source[v * 3 + 2]);
-          transform.transform3(corner);
-          positions.addAll([corner.x, corner.y, corner.z]);
-        }
-        triangleMaterials.add(material);
-      }
-    }
-    final bvh = GiBvh.build(Float32List.fromList(positions), triangleMaterials);
-    _nodeCount = bvh.nodeCount;
-    gpu.DeviceBuffer upload(Float32List data, int minimumFloats) =>
-        gpu.gpuContext.createDeviceBufferWithCopy(
-          ByteData.sublistView(
-            data.length >= minimumFloats ? data : Float32List(minimumFloats),
-          ),
-        );
-    // A storage binding cannot be empty, so an empty scene binds one zeroed
-    // element of each, which the walk never reads.
-    _nodes = upload(bvh.nodes, GiBvh.nodeStride);
-    _triangles = upload(bvh.triangles, GiBvh.triangleStride);
-    _materials = upload(Float32List.fromList(materialData), 8);
-  }
-
-  static bool _traceable(RenderItem item) {
-    final geometry = item.geometry;
-    return item.visible &&
-        item.primitiveVisible &&
-        item.jointsTexture == null &&
-        item.morphWeights == null &&
-        geometry.isReadable &&
-        geometry.primitiveType == gpu.PrimitiveType.triangle;
-  }
-
-  static Object _materialKey(Material material) => switch (material) {
-    PhysicallyBasedMaterial m => Object.hash(
-      Object.hashAll(m.baseColorFactor.storage),
-      m.metallicFactor,
-      Object.hashAll(m.emissiveFactor.storage),
-      m.emissiveStrength,
-      m.doubleSided,
-    ),
-    UnlitMaterial m => Object.hash(
-      Object.hashAll(m.baseColorFactor.storage),
-      m.doubleSided,
-    ),
-    _ => Object.hash(material.runtimeType, material.doubleSided),
-  };
-
-  // Diffuse albedo with 1 in w when double-sided, then emission.
-  // TODO(gi-trace-albedo): average the base color and emissive textures, and
-  // read other material kinds, instead of the factors and a gray default.
-  static List<double> _materialEntry(Material material) {
-    final sides = material.doubleSided ? 1.0 : 0.0;
-    switch (material) {
-      case PhysicallyBasedMaterial m:
-        final diffuse = 1.0 - m.metallicFactor.clamp(0.0, 1.0);
-        final base = m.baseColorFactor;
-        final emissive = m.emissiveFactor;
-        return [
-          base.x * diffuse, base.y * diffuse, base.z * diffuse, sides, //
-          emissive.x * m.emissiveStrength,
-          emissive.y * m.emissiveStrength,
-          emissive.z * m.emissiveStrength,
-          0,
-        ];
-      case UnlitMaterial m:
-        // An unlit surface shows its color whatever lights it, so to the
-        // field it is an emitter.
-        final base = m.baseColorFactor;
-        return [0, 0, 0, sides, base.x, base.y, base.z, 0];
-      default:
-        return [0.5, 0.5, 0.5, sides, 0, 0, 0, 0];
-    }
-  }
-
   void _allocate(IrradianceFieldLayout layout) {
     if (_layout == layout && _rays != null) return;
     _layout = layout;
     _bounceReady = false;
-    final rayBytes = layout.probeCount * kTracedRaysPerProbe * 16;
+    _resetStates = true;
+    gpu.DeviceBuffer zeroed(int bytes) =>
+        gpu.gpuContext.createDeviceBufferWithCopy(ByteData(bytes));
     _rays = gpu.gpuContext.createDeviceBuffer(
       gpu.StorageMode.devicePrivate,
-      rayBytes,
+      layout.probeCount * kTracedRaysPerProbe * 16,
     );
-    // Read back as the bounce before the first gather writes it, so zeroed.
-    _irradianceTexels = gpu.gpuContext.createDeviceBufferWithCopy(
-      ByteData(
-        layout.injectionIrradianceWidth * layout.injectionIrradianceHeight * 8,
-      ),
+    // Rows a budget leaves unscheduled are copied too, so start them zeroed.
+    _irradianceTexels = zeroed(
+      layout.injectionIrradianceWidth * layout.injectionIrradianceHeight * 8,
     );
-    _depthTexels = gpu.gpuContext.createDeviceBuffer(
-      gpu.StorageMode.devicePrivate,
+    _depthTexels = zeroed(
       layout.injectionDepthWidth * layout.injectionDepthHeight * 8,
     );
-  }
-
-  gpu.BufferView _skyView(EnvironmentMap environment) {
-    final slot = _frame % _ringSize;
-    final buffer = _sky[slot] ??= gpu.gpuContext.createDeviceBuffer(
-      gpu.StorageMode.hostVisible,
-      9 * 16,
-    );
-    final coefficients = environment.diffuseSphericalHarmonics;
-    final data = Float32List(9 * 4);
-    // TODO(gi-trace-sky): an environment baked from a sky keeps its
-    // coefficients on the GPU only, so its misses read black. Copy them from
-    // the coefficient texture instead.
-    for (var i = 0; i < 9 && i < coefficients.length; i++) {
-      data[i * 4] = coefficients[i].x;
-      data[i * 4 + 1] = coefficients[i].y;
-      data[i * 4 + 2] = coefficients[i].z;
-    }
-    buffer.overwrite(ByteData.sublistView(data));
-    return gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: 9 * 16);
+    _probeStates = zeroed(layout.probeCount * 32);
+    _stateTexels = zeroed(layout.tilesPerRow * layout.tileRows * 8);
   }
 }
 
 final class _Shaders {
   _Shaders(gpu.ShaderLibrary library)
-    : trace =
-          library['GiTrace'] ??
-          (throw StateError('The compute bundle has no GiTrace entry.')),
-      gather =
-          library['GiGather'] ??
-          (throw StateError('The compute bundle has no GiGather entry.')) {
+    : trace = _entry(library, 'GiTrace'),
+      traceCube = _entry(library, 'GiTraceCube'),
+      gather = _entry(library, 'GiGather'),
+      probeState = _entry(library, 'GiProbeState'),
+      skinTriangles = _entry(library, 'GiSkinTriangles'),
+      refit = _entry(library, 'GiRefit'),
+      materialTile = _entry(library, 'GiMaterialTileFragment') {
     tracePipeline = gpu.createComputePipeline(trace);
+    traceCubePipeline = gpu.createComputePipeline(traceCube);
     gatherPipeline = gpu.createComputePipeline(gather);
-    nodes = gpu.getStorageBufferSlot(trace, 'Nodes');
-    triangles = gpu.getStorageBufferSlot(trace, 'Triangles');
-    materials = gpu.getStorageBufferSlot(trace, 'Materials');
-    sky = gpu.getStorageBufferSlot(trace, 'Sky');
-    previous = gpu.getStorageBufferSlot(trace, 'Previous');
-    traceRays = gpu.getStorageBufferSlot(trace, 'Rays');
-    gatherRays = gpu.getStorageBufferSlot(gather, 'Rays');
-    texels = gpu.getStorageBufferSlot(gather, 'Texels');
+    probeStatePipeline = gpu.createComputePipeline(probeState);
+    skinTrianglesPipeline = gpu.createComputePipeline(skinTriangles);
+    refitPipeline = gpu.createComputePipeline(refit);
   }
 
+  static gpu.Shader _entry(gpu.ShaderLibrary library, String name) =>
+      library[name] ??
+      (throw StateError('The compute bundle has no $name entry.'));
+
   final gpu.Shader trace;
+  final gpu.Shader traceCube;
   final gpu.Shader gather;
+  final gpu.Shader probeState;
+  final gpu.Shader skinTriangles;
+  final gpu.Shader refit;
+  final gpu.Shader materialTile;
   late final gpu.GpuComputePipeline tracePipeline;
+  late final gpu.GpuComputePipeline traceCubePipeline;
   late final gpu.GpuComputePipeline gatherPipeline;
-  late final gpu.GpuStorageBufferSlot nodes;
-  late final gpu.GpuStorageBufferSlot triangles;
-  late final gpu.GpuStorageBufferSlot materials;
-  late final gpu.GpuStorageBufferSlot sky;
-  late final gpu.GpuStorageBufferSlot previous;
-  late final gpu.GpuStorageBufferSlot traceRays;
-  late final gpu.GpuStorageBufferSlot gatherRays;
-  late final gpu.GpuStorageBufferSlot texels;
+  late final gpu.GpuComputePipeline probeStatePipeline;
+  late final gpu.GpuComputePipeline skinTrianglesPipeline;
+  late final gpu.GpuComputePipeline refitPipeline;
+
+  gpu.GpuStorageBufferSlot slot(gpu.Shader shader, String name) =>
+      gpu.getStorageBufferSlot(shader, name);
 }
 
-/// Feeds the irradiance field by tracing: each probe shoots
-/// [kTracedRaysPerProbe] rays against the static scene in a compute pass, a
-/// second pass gathers them into the same weighted sums the screen-space
-/// scatter produces, and copies land them in the field's accumulators, so
-/// the blend, filter, and receiver run unchanged.
+// A host-visible upload per frame in flight, grown as needed.
+final class _Ring {
+  final List<gpu.DeviceBuffer?> _buffers = List.filled(_ringSize, null);
+
+  gpu.BufferView upload(int frame, TypedData data) {
+    final slot = frame % _ringSize;
+    var buffer = _buffers[slot];
+    if (buffer == null || buffer.sizeInBytes < data.lengthInBytes) {
+      buffer = _buffers[slot] = gpu.gpuContext.createDeviceBuffer(
+        gpu.StorageMode.hostVisible,
+        math.max(256, data.lengthInBytes * 2),
+      );
+    }
+    buffer.overwrite(ByteData.sublistView(data));
+    return gpu.BufferView(
+      buffer,
+      offsetInBytes: 0,
+      lengthInBytes: data.lengthInBytes,
+    );
+  }
+}
+
+final gpu.SamplerOptions _linearClamp = gpu.SamplerOptions(
+  minFilter: gpu.MinMagFilter.linear,
+  magFilter: gpu.MinMagFilter.linear,
+  widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+);
+final gpu.SamplerOptions _mipLinearClamp = gpu.SamplerOptions(
+  minFilter: gpu.MinMagFilter.linear,
+  magFilter: gpu.MinMagFilter.linear,
+  mipFilter: gpu.MipFilter.linear,
+  widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+);
+final gpu.SamplerOptions _equirect = gpu.SamplerOptions(
+  minFilter: gpu.MinMagFilter.linear,
+  magFilter: gpu.MinMagFilter.linear,
+  mipFilter: gpu.MipFilter.linear,
+  widthAddressMode: gpu.SamplerAddressMode.repeat,
+  heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+);
+final gpu.SamplerOptions _materialSource = gpu.SamplerOptions(
+  minFilter: gpu.MinMagFilter.linear,
+  magFilter: gpu.MinMagFilter.linear,
+  mipFilter: gpu.MipFilter.linear,
+  widthAddressMode: gpu.SamplerAddressMode.repeat,
+  heightAddressMode: gpu.SamplerAddressMode.repeat,
+);
+
+final gpu.DeviceBuffer _fullscreenBuffer = gpu.gpuContext
+    .createDeviceBufferWithCopy(
+      ByteData.sublistView(
+        Float32List.fromList(<double>[
+          -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, //
+          -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, //
+        ]),
+      ),
+    );
+
+/// Feeds the irradiance field by tracing: each scheduled probe shoots
+/// [kTracedRaysPerProbe] rays against the scene in a compute pass, a probe
+/// pass relocates and classifies the probes from them, a gather turns them
+/// into the same weighted sums the screen-space scatter produces, and copies
+/// land those in the field's accumulators and its probe state rows, so the
+/// blend, filter, and receiver run unchanged.
 class IrradianceTracePass extends RenderGraphPass {
   IrradianceTracePass({
     required this.field,
@@ -330,11 +276,13 @@ class IrradianceTracePass extends RenderGraphPass {
     final placement = field.placement;
     final irradianceTarget = field.irradianceAccumulator;
     final depthTarget = field.depthAccumulator;
+    final atlas = field.sampledAtlas;
     final shaders = trace._shaders;
     if (layout == null ||
         placement == null ||
         irradianceTarget == null ||
         depthTarget == null ||
+        atlas == null ||
         shaders == null) {
       return;
     }
@@ -346,8 +294,10 @@ class IrradianceTracePass extends RenderGraphPass {
         placement,
         irradianceTarget,
         depthTarget,
+        atlas,
       );
     } catch (error, stack) {
+      field.traceOwnsProbeState = false;
       trace._fail(error, stack, 'while tracing the irradiance field');
     }
   }
@@ -359,21 +309,40 @@ class IrradianceTracePass extends RenderGraphPass {
     IrradianceGridPlacement placement,
     gpu.Texture irradianceTarget,
     gpu.Texture depthTarget,
+    gpu.Texture atlas,
   ) {
-    trace._prepareScene(renderScene);
     trace._allocate(layout);
-    trace._frame++;
+    if (field.resetPending) trace.invalidate();
+    final frame = ++trace._frame;
+    final scene = trace._scene.prepare(
+      renderScene,
+      emissiveBoost: settings.emissiveGiBoost,
+    );
+    _renderMaterialAtlas(shaders, frame);
+
+    final (rowStart, rowEnd) = field.peekScheduleRows(
+      settings.probeUpdateBudget,
+    );
+    final probeCount = layout.probeCount;
+    final firstProbe = math.min(probeCount, rowStart * layout.tilesPerRow);
+    final scheduledProbes =
+        math.min(probeCount, rowEnd * layout.tilesPerRow) - firstProbe;
 
     final rotation = Matrix4.identity()
       ..setRotation(Quaternion.random(trace._random).asRotationMatrix());
-    final probeCount = layout.probeCount;
-    final rayCount = probeCount * kTracedRaysPerProbe;
+    final directions = trace._directions.upload(
+      frame,
+      _rayDirections(rotation),
+    );
     final sun = renderScene.primaryDirectionalLight;
     final spacing = placement.spacing;
     final anchor = placement.anchor;
     final counts = layout.resolution;
+    final (lights, lightCount) = GiScene.packLights(renderScene);
+    final atlasTexture =
+        trace._scene.atlas.texture ?? Material.getWhitePlaceholderTexture();
 
-    final info = Float32List(56);
+    final info = Float32List(64);
     info.setAll(0, rotation.storage);
     final environmentMatrix = Matrix4.identity()
       ..setRotation(environmentTransform);
@@ -406,98 +375,401 @@ class IrradianceTracePass extends RenderGraphPass {
     info
       ..[51] = settings.fireflyClamp
       ..[52] = environmentIntensity
-      ..[53] = trace._nodeCount.toDouble()
+      ..[53] = scene.tlasNodeCount.toDouble()
       ..[54] = trace._bounceReady ? 1.0 : 0.0
-      ..[55] = probeCount.toDouble();
+      ..[55] = scheduledProbes.toDouble()
+      ..[56] = firstProbe.toDouble()
+      ..[57] = lightCount.toDouble()
+      ..[58] = scene.boundedCount.toDouble()
+      ..[59] = scene.instanceCount.toDouble()
+      ..[60] = 1.0 / atlasTexture.width
+      ..[61] = 1.0 / atlasTexture.height
+      ..[62] = GiMaterialAtlas.tileEdge.toDouble()
+      ..[63] = _skyRoughness;
 
-    final rays = gpu.BufferView(
-      trace._rays!,
-      offsetInBytes: 0,
-      lengthInBytes: rayCount * 16,
-    );
-    final irradianceTexelCount =
-        layout.injectionIrradianceWidth * layout.injectionIrradianceHeight;
-    final depthTexelCount =
-        layout.injectionDepthWidth * layout.injectionDepthHeight;
-    final irradianceTexels = gpu.BufferView(
-      trace._irradianceTexels!,
-      offsetInBytes: 0,
-      lengthInBytes: irradianceTexelCount * 8,
-    );
-    final depthTexels = gpu.BufferView(
-      trace._depthTexels!,
-      offsetInBytes: 0,
-      lengthInBytes: depthTexelCount * 8,
-    );
+    // The receiver's inputs, as the lit shader gets them, at unit intensity.
+    final fieldInfo = Float32List(20)
+      ..[0] = spacing.x
+      ..[1] = spacing.y
+      ..[2] = spacing.z
+      ..[3] = 1.0
+      ..[4] = anchor.x
+      ..[5] = anchor.y
+      ..[6] = anchor.z
+      ..[7] = settings.shadowBias
+      ..[8] = counts.x
+      ..[9] = counts.y
+      ..[10] = counts.z
+      ..[11] = layout.tilesPerRow.toDouble()
+      ..[12] = layout.irradianceOriginY.toDouble()
+      ..[13] = layout.depthOriginY.toDouble()
+      ..[14] = 1.0 / layout.atlasWidth
+      ..[15] = 1.0 / layout.atlasHeight
+      ..[16] = settings.visibility.clamp(0.0, 1.0)
+      ..[17] = settings.visibilityBias * placement.minCellEdge
+      ..[18] = placement.maxProbeDistance
+      ..[19] = IrradianceFieldBinding.boundaryFadeCells;
+
     gpu.BufferView whole(gpu.DeviceBuffer buffer) => gpu.BufferView(
       buffer,
       offsetInBytes: 0,
       lengthInBytes: buffer.sizeInBytes,
     );
+    final rays = whole(trace._rays!);
+    final probeStates = whole(trace._probeStates!);
+    final stateTexels = whole(trace._stateTexels!);
+    final irradianceTexels = whole(trace._irradianceTexels!);
+    final depthTexels = whole(trace._depthTexels!);
+    final blasNodes = whole(trace._scene.blasNodes!);
+    final blasTriangles = whole(trace._scene.blasTriangles!);
+    final transients = context.transientsBuffer;
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
-    final pass = gpu.createComputePass(commandBuffer)
-      ..bindPipeline(shaders.tracePipeline)
-      ..bindStorageBuffer(shaders.nodes, whole(trace._nodes!))
-      ..bindStorageBuffer(shaders.triangles, whole(trace._triangles!))
-      ..bindStorageBuffer(shaders.materials, whole(trace._materials!))
-      ..bindStorageBuffer(shaders.sky, trace._skyView(environment))
-      ..bindStorageBuffer(shaders.previous, irradianceTexels)
-      ..bindStorageBuffer(shaders.traceRays, rays)
-      ..bindUniform(
-        shaders.trace.cachedUniformSlot('TraceInfo'),
-        context.transientsBuffer.emplace(ByteData.sublistView(info)),
-      )
-      ..dispatch(_groups(rayCount));
+    final pass = gpu.createComputePass(commandBuffer);
 
-    void gather(gpu.BufferView texels, int texelCount, int width, bool depth) {
-      final tile = depth
-          ? IrradianceFieldLayout.depthTile
-          : IrradianceFieldLayout.irradianceTile;
-      final interior = depth ? kDepthMomentInterior : kIrradianceInterior;
-      final gatherInfo = Float32List(28)
-        ..setAll(0, rotation.storage)
-        ..[16] = tile.toDouble()
-        ..[17] = interior.toDouble()
-        ..[18] = layout.tilesPerRow.toDouble()
-        ..[19] = depth ? 1.0 : 0.0
-        ..[20] = probeCount.toDouble()
-        ..[21] = kTracedRaysPerProbe.toDouble()
-        ..[22] = width.toDouble()
-        ..[23] = texelCount.toDouble()
-        ..[24] = placement.maxProbeDistance;
+    // Skinned meshes: rebuild each one's triangles from this frame's skinned
+    // vertices, then refit its tree a level at a time, deepest first.
+    // TODO(gi-trace-dynamic): batch every skinned mesh's level into one
+    // dispatch instead of one per mesh per level.
+    for (final (vertices, region) in scene.skinned) {
+      final skin = shaders.skinTriangles;
+      pass
+        ..clearBindings()
+        ..bindPipeline(shaders.skinTrianglesPipeline)
+        ..bindStorageBuffer(shaders.slot(skin, 'Vertices'), vertices)
+        ..bindStorageBuffer(
+          shaders.slot(skin, 'Corners'),
+          whole(trace._scene.corners!),
+        )
+        ..bindStorageBuffer(shaders.slot(skin, 'Triangles'), blasTriangles)
+        ..bindUniform(
+          skin.cachedUniformSlot('SkinTriangleInfo'),
+          transients.emplace(
+            ByteData.sublistView(
+              Float32List.fromList([
+                region.triangleBase.toDouble(),
+                region.triangleCount.toDouble(),
+                region.cornerBase.toDouble(),
+                0,
+              ]),
+            ),
+          ),
+        )
+        ..dispatch(_groups(region.triangleCount));
+      final refit = shaders.refit;
+      pass
+        ..clearBindings()
+        ..bindPipeline(shaders.refitPipeline)
+        ..bindStorageBuffer(shaders.slot(refit, 'Nodes'), blasNodes)
+        ..bindStorageBuffer(shaders.slot(refit, 'Triangles'), blasTriangles)
+        ..bindStorageBuffer(
+          shaders.slot(refit, 'Order'),
+          whole(trace._scene.refitOrder!),
+        );
+      final starts = region.levelStarts;
+      for (var level = 0; level + 1 < starts.length; level++) {
+        final count = starts[level + 1] - starts[level];
+        if (count == 0) continue;
+        pass
+          ..bindUniform(
+            refit.cachedUniformSlot('RefitInfo'),
+            transients.emplace(
+              ByteData.sublistView(
+                Float32List.fromList([
+                  region.nodeBase.toDouble(),
+                  region.triangleBase.toDouble(),
+                  (region.orderBase + starts[level]).toDouble(),
+                  count.toDouble(),
+                ]),
+              ),
+            ),
+          )
+          ..dispatch(_groups(count));
+      }
+    }
+
+    // The trace.
+    final cube = environment.usesCubeRadianceLayout;
+    final traceShader = cube ? shaders.traceCube : shaders.trace;
+    pass
+      ..clearBindings()
+      ..bindPipeline(cube ? shaders.traceCubePipeline : shaders.tracePipeline)
+      ..bindStorageBuffer(shaders.slot(traceShader, 'BlasNodes'), blasNodes)
+      ..bindStorageBuffer(
+        shaders.slot(traceShader, 'BlasTriangles'),
+        blasTriangles,
+      )
+      ..bindStorageBuffer(
+        shaders.slot(traceShader, 'TlasNodes'),
+        trace._tlas.upload(frame, scene.tlasNodes),
+      )
+      ..bindStorageBuffer(
+        shaders.slot(traceShader, 'Instances'),
+        trace._instances.upload(frame, scene.instances),
+      )
+      ..bindStorageBuffer(
+        shaders.slot(traceShader, 'Materials'),
+        trace._materials.upload(frame, scene.materials),
+      )
+      ..bindStorageBuffer(
+        shaders.slot(traceShader, 'Lights'),
+        trace._lights.upload(frame, lights),
+      )
+      ..bindStorageBuffer(shaders.slot(traceShader, 'ProbeStates'), probeStates)
+      ..bindStorageBuffer(shaders.slot(traceShader, 'Rays'), rays)
+      ..bindUniform(
+        traceShader.cachedUniformSlot('TraceInfo'),
+        transients.emplace(ByteData.sublistView(info)),
+      )
+      ..bindUniform(
+        traceShader.cachedUniformSlot('FieldInfo'),
+        transients.emplace(ByteData.sublistView(fieldInfo)),
+      )
+      ..bindTexture(
+        traceShader.cachedUniformSlot('irradiance_field'),
+        atlas,
+        sampler: _linearClamp,
+      )
+      ..bindTexture(
+        traceShader.cachedUniformSlot('material_atlas'),
+        atlasTexture,
+        sampler: _linearClamp,
+      )
+      ..bindTexture(
+        traceShader.cachedUniformSlot('prefiltered_radiance'),
+        environment.prefilteredRadiance,
+        sampler: cube ? _mipLinearClamp : _equirect,
+      );
+    if (!cube) {
+      pass.bindUniform(
+        traceShader.cachedUniformSlot('RadianceLayoutInfo'),
+        transients.emplace(
+          ByteData.sublistView(
+            Float32List(4)..[0] = environment.usesMipRadianceLayout ? 1.0 : 0.0,
+          ),
+        ),
+      );
+    }
+    for (var i = 0; i < debugTraceRepeats; i++) {
+      pass.dispatch(_groups(scheduledProbes * kTracedRaysPerProbe));
+    }
+
+    // Relocate and classify the probes from their rays.
+    final stateInfo = Float32List(16)
+      ..[0] = spacing.x
+      ..[1] = spacing.y
+      ..[2] = spacing.z
+      ..[3] = placement.minCellEdge * 0.2
+      ..[4] = anchor.x
+      ..[5] = anchor.y
+      ..[6] = anchor.z
+      ..[7] = kTracedRaysPerProbe.toDouble()
+      ..[8] = counts.x
+      ..[9] = counts.y
+      ..[10] = counts.z
+      ..[12] = firstProbe.toDouble()
+      ..[13] = scheduledProbes.toDouble()
+      ..[14] = trace._resetStates ? 1.0 : 0.0;
+    final state = shaders.probeState;
+    pass
+      ..clearBindings()
+      ..bindPipeline(shaders.probeStatePipeline)
+      ..bindStorageBuffer(shaders.slot(state, 'Rays'), rays)
+      ..bindStorageBuffer(shaders.slot(state, 'ProbeStates'), probeStates)
+      ..bindStorageBuffer(shaders.slot(state, 'StateTexels'), stateTexels)
+      ..bindStorageBuffer(shaders.slot(state, 'Directions'), directions)
+      ..bindUniform(
+        state.cachedUniformSlot('StateInfo'),
+        transients.emplace(ByteData.sublistView(stateInfo)),
+      )
+      ..dispatch(_groups(scheduledProbes));
+
+    void gather(
+      gpu.BufferView texels,
+      int width,
+      int height,
+      int tile,
+      int interior,
+      bool depth,
+    ) {
+      final texelCount = width * height;
+      final first = math.min(texelCount, rowStart * tile * width);
+      final count = math.min(texelCount, rowEnd * tile * width) - first;
+      final gatherInfo = Float32List(12)
+        ..[0] = tile.toDouble()
+        ..[1] = interior.toDouble()
+        ..[2] = layout.tilesPerRow.toDouble()
+        ..[3] = depth ? 1.0 : 0.0
+        ..[4] = probeCount.toDouble()
+        ..[5] = kTracedRaysPerProbe.toDouble()
+        ..[6] = width.toDouble()
+        ..[7] = texelCount.toDouble()
+        ..[8] = placement.maxProbeDistance
+        ..[9] = first.toDouble()
+        ..[10] = count.toDouble();
       // The trace's bindings use the same binding numbers for other
       // resources, so they must not carry over.
       pass
         ..clearBindings()
         ..bindPipeline(shaders.gatherPipeline)
-        ..bindStorageBuffer(shaders.gatherRays, rays)
-        ..bindStorageBuffer(shaders.texels, texels)
+        ..bindStorageBuffer(shaders.slot(shaders.gather, 'Rays'), rays)
+        ..bindStorageBuffer(shaders.slot(shaders.gather, 'Texels'), texels)
+        ..bindStorageBuffer(
+          shaders.slot(shaders.gather, 'Directions'),
+          directions,
+        )
         ..bindUniform(
           shaders.gather.cachedUniformSlot('GatherInfo'),
-          context.transientsBuffer.emplace(ByteData.sublistView(gatherInfo)),
-        )
-        ..dispatch(_groups(texelCount));
+          transients.emplace(ByteData.sublistView(gatherInfo)),
+        );
+      for (var i = 0; i < debugGatherRepeats; i++) {
+        pass.dispatch(_groups(count));
+      }
     }
 
     gather(
       irradianceTexels,
-      irradianceTexelCount,
       layout.injectionIrradianceWidth,
+      layout.injectionIrradianceHeight,
+      IrradianceFieldLayout.irradianceTile,
+      kIrradianceInterior,
       false,
     );
-    gather(depthTexels, depthTexelCount, layout.injectionDepthWidth, true);
+    gather(
+      depthTexels,
+      layout.injectionDepthWidth,
+      layout.injectionDepthHeight,
+      IrradianceFieldLayout.depthTile,
+      kDepthMomentInterior,
+      true,
+    );
     pass.end();
     commandBuffer
       ..copyBufferToTexture(
         irradianceTexels,
         gpu.TextureRegion(irradianceTarget),
       )
-      ..copyBufferToTexture(depthTexels, gpu.TextureRegion(depthTarget));
-    rendererSubmissions.submit(commandBuffer);
+      ..copyBufferToTexture(depthTexels, gpu.TextureRegion(depthTarget))
+      ..copyBufferToTexture(
+        stateTexels,
+        gpu.TextureRegion(
+          atlas,
+          y: IrradianceFieldLayout.stateOriginY,
+          width: layout.tilesPerRow,
+          height: layout.tileRows,
+        ),
+      );
+    final onCompleted = debugOnTraceCompleted;
+    final watch = onCompleted == null ? null : (Stopwatch()..start());
+    rendererSubmissions.submit(
+      commandBuffer,
+      onCompleted: watch == null ? null : () => onCompleted!(watch.elapsed),
+    );
+    field.traceOwnsProbeState = true;
     trace._bounceReady = true;
+    trace._resetStates = false;
+  }
+
+  // Renders the material atlas when the set of textures changed.
+  void _renderMaterialAtlas(_Shaders shaders, int frame) {
+    final atlas = trace._scene.atlas;
+    final changed = atlas.takeChanged();
+    if (changed == null) return;
+    if (changed.isEmpty) {
+      atlas.texture = null;
+      return;
+    }
+    final height = atlas.heightFor(changed.length);
+    var target = atlas.texture;
+    if (target == null || target.height != height) {
+      target = atlas.texture = gpu.gpuContext.createTexture(
+        gpu.StorageMode.devicePrivate,
+        atlas.width,
+        height,
+        format: gpu.PixelFormat.r16g16b16a16Float,
+        enableRenderTargetUsage: true,
+        enableShaderReadUsage: true,
+      );
+    }
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    final renderPass = commandBuffer.createRenderPass(
+      gpu.RenderTarget.singleColor(
+        gpu.ColorAttachment(
+          texture: target,
+          loadAction: gpu.LoadAction.clear,
+          clearValue: Vector4(1, 1, 1, 1),
+        ),
+      ),
+    );
+    renderPass
+      ..setColorBlendEnable(false)
+      ..setCullMode(gpu.CullMode.none)
+      ..setPrimitiveType(gpu.PrimitiveType.triangle);
+    final vertex = baseShaderLibrary['FullscreenVertex']!;
+    final view = gpu.BufferView(
+      _fullscreenBuffer,
+      offsetInBytes: 0,
+      lengthInBytes: 6 * 2 * 4,
+    );
+    const edge = GiMaterialAtlas.tileEdge;
+    // One uniform block per tile, uploaded together.
+    final tileInfo = Float32List(changed.length * 64);
+    for (var i = 0; i < changed.length; i++) {
+      final source = changed[i];
+      final size = math.max(source.width, source.height);
+      tileInfo
+        ..[i * 64] = ((i % GiMaterialAtlas.tilesPerRow) * edge).toDouble()
+        ..[i * 64 + 1] = ((i ~/ GiMaterialAtlas.tilesPerRow) * edge).toDouble()
+        ..[i * 64 + 2] = edge.toDouble()
+        ..[i * 64 + 3] = math.max(0.0, math.log(size / edge) / math.ln2);
+    }
+    final infoView = trace._tileInfo.upload(frame, tileInfo);
+    for (var i = 0; i < changed.length; i++) {
+      renderPass
+        ..clearBindings()
+        ..bindPipeline(resolvePipeline(vertex, shaders.materialTile));
+      bindVertexBufferCompat(renderPass, view, 6);
+      renderPass
+        ..bindTexture(
+          shaders.materialTile.cachedUniformSlot('source'),
+          changed[i],
+          sampler: _materialSource,
+        )
+        ..bindUniform(
+          shaders.materialTile.cachedUniformSlot('TileInfo'),
+          gpu.BufferView(
+            infoView.buffer,
+            offsetInBytes: i * 256,
+            lengthInBytes: 16,
+          ),
+        );
+      drawCompat(renderPass, 6);
+    }
+    rendererSubmissions.submit(commandBuffer);
+  }
+
+  // The rays ProbeRayDirection (irradiance_rays.glsl) gives the trace, so
+  // the gathers and the probe pass read them instead of recomputing them for
+  // every texel.
+  static Float32List _rayDirections(Matrix4 rotation) {
+    const goldenAngle = 2.399963229728653;
+    const n = kTracedRaysPerProbe;
+    final out = Float32List(n * 4);
+    final v = Vector3.zero();
+    for (var i = 0; i < n; i++) {
+      final cosTheta = 1.0 - (2.0 * i + 1.0) / n;
+      final sinTheta = math.sqrt(math.max(0.0, 1.0 - cosTheta * cosTheta));
+      final phi = goldenAngle * i;
+      v.setValues(math.cos(phi) * sinTheta, math.sin(phi) * sinTheta, cosTheta);
+      rotation.rotate3(v);
+      out
+        ..[i * 4] = v.x
+        ..[i * 4 + 1] = v.y
+        ..[i * 4 + 2] = v.z;
+    }
+    return out;
   }
 
   static int _groups(int invocations) =>
-      (invocations + _workgroupSize - 1) ~/ _workgroupSize;
+      math.max(1, (invocations + _workgroupSize - 1) ~/ _workgroupSize);
 }

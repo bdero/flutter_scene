@@ -50,6 +50,9 @@ highp vec2 SphericalToEquirectangular(vec3 direction) {
 // Any equirect read with an implicit mip level needs this. A texture with no
 // mip chain hides the seam half of it, which is how it survives being written
 // the obvious way.
+// A compute stage has no screen derivatives, so it defines
+// FLUTTER_SCENE_NO_DERIVATIVES and goes without these two.
+#ifndef FLUTTER_SCENE_NO_DERIVATIVES
 vec3 SampleEquirectByFootprint(sampler2D tex, vec3 direction, highp vec2 uv) {
   // Radians per pixel, from the direction itself: for a unit vector the chord
   // and the angle agree to first order.
@@ -67,6 +70,7 @@ vec3 SampleEnvironmentTexture(sampler2D tex, vec3 direction) {
   return SampleEquirectByFootprint(tex, direction,
                                    SphericalToEquirectangular(direction));
 }
+#endif  // FLUTTER_SCENE_NO_DERIVATIVES
 
 vec3 SampleEnvironmentTextureLod(sampler2D tex, vec3 direction, float lod) {
   highp vec2 uv = SphericalToEquirectangular(direction);

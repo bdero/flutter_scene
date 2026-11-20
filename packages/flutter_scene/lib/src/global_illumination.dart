@@ -86,6 +86,9 @@ class GlobalIlluminationSettings {
   /// crossing the scene, so it is a quality tradeoff rather than a free win.
   int probeUpdateBudget = 0;
 
+  /// How the field learns the scene's light. See [IrradianceFeed].
+  IrradianceFeed feed = IrradianceFeed.screenSpace;
+
   /// Resolution of the downsampled buffer the screen-space injection
   /// scatters from. Each texel becomes one scattered sample per frame.
   IrradianceInjectionResolution injectionResolution =
@@ -115,6 +118,24 @@ class GlobalIlluminationSettings {
   /// costing nothing per frame beyond the receiver. Ignored when the field
   /// has no bake.
   bool bakeOnly = false;
+}
+
+/// How a scene's irradiance field is fed.
+/// {@category Lighting and environment}
+enum IrradianceFeed {
+  /// Scatters the previous frame's shaded screen into the probes. Works on
+  /// every backend, and sees only what is on screen.
+  screenSpace,
+
+  /// Traces rays from every probe against the scene in a compute pass, so
+  /// off-screen emitters, walls, and sky all reach the field, and moves
+  /// probes out of geometry. Falls back to [screenSpace] where the device
+  /// has no compute (WebGL2, OpenGL ES, and Flutter before 3.53).
+  ///
+  /// Traces static and skinned meshes with their base color and emissive
+  /// textures, the sun, and punctual lights. Morph targets and rect area
+  /// lights are not traced yet.
+  rayTraced,
 }
 
 /// Where a scene's irradiance volume sits.
