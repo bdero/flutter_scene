@@ -1,5 +1,5 @@
-/// Builds flutter_scene's own engine assets, the base shader bundle and the
-/// physical material bundle.
+/// Builds flutter_scene's own engine assets, the base and compute shader
+/// bundles and the physical material bundle.
 ///
 /// flutter_scene's own `hook/build.dart` calls [buildOwnEngineAssets], so a
 /// consumer needs no hook of their own. It writes into flutter_scene's own
@@ -64,6 +64,12 @@ const String _engineOwner = 'flutter_scene';
 /// The manifest of the engine's shader bundle, relative to flutter_scene's root.
 const String _baseBundleManifest = 'shaders/base.shaderbundle.json';
 
+/// The manifest of the engine's compute shaders, relative to flutter_scene's
+/// root. Kept out of the base bundle so a device without compute never loads
+/// them, and built for every target anyway, since every compiler accepts a
+/// compute entry (OpenGL ES gets an unused GLSL ES 3.10 variant).
+const String _computeBundleManifest = 'shaders/compute.shaderbundle.json';
+
 /// GLSL ES 3.00 for the OpenGL ES dialect. The radiance sampling uses
 /// textureLod, which is core in 300 es; the 1.00 form needs
 /// GL_EXT_shader_texture_lod, which software GL stacks (Mesa llvmpipe, Android
@@ -122,12 +128,24 @@ Future<void> _build({
   final lightingOff = options.compiledOutLightingFeatures;
   // flutter_scene's own root, the parent of its shader include directory.
   final root = (await engineShaderIncludeDirectory(buildInput)).resolve('../');
-  await _buildBaseShaderBundle(
+  await _buildEngineShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
     sourceRoot: root,
+    bundleId: 'base',
+    manifestPath: _baseBundleManifest,
     debugViews: debugViews,
     lightingOff: lightingOff,
+  );
+  // No lit or debug-view entries, so neither option reaches it.
+  await _buildEngineShaderBundle(
+    buildInput: buildInput,
+    buildOutput: buildOutput,
+    sourceRoot: root,
+    bundleId: 'compute',
+    manifestPath: _computeBundleManifest,
+    debugViews: false,
+    lightingOff: const {},
   );
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
@@ -142,15 +160,17 @@ Future<void> _build({
   );
 }
 
-Future<void> _buildBaseShaderBundle({
+Future<void> _buildEngineShaderBundle({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
   required Uri sourceRoot,
+  required String bundleId,
+  required String manifestPath,
   required bool debugViews,
   required Set<LightingFeature> lightingOff,
 }) async {
   final shaders = sourceRoot.resolve('shaders/');
-  final manifestFile = File.fromUri(sourceRoot.resolve(_baseBundleManifest));
+  final manifestFile = File.fromUri(sourceRoot.resolve(manifestPath));
   if (!manifestFile.existsSync()) {
     throw Exception(
       'flutter_scene: the engine shader manifest is missing at '
@@ -176,7 +196,7 @@ Future<void> _buildBaseShaderBundle({
       buildInput,
       // Names the views' layout, so a bundle with them compiled into every
       // entry is rebuilt with twins.
-      'engine bundle=base debug_views=${debugViews ? 'twins' : false} '
+      'engine bundle=$bundleId debug_views=${debugViews ? 'twins' : false} '
       'lighting_off=${describeCompiledOutLightingFeatures(lightingOff)}',
     ),
   );
@@ -205,7 +225,7 @@ Future<void> _buildBaseShaderBundle({
       '${lightingFeaturesVariantSuffix(lightingOff)}';
   final outputUri = tree.fileUri(
     GeneratedAssetFamily.shaderBundle,
-    nameId: 'base',
+    nameId: bundleId,
     extension: '.shaderbundle',
     variant: variant,
     target: target,
@@ -213,13 +233,13 @@ Future<void> _buildBaseShaderBundle({
   final wgslUri = wgslSidecarsForBuild(buildInput)
       ? Uri.file(wgslSidecarPathFor(outputUri.toFilePath()))
       : null;
-  if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
+  if (tree.isFresh(GeneratedAssetFamily.shaderBundle, bundleId, stamp, [
     outputUri,
     ?wgslUri,
   ], target: target)) {
     tree.recordFile(
       family: GeneratedAssetFamily.shaderBundle,
-      id: 'base',
+      id: bundleId,
       uri: outputUri,
       stamp: stamp,
       owner: _engineOwner,
@@ -228,11 +248,11 @@ Future<void> _buildBaseShaderBundle({
     // Recorded again too, or the sweep in save() deletes it; dropped when the
     // switch is off, or a recorded sidecar outlives it.
     if (wgslUri == null) {
-      tree.drop(GeneratedAssetFamily.wgsl, 'base', target: target);
+      tree.drop(GeneratedAssetFamily.wgsl, bundleId, target: target);
     } else if (File.fromUri(wgslUri).existsSync()) {
       tree.recordFile(
         family: GeneratedAssetFamily.wgsl,
-        id: 'base',
+        id: bundleId,
         uri: wgslUri,
         stamp: stamp,
         owner: _engineOwner,
@@ -261,11 +281,11 @@ Future<void> _buildBaseShaderBundle({
   }
   buildOutput.dependencies.add(manifestFile.uri);
 
-  stdout.writeln('flutter_scene: compiling the engine shader bundle');
+  stdout.writeln('flutter_scene: compiling the engine $bundleId shader bundle');
   await buildTargetShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
-    bundleName: 'base',
+    bundleName: bundleId,
     manifest: manifest,
     entryRoot: entryRoot,
     manifestDirectory: shaders,
