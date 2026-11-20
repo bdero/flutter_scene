@@ -18,6 +18,13 @@ final class WebGlCommandBuffer extends CommandBuffer {
     return pass;
   }
 
+  // TODO(webgl-buffer-copy): upload through a PIXEL_UNPACK_BUFFER binding
+  // once something on WebGL2 needs it. Only compute output uses it, and
+  // WebGL2 has no compute.
+  @override
+  void copyBufferToTexture(BufferView source, TextureRegion destination) =>
+      throw UnsupportedError('copyBufferToTexture is not supported on WebGL2.');
+
   @override
   void submit({CompletionCallback? completionCallback}) {
     _activePass?._finish();
