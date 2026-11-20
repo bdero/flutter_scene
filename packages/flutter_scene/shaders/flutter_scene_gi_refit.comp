@@ -1,0 +1,66 @@
+// Refits one depth level of a bottom-level BVH to its current triangles. One
+// invocation per node of the level; levels run deepest first, so an inner
+// node's children are already current. Links and leaf ranges are unchanged.
+
+layout(local_size_x = 64) in;
+
+layout(std430) buffer;
+
+// Two per node: min.xyz and miss link, max.xyz and leaf.
+layout(binding = 0) buffer Nodes {
+  vec4 data[];
+}
+nodes;
+
+layout(binding = 1) readonly buffer Triangles {
+  vec4 data[];
+}
+triangles;
+
+// Node indices, local to the tree, grouped by level.
+layout(binding = 2) readonly buffer Order {
+  uint data[];
+}
+order;
+
+uniform RefitInfo {
+  // x: the tree's first node. y: its first triangle. z: this level's first
+  // order entry. w: the level's node count.
+  vec4 params;
+}
+info;
+
+void main() {
+  if (gl_GlobalInvocationID.x >= uint(info.params.w)) {
+    return;
+  }
+  int base = int(info.params.x);
+  int node = int(order.data[uint(info.params.z) + gl_GlobalInvocationID.x]);
+  vec4 low = nodes.data[(base + node) * 2];
+  vec4 high = nodes.data[(base + node) * 2 + 1];
+  vec3 lo = vec3(1e30);
+  vec3 hi = vec3(-1e30);
+  if (high.w < 0.0) {
+    // The left child follows its parent; the right child starts where the
+    // left subtree ends, which is the left child's miss link.
+    int left = node + 1;
+    int right = int(nodes.data[(base + left) * 2].w);
+    lo = min(nodes.data[(base + left) * 2].xyz,
+             nodes.data[(base + right) * 2].xyz);
+    hi = max(nodes.data[(base + left) * 2 + 1].xyz,
+             nodes.data[(base + right) * 2 + 1].xyz);
+  } else {
+    int packed = int(high.w);
+    int first = int(info.params.y) + packed / 8;
+    int count = packed - (packed / 8) * 8;
+    for (int i = 0; i < count; i++) {
+      vec3 v0 = triangles.data[(first + i) * 4].xyz;
+      vec3 v1 = v0 + triangles.data[(first + i) * 4 + 1].xyz;
+      vec3 v2 = v0 + triangles.data[(first + i) * 4 + 2].xyz;
+      lo = min(lo, min(v0, min(v1, v2)));
+      hi = max(hi, max(v0, max(v1, v2)));
+    }
+  }
+  nodes.data[(base + node) * 2] = vec4(lo, low.w);
+  nodes.data[(base + node) * 2 + 1] = vec4(hi, high.w);
+}

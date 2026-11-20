@@ -4466,7 +4466,7 @@ base class Scene implements SceneGraph {
       // Traced where the device has compute (and the feed is on), which sees
       // the whole static scene rather than only what is on screen.
       graph.addPass(
-        _irradianceTrace.available
+        _irradianceTrace.availableFor(settings)
             ? IrradianceTracePass(
                 field: _irradianceField,
                 trace: _irradianceTrace,

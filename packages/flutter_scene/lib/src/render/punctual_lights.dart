@@ -770,7 +770,6 @@ class PunctualLightBuffer {
   /// it and the light count. Pure and GPU-independent so the texel layout,
   /// falloff, and cone math can be unit tested; [build] wraps it with culling
   /// and the texture uploads.
-  @visibleForTesting
   static (Float32List, int) packLights({
     required List<DirectionalLightComponent> directionals,
     DirectionalLightComponent? primaryDirectional,

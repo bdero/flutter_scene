@@ -133,6 +133,7 @@ export 'src/fog.dart' show Fog, FogMode;
 export 'src/global_illumination.dart'
     show
         GlobalIlluminationSettings,
+        IrradianceFeed,
         IrradianceInjectionResolution,
         IrradianceProbeGrid,
         IrradianceVolumeMode;

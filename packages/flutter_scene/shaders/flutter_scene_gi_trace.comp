@@ -1,54 +1,80 @@
-// Traces each irradiance probe's rays against the scene's triangles and shades
-// what they hit, the world-space feed of the irradiance field. One invocation
-// per (probe, ray).
+// Traces each irradiance probe's rays against the scene and shades what they
+// hit, the world-space feed of the irradiance field. One invocation per
+// (probe, ray) of this frame's scheduled probes.
 //
-// A hit radiates what the lit shader's Lambert term gives it (direct sun with
-// a traced shadow ray), its emission, and the field's previous gather at the
-// hit point for further bounces. A miss sees the environment.
+// The scene is two levels, a top-level BVH over instances and a bottom-level
+// BVH per mesh, both in GiBvhNodes' threaded layout (gi_bvh.dart), so each
+// walk is stackless. Instances past the top level's are tested one by one;
+// those are the skinned meshes, whose bottom levels are refit on the GPU.
 //
-// The BVH layout is GiBvh's (gi_bvh.dart).
+// A hit radiates its emission, the sun and punctual lights each with a traced
+// shadow ray, and its albedo times the field's own irradiance at the hit for
+// further bounces, read through the lit shader's receiver. A miss sees the
+// prefiltered environment. A hit on a one-sided back face records black at a
+// fifth of its distance, negated, which the gather's visibility moments and
+// the probe classifier both read.
 
 layout(local_size_x = 64) in;
 
 layout(std430) buffer;
 
+#define FLUTTER_SCENE_NO_DERIVATIVES
+
+#include <diffuse_sh.glsl>
 #include <irradiance_field.glsl>
 #include <irradiance_rays.glsl>
+#include <texture.glsl>
 
-// Two per node: min.xyz and miss link, max.xyz and leaf (first * 8 + count,
-// or -1 for an inner node).
-layout(binding = 0) readonly buffer Nodes {
+// Every mesh's bottom level, two per node: min.xyz and miss link, max.xyz and
+// leaf (first * 8 + count, or -1 for an inner node). Links are local to the
+// mesh's tree.
+layout(binding = 0) readonly buffer BlasNodes {
   vec4 data[];
 }
-nodes;
+blas_nodes;
 
-// Three per triangle: v0 and material index, edge 1, edge 2.
-layout(binding = 1) readonly buffer Triangles {
+// Four per triangle: v0 and uv0.x, edge 1 and uv0.y, edge 2, uv1 and uv2.
+layout(binding = 1) readonly buffer BlasTriangles {
   vec4 data[];
 }
-triangles;
+blas_triangles;
 
-// Two per material: diffuse albedo with 1 in w when double-sided, then
-// emission.
-layout(binding = 2) readonly buffer Materials {
+// The top level over bounded instances, in the same node layout, its leaves
+// addressing instances.
+layout(binding = 2) readonly buffer TlasNodes {
+  vec4 data[];
+}
+tlas_nodes;
+
+// Four per instance: the world-to-object rows, then the bottom level's first
+// node and triangle, the material, and -1 for a mirroring transform.
+layout(binding = 3) readonly buffer Instances {
+  vec4 data[];
+}
+instances;
+
+// Three per material: diffuse albedo with 1 in w when double-sided, emission,
+// and the atlas tiles of the albedo and emission textures (-1 for none).
+layout(binding = 4) readonly buffer Materials {
   vec4 data[];
 }
 materials;
 
-// The environment's 9 diffuse spherical-harmonic coefficients.
-layout(binding = 3) readonly buffer Sky {
-  vec4 coefficients[];
+// Four per punctual light, the lit shader's first four parameter texels.
+layout(binding = 5) readonly buffer Lights {
+  vec4 data[];
 }
-sky;
+lights;
 
-// The previous gather of the irradiance accumulator, as packed halves.
-layout(binding = 4) readonly buffer Previous {
-  uvec2 texels[];
+// Two per probe: its relocation offset and inactivity, then the lattice
+// index that offset belongs to (w is 1 once written).
+layout(binding = 6) readonly buffer ProbeStates {
+  vec4 data[];
 }
-previous;
+probe_states;
 
 // One per (probe, ray): radiance, then hit distance.
-layout(binding = 5) writeonly buffer Rays {
+layout(binding = 7) writeonly buffer Rays {
   vec4 data[];
 }
 rays;
@@ -68,14 +94,46 @@ uniform TraceInfo {
   vec4 sun_direction;
   // rgb: the sun's color times intensity. w: the firefly luminance clamp.
   vec4 sun_radiance;
-  // x: environment intensity. y: BVH node count. z: 1 to add the previous
-  // gather as a further bounce. w: probe count.
+  // x: environment intensity. y: top-level node count. z: 1 to add the
+  // field's irradiance at a hit as a further bounce. w: scheduled probes.
   vec4 params;
+  // x: the first scheduled probe. y: punctual light count. z: the first
+  // instance outside the top level. w: instance count.
+  vec4 scene;
+  // xy: the material atlas's reciprocal size. z: its tile edge. w: the
+  // roughness band a miss reads the sky at.
+  vec4 material_atlas;
 }
 info;
 
+// The lit shader's irradiance-field inputs, under the names its receiver
+// reads, with the field's intensity fixed at 1 so a bounce is physical.
+uniform FieldInfo {
+  highp vec4 gi_grid;
+  highp vec4 gi_anchor;
+  highp vec4 gi_counts;
+  highp vec4 gi_atlas;
+  highp vec4 gi_visibility;
+}
+frag_info;
+
+// Last frame's field atlas, environment strip in its first rows.
+uniform highp sampler2D irradiance_field;
+uniform RadianceSampler prefiltered_radiance;
+// Albedo and emission textures, one tile each, linear.
+uniform highp sampler2D material_atlas;
+
+#include <irradiance_receiver.glsl>
+
 const float kPi = 3.14159265358979323846;
 const float kNoHit = 1e30;
+
+struct Hit {
+  float t;
+  int triangle;
+  int instance;
+  vec2 barycentric;
+};
 
 bool HitBox(vec3 origin, vec3 inverse_direction, vec3 low, vec3 high,
             float t_max) {
@@ -88,11 +146,12 @@ bool HitBox(vec3 origin, vec3 inverse_direction, vec3 low, vec3 high,
   return enter <= exit;
 }
 
-// Nearest hit distance along the ray, or kNoHit.
-float HitTriangle(int index, vec3 origin, vec3 direction) {
-  vec3 v0 = triangles.data[index * 3].xyz;
-  vec3 e1 = triangles.data[index * 3 + 1].xyz;
-  vec3 e2 = triangles.data[index * 3 + 2].xyz;
+// Hit distance along the ray, or kNoHit, with the hit's barycentrics.
+float HitTriangle(int index, vec3 origin, vec3 direction, out vec2 uv) {
+  uv = vec2(0.0);
+  vec3 v0 = blas_triangles.data[index * 4].xyz;
+  vec3 e1 = blas_triangles.data[index * 4 + 1].xyz;
+  vec3 e2 = blas_triangles.data[index * 4 + 2].xyz;
   vec3 p = cross(direction, e2);
   float det = dot(e1, p);
   if (abs(det) < 1e-12) return kNoHit;
@@ -104,22 +163,30 @@ float HitTriangle(int index, vec3 origin, vec3 direction) {
   float v = dot(direction, q) * inverse_det;
   if (v < 0.0 || u + v > 1.0) return kNoHit;
   float t = dot(e2, q) * inverse_det;
+  uv = vec2(u, v);
   return t > 1e-5 ? t : kNoHit;
 }
 
-// The stackless walk: a hit inner node descends to the next node, anything
-// else jumps to its miss link. With [any_hit] it stops at the first hit.
-float Trace(vec3 origin, vec3 direction, float t_max, bool any_hit,
-            out int hit_triangle) {
-  vec3 inverse_direction = 1.0 / direction;
-  float best = t_max;
-  hit_triangle = -1;
-  int node_count = int(info.params.y);
+// Walks one instance's bottom level. The ray's affine image in object space
+// keeps its parameter, so distances compare across instances as they are.
+void TraceInstance(int instance, vec3 origin, vec3 direction, bool any_hit,
+                   inout Hit hit) {
+  vec4 r0 = instances.data[instance * 4];
+  vec4 r1 = instances.data[instance * 4 + 1];
+  vec4 r2 = instances.data[instance * 4 + 2];
+  vec4 meta = instances.data[instance * 4 + 3];
+  vec3 o = vec3(dot(r0.xyz, origin) + r0.w, dot(r1.xyz, origin) + r1.w,
+                dot(r2.xyz, origin) + r2.w);
+  vec3 d = vec3(dot(r0.xyz, direction), dot(r1.xyz, direction),
+                dot(r2.xyz, direction));
+  vec3 inverse_direction = 1.0 / d;
+  int node_base = int(meta.x);
+  int triangle_base = int(meta.y);
   int node = 0;
-  while (node >= 0 && node < node_count) {
-    vec4 low = nodes.data[node * 2];
-    vec4 high = nodes.data[node * 2 + 1];
-    if (HitBox(origin, inverse_direction, low.xyz, high.xyz, best)) {
+  while (node >= 0) {
+    vec4 low = blas_nodes.data[(node_base + node) * 2];
+    vec4 high = blas_nodes.data[(node_base + node) * 2 + 1];
+    if (HitBox(o, inverse_direction, low.xyz, high.xyz, hit.t)) {
       if (high.w < 0.0) {
         node += 1;
         continue;
@@ -128,147 +195,228 @@ float Trace(vec3 origin, vec3 direction, float t_max, bool any_hit,
       int first = packed / 8;
       int count = packed - first * 8;
       for (int i = 0; i < count; i++) {
-        float t = HitTriangle(first + i, origin, direction);
-        if (t < best) {
-          best = t;
-          hit_triangle = first + i;
-          if (any_hit) return best;
+        vec2 uv;
+        int triangle = triangle_base + first + i;
+        float t = HitTriangle(triangle, o, d, uv);
+        if (t < hit.t) {
+          hit.t = t;
+          hit.triangle = triangle;
+          hit.instance = instance;
+          hit.barycentric = uv;
+          if (any_hit) return;
         }
       }
     }
     node = int(low.w);
   }
-  return best;
+}
+
+// The nearest hit before [t_max], or with [any_hit] the first one found.
+Hit Trace(vec3 origin, vec3 direction, float t_max, bool any_hit) {
+  Hit hit;
+  hit.t = t_max;
+  hit.triangle = -1;
+  hit.instance = -1;
+  hit.barycentric = vec2(0.0);
+  vec3 inverse_direction = 1.0 / direction;
+  int node_count = int(info.params.y);
+  int node = 0;
+  while (node >= 0 && node < node_count) {
+    vec4 low = tlas_nodes.data[node * 2];
+    vec4 high = tlas_nodes.data[node * 2 + 1];
+    if (HitBox(origin, inverse_direction, low.xyz, high.xyz, hit.t)) {
+      if (high.w < 0.0) {
+        node += 1;
+        continue;
+      }
+      int packed = int(high.w);
+      int first = packed / 8;
+      int count = packed - first * 8;
+      for (int i = 0; i < count; i++) {
+        TraceInstance(first + i, origin, direction, any_hit, hit);
+        if (any_hit && hit.triangle >= 0) return hit;
+      }
+    }
+    node = int(low.w);
+  }
+  for (int i = int(info.scene.z); i < int(info.scene.w); i++) {
+    TraceInstance(i, origin, direction, any_hit, hit);
+    if (any_hit && hit.triangle >= 0) return hit;
+  }
+  return hit;
+}
+
+bool Occluded(vec3 origin, vec3 direction, float distance) {
+  return Trace(origin, direction, distance, true).triangle >= 0;
+}
+
+// A material texture's tile, wrapped like a repeat sampler.
+// TODO(gi-trace-albedo): honor each texture's own address mode, texture
+// transform, and texture coordinate set.
+vec3 SampleMaterialTile(vec2 tile, vec2 uv) {
+  float edge = info.material_atlas.z;
+  vec2 texel = tile + vec2(0.5) + fract(uv) * (edge - 1.0);
+  return textureLod(material_atlas, texel * info.material_atlas.xy, 0.0).rgb;
 }
 
 vec3 SkyRadiance(vec3 direction) {
-  // TODO(gi-trace-sky): the diffuse coefficients are a blurred stand-in for
-  // the sky's radiance. Sample the prefiltered radiance atlas instead.
-  vec3 n = mat3(info.environment_transform) * direction;
-  vec3 value = sky.coefficients[0].xyz * 0.282095 +
-               sky.coefficients[1].xyz * (0.488603 * n.y) +
-               sky.coefficients[2].xyz * (0.488603 * n.z) +
-               sky.coefficients[3].xyz * (0.488603 * n.x) +
-               sky.coefficients[4].xyz * (1.092548 * n.x * n.y) +
-               sky.coefficients[5].xyz * (1.092548 * n.y * n.z) +
-               sky.coefficients[6].xyz * (0.315392 * (3.0 * n.z * n.z - 1.0)) +
-               sky.coefficients[7].xyz * (1.092548 * n.x * n.z) +
-               sky.coefficients[8].xyz * (0.546274 * (n.x * n.x - n.y * n.y));
-  return max(value, vec3(0.0)) * info.params.x;
+  vec3 environment_direction = mat3(info.environment_transform) * direction;
+  return SampleRadianceEnv(prefiltered_radiance, environment_direction,
+                           info.material_atlas.w) *
+         info.params.x;
 }
 
-// The previous gather's mean irradiance at [position] facing [normal],
-// trilinear over the enclosing probes with a smooth backface weight.
-// TODO(gi-trace-visibility): add the Chebyshev depth test the receiver uses,
-// so a bounce does not leak through thin walls.
-vec3 PreviousIrradiance(vec3 position, vec3 normal) {
-  vec3 lattice = position / info.grid_spacing.xyz;
-  vec3 base = floor(lattice);
-  vec3 alpha = clamp(lattice - base, 0.0, 1.0);
-  float tiles_per_row = info.grid_counts.w;
-  float width = tiles_per_row * kProbeIrradianceTile;
-  vec2 oct = clamp(ProbeOctEncode(normal), 0.0, 1.0);
-  vec2 interior = min(floor(oct * kProbeIrradianceInterior),
-                      vec2(kProbeIrradianceInterior - 1.0));
+// The lit shader's punctual light loop, Lambert only, each light with a
+// traced shadow ray.
+// TODO(gi-trace-lights): rect area lights add nothing. Sample one point on
+// the rectangle per hit.
+// TODO(gi-trace-lights): every light is shaded at every hit. Pick a few by
+// importance once scenes carry many.
+vec3 PunctualIrradiance(vec3 position, vec3 normal) {
   vec3 sum = vec3(0.0);
-  float weight_sum = 0.0;
-  for (int corner = 0; corner < 8; corner++) {
-    vec3 offset = vec3(float(corner & 1), float((corner >> 1) & 1),
-                       float((corner >> 2) & 1));
-    vec3 probe_lattice = base + offset;
-    vec3 relative = probe_lattice - info.grid_anchor.xyz;
-    if (any(lessThan(relative, vec3(0.0))) ||
-        any(greaterThanEqual(relative, info.grid_counts.xyz))) {
-      continue;
+  int count = int(info.scene.y);
+  for (int i = 0; i < count; i++) {
+    vec4 l0 = lights.data[i * 4];
+    vec4 l1 = lights.data[i * 4 + 1];
+    vec4 l2 = lights.data[i * 4 + 2];
+    vec4 l3 = lights.data[i * 4 + 3];
+    float type = l0.w;
+    if (type > 2.5) continue;
+    vec3 radiance = l1.rgb;
+    vec3 to_light;
+    float distance = kNoHit;
+    if (type < 0.5) {
+      to_light = -normalize(l2.xyz);
+    } else {
+      vec3 offset = l0.xyz - position;
+      float dist_sq = dot(offset, offset);
+      distance = sqrt(max(dist_sq, 1e-8));
+      to_light = offset / distance;
+      float factor = dist_sq * l1.w * l1.w;
+      float window = clamp(1.0 - factor * factor, 0.0, 1.0);
+      if (window <= 0.0) continue;
+      float source_radius = l3.w;
+      radiance *= (window * window) /
+                  max(pow(max(dist_sq, source_radius * source_radius),
+                          l3.z * 0.5),
+                      1e-4);
+      if (type > 1.5) {
+        float cone = clamp(dot(normalize(l2.xyz), -to_light) * l2.w + l3.x,
+                           0.0, 1.0);
+        if (cone <= 0.0) continue;
+        radiance *= cone * cone;
+      }
     }
-    vec3 trilinear = mix(vec3(1.0) - alpha, alpha, offset);
-    vec3 to_probe = probe_lattice * info.grid_spacing.xyz - position;
-    float distance_to_probe = length(to_probe);
-    float facing = distance_to_probe > 1e-5
-        ? (dot(to_probe / distance_to_probe, normal) + 1.0) * 0.5
-        : 1.0;
-    float weight = trilinear.x * trilinear.y * trilinear.z *
-                   (facing * facing + 0.2);
-    float probe = ProbeLinearIndex(
-        ProbeWrapSlot(probe_lattice, info.grid_counts.xyz),
-        info.grid_counts.xyz);
-    vec2 texel = ProbeTileOrigin(probe, tiles_per_row, 0.0,
-                                 kProbeIrradianceTile) +
-                 vec2(1.0) + interior;
-    uvec2 packed = previous.texels[uint(texel.y * width + texel.x)];
-    vec4 stored = vec4(unpackHalf2x16(packed.x), unpackHalf2x16(packed.y));
-    if (stored.a <= 1e-6) continue;
-    sum += stored.rgb / stored.a * weight;
-    weight_sum += weight;
+    float n_dot_l = dot(normal, to_light);
+    if (n_dot_l <= 0.0) continue;
+    if (Occluded(position, to_light, distance)) continue;
+    sum += radiance * n_dot_l;
   }
-  return weight_sum > 0.0 ? sum / weight_sum : vec3(0.0);
+  return sum;
+}
+
+// The field's irradiance over pi at a hit, as the lit shader composes it:
+// the environment's diffuse term, replaced by the field inside its volume.
+vec3 FieldIrradiance(vec3 position, vec3 normal, vec3 toward_probe) {
+  vec3 environment_normal = mat3(info.environment_transform) * normal;
+  vec3 irradiance =
+      max(EvaluateDiffuseSH(irradiance_field, environment_normal, 0),
+          vec3(0.0)) *
+      info.params.x;
+  float coverage = IrradianceFieldCoverage(position);
+  if (coverage > 0.0) {
+    irradiance = mix(irradiance,
+                     SampleIrradianceField(position, normal, toward_probe),
+                     coverage);
+  }
+  return irradiance;
 }
 
 void main() {
   uint rays_per_probe = uint(info.grid_anchor.w);
-  uint index = gl_GlobalInvocationID.x;
-  if (index >= uint(info.params.w) * rays_per_probe) {
+  uint local = gl_GlobalInvocationID.x;
+  if (local >= uint(info.params.w) * rays_per_probe) {
     return;
   }
-  float probe = float(index / rays_per_probe);
-  float ray = float(index - (index / rays_per_probe) * rays_per_probe);
+  uint probe_index = uint(info.scene.x) + local / rays_per_probe;
+  float probe = float(probe_index);
+  float ray = float(local - (local / rays_per_probe) * rays_per_probe);
+  uint index = probe_index * rays_per_probe + uint(ray);
 
-  // The probe's lattice index from its storage slot, as the blend derives it.
+  // The probe's lattice index from its storage slot, as the blend derives it,
+  // moved by its relocation offset when that offset is for this lattice.
   vec3 counts = info.grid_counts.xyz;
   vec3 slot = vec3(mod(probe, counts.x),
                    mod(floor(probe / counts.x), counts.y),
                    floor(probe / (counts.x * counts.y)));
   vec3 lattice = info.grid_anchor.xyz +
                  ProbeWrapSlot(slot - info.grid_anchor.xyz, counts);
-  vec3 origin = lattice * info.grid_spacing.xyz;
+  vec4 state = probe_states.data[probe_index * 2u];
+  vec4 owner = probe_states.data[probe_index * 2u + 1u];
+  vec3 relocation =
+      owner.w > 0.5 && all(equal(owner.xyz, lattice)) ? state.xyz : vec3(0.0);
+  vec3 origin = lattice * info.grid_spacing.xyz + relocation;
   vec3 direction = ProbeRayDirection(ray, float(rays_per_probe),
                                      mat3(info.ray_rotation));
 
   float max_distance = info.grid_spacing.w;
-  int hit;
-  float t = Trace(origin, direction, kNoHit, false, hit);
-  vec3 radiance;
-  if (hit < 0) {
-    radiance = SkyRadiance(direction);
-    t = max_distance;
-  } else {
-    vec4 v0 = triangles.data[hit * 3];
-    vec3 e1 = triangles.data[hit * 3 + 1].xyz;
-    vec3 e2 = triangles.data[hit * 3 + 2].xyz;
-    int material = int(v0.w);
-    vec4 surface = materials.data[material * 2];
-    vec3 albedo = surface.rgb;
-    vec3 emission = materials.data[material * 2 + 1].rgb;
-    vec3 normal = normalize(cross(e1, e2));
-    if (dot(normal, direction) > 0.0) {
-      if (surface.w < 0.5) {
-        // A one-sided back face means the probe sits inside geometry. Record
-        // a dark, short hit so the receiver's visibility test rejects it.
-        // TODO(gi-trace-relocation): move such probes out of geometry
-        // instead of only darkening them.
-        rays.data[index] = vec4(0.0, 0.0, 0.0, min(t, max_distance) * 0.2);
-        return;
-      }
-      normal = -normal;
-    }
-    float epsilon = 1e-3 * min(info.grid_spacing.x,
-                               min(info.grid_spacing.y, info.grid_spacing.z));
-    vec3 position = origin + direction * t + normal * epsilon;
+  Hit hit = Trace(origin, direction, kNoHit, false);
+  if (hit.triangle < 0) {
+    rays.data[index] = vec4(
+        ProbeClampLuminance(SkyRadiance(direction), info.sun_radiance.w),
+        max_distance);
+    return;
+  }
 
-    radiance = emission;
-    if (info.sun_direction.w > 0.5) {
-      float n_dot_l = dot(normal, info.sun_direction.xyz);
-      int blocker;
-      if (n_dot_l > 0.0 &&
-          Trace(position, info.sun_direction.xyz, kNoHit, true, blocker) >=
-              kNoHit) {
-        radiance += albedo * (1.0 / kPi) * info.sun_radiance.rgb * n_dot_l;
-      }
+  vec4 t0 = blas_triangles.data[hit.triangle * 4];
+  vec4 t1 = blas_triangles.data[hit.triangle * 4 + 1];
+  vec4 t2 = blas_triangles.data[hit.triangle * 4 + 2];
+  vec4 t3 = blas_triangles.data[hit.triangle * 4 + 3];
+  vec4 r0 = instances.data[hit.instance * 4];
+  vec4 r1 = instances.data[hit.instance * 4 + 1];
+  vec4 r2 = instances.data[hit.instance * 4 + 2];
+  vec4 meta = instances.data[hit.instance * 4 + 3];
+  // An object normal goes to world by the transpose of world-to-object.
+  vec3 object_normal = cross(t1.xyz, t2.xyz);
+  vec3 normal = normalize(r0.xyz * object_normal.x + r1.xyz * object_normal.y +
+                          r2.xyz * object_normal.z) *
+                meta.w;
+  int material = int(meta.z);
+  vec4 surface = materials.data[material * 3];
+  float t = min(hit.t, max_distance);
+  if (dot(normal, direction) > 0.0) {
+    if (surface.w < 0.5) {
+      // A one-sided back face: the probe likely sits inside geometry.
+      rays.data[index] = vec4(0.0, 0.0, 0.0, -t * 0.2);
+      return;
     }
-    if (info.params.z > 0.5) {
-      radiance += albedo * PreviousIrradiance(position, normal);
+    normal = -normal;
+  }
+
+  vec4 tiles = materials.data[material * 3 + 2];
+  vec2 barycentric = hit.barycentric;
+  vec2 uv = vec2(t0.w, t1.w) * (1.0 - barycentric.x - barycentric.y) +
+            t3.xy * barycentric.x + t3.zw * barycentric.y;
+  vec3 albedo = surface.rgb;
+  if (tiles.x >= 0.0) albedo *= SampleMaterialTile(tiles.xy, uv);
+  vec3 emission = materials.data[material * 3 + 1].rgb;
+  if (tiles.z >= 0.0) emission *= SampleMaterialTile(tiles.zw, uv);
+
+  float epsilon = 1e-3 * min(info.grid_spacing.x,
+                             min(info.grid_spacing.y, info.grid_spacing.z));
+  vec3 position = origin + direction * hit.t + normal * epsilon;
+
+  vec3 irradiance = PunctualIrradiance(position, normal);
+  if (info.sun_direction.w > 0.5) {
+    float n_dot_l = dot(normal, info.sun_direction.xyz);
+    if (n_dot_l > 0.0 &&
+        !Occluded(position, info.sun_direction.xyz, kNoHit)) {
+      irradiance += info.sun_radiance.rgb * n_dot_l;
     }
-    t = min(t, max_distance);
+  }
+  vec3 radiance = emission + albedo * (1.0 / kPi) * irradiance;
+  if (info.params.z > 0.5) {
+    radiance += albedo * FieldIrradiance(position, normal, -direction);
   }
   rays.data[index] =
       vec4(ProbeClampLuminance(radiance, info.sun_radiance.w), t);
