@@ -10,6 +10,7 @@
 //     --target=integration_test/compute_skinning_parity_test.dart \
 //     -d macos --enable-impeller --enable-flutter-gpu
 
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -41,6 +42,7 @@ void main() {
     await tester.pump();
     await Scene.preload(smaa: true);
     if (!gpu.supportsCompute) {
+      _report(binding, {'skipped': 'no compute'});
       markTestSkipped('No compute on this engine or backend.');
       return;
     }
@@ -158,14 +160,14 @@ void main() {
     final determinism = compare(before, after);
     final parity = compare(before, computed);
     final pixels = before.length ~/ 4;
-    binding.reportData = {
+    _report(binding, {
       'coveredPixels': covered,
       'determinism': {
         'differing': determinism.differing,
         'maxDelta': determinism.maxDelta,
       },
       'parity': {'differing': parity.differing, 'maxDelta': parity.maxDelta},
-    };
+    });
     // ignore: avoid_print
     print(
       'compute skinning parity: covered $covered of $pixels, '
@@ -210,3 +212,14 @@ Future<void> _settleGpu(WidgetTester tester) => tester.runAsync(() async {
   }
   await Future<void>.delayed(const Duration(milliseconds: 20));
 });
+
+// Saved by the driver as build/smoke/compute_skinning_parity.json, since a web
+// run's prints reach only the browser console.
+void _report(
+  IntegrationTestWidgetsFlutterBinding binding,
+  Map<String, Object?> data,
+) {
+  binding.reportData = {
+    'compute_skinning_parity.json': base64Encode(utf8.encode(jsonEncode(data))),
+  };
+}
