@@ -1,0 +1,116 @@
+// Skins a SkinnedGeometry's vertices once per frame, so every pass draws the
+// result instead of skinning again in its vertex shader. Matches the skinning
+// in flutter_scene_skinned_body.glsl, whose shader then draws this output with
+// skinning off (an identity skin matrix), so the two paths render alike.
+//
+// Joint matrices are full world transforms (Skin.getJointsTexture), so the
+// output is world space, as the vertex shader's skinned result is.
+
+layout(local_size_x = 64) in;
+
+layout(std430) buffer;
+
+#include <normal_transform.glsl>
+
+// The 104-byte skinned layout (constants.dart), read as floats from a view
+// that may start before the geometry's vertices (see source_offset).
+layout(binding = 0) readonly buffer SourceVertices {
+  float data[];
+}
+source_vertices;
+
+layout(binding = 1) readonly buffer JointMatrices {
+  mat4 matrices[];
+}
+joint_matrices;
+
+// The same layout, positions and frames skinned, the rest copied.
+layout(binding = 2) writeonly buffer SkinnedVertices {
+  float data[];
+}
+skinned_vertices;
+
+uniform SkinInfo {
+  uint vertex_count;
+  // Where the geometry's vertices start in source_vertices, in floats. A
+  // storage binding's offset must be aligned and the geometry arena's offsets
+  // are not, so the binding starts at the aligned offset below them.
+  uint source_offset;
+  uint joint_count;
+}
+skin_info;
+
+const uint kFloatsPerVertex = 26u;
+
+vec4 ReadVec4(uint base) {
+  return vec4(source_vertices.data[base], source_vertices.data[base + 1u],
+              source_vertices.data[base + 2u], source_vertices.data[base + 3u]);
+}
+
+void WriteVec4(uint base, vec4 value) {
+  skinned_vertices.data[base] = value.x;
+  skinned_vertices.data[base + 1u] = value.y;
+  skinned_vertices.data[base + 2u] = value.z;
+  skinned_vertices.data[base + 3u] = value.w;
+}
+
+// An index past the last joint reads identity, like the vertex shader's fetch
+// of an identity-initialized slot.
+mat4 GetJoint(float joint_index) {
+  uint index = uint(joint_index);
+  return index < skin_info.joint_count ? joint_matrices.matrices[index]
+                                       : mat4(1.0);
+}
+
+void main() {
+  uint vertex_index = gl_GlobalInvocationID.x;
+  if (vertex_index >= skin_info.vertex_count) {
+    return;
+  }
+  uint src = skin_info.source_offset + vertex_index * kFloatsPerVertex;
+  uint dst = vertex_index * kFloatsPerVertex;
+
+  vec3 position = vec3(source_vertices.data[src],
+                       source_vertices.data[src + 1u],
+                       source_vertices.data[src + 2u]);
+  vec3 normal = vec3(source_vertices.data[src + 3u],
+                     source_vertices.data[src + 4u],
+                     source_vertices.data[src + 5u]);
+  vec4 tangent = ReadVec4(src + 14u);
+  vec4 joints = ReadVec4(src + 18u);
+  vec4 weights = ReadVec4(src + 22u);
+
+  // Exports often sum to slightly under 1, and since a joint matrix carries the
+  // model's world position the deficit scales that position too. Normalize,
+  // first joint when all zero.
+  float weight_sum = weights.x + weights.y + weights.z + weights.w;
+  vec4 w = weight_sum > 0.0 ? weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
+  mat4 skin_matrix = GetJoint(joints.x) * w.x + GetJoint(joints.y) * w.y +
+                     GetJoint(joints.z) * w.z + GetJoint(joints.w) * w.w;
+  mat3 linear = mat3(skin_matrix);
+
+  vec4 skinned_position = skin_matrix * vec4(position, 1.0);
+  // The world normal the vertex shader derives from the skin matrix, which an
+  // identity skin matrix passes through unchanged.
+  vec3 skinned_normal = WorldNormalMatrix(linear) * normal;
+  // The vertex shader flips the bitangent sign for a mirroring skin matrix,
+  // which an identity one no longer does.
+  float tangent_sign = determinant(linear) < 0.0 ? -tangent.w : tangent.w;
+  vec3 skinned_tangent = linear * tangent.xyz;
+
+  skinned_vertices.data[dst] = skinned_position.x;
+  skinned_vertices.data[dst + 1u] = skinned_position.y;
+  skinned_vertices.data[dst + 2u] = skinned_position.z;
+  skinned_vertices.data[dst + 3u] = skinned_normal.x;
+  skinned_vertices.data[dst + 4u] = skinned_normal.y;
+  skinned_vertices.data[dst + 5u] = skinned_normal.z;
+  // Texture coordinates and color pass through.
+  for (uint i = 6u; i < 14u; i++) {
+    skinned_vertices.data[dst + i] = source_vertices.data[src + i];
+  }
+  WriteVec4(dst + 14u, vec4(skinned_tangent, tangent_sign));
+  // Copied so a material's keep-alive, which reads them times zero, never
+  // multiplies uninitialized memory (NaN times zero is NaN).
+  WriteVec4(dst + 18u, joints);
+  WriteVec4(dst + 22u, weights);
+}
