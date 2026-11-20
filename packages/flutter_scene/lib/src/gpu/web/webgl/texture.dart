@@ -190,6 +190,42 @@ final class WebGlTexture extends Texture {
     _valid = true;
   }
 
+  /// Wraps a GL object this backend did not create as a render target.
+  ///
+  /// A [ExternalTargetHandleKind.framebuffer] binds as the whole framebuffer
+  /// and cannot be sampled (a WebXR layer's opaque framebuffer); a
+  /// [ExternalTargetHandleKind.texture] attaches to one of the backend's own
+  /// framebuffers and samples like any other texture. The caller keeps
+  /// ownership; nothing here deletes the handle.
+  WebGlTexture.external(
+    this._gpuContext,
+    Object handle, {
+    required this.width,
+    required this.height,
+    required ExternalTargetHandleKind kind,
+    this.format = PixelFormat.r8g8b8a8UNormInt,
+  }) : storageMode = StorageMode.devicePrivate,
+       sampleCount = 1,
+       textureType = TextureType.texture2D,
+       enableRenderTargetUsage = true,
+       enableShaderReadUsage = kind == ExternalTargetHandleKind.texture,
+       enableShaderWriteUsage = false,
+       mipLevelCount = 1 {
+    final entry = _formatTable[format];
+    if (entry == null) {
+      throw Exception('Unsupported PixelFormat: $format');
+    }
+    _glFormat = entry;
+    _isExternal = true;
+    switch (kind) {
+      case ExternalTargetHandleKind.framebuffer:
+        _externalFramebuffer = handle as web.WebGLFramebuffer;
+      case ExternalTargetHandleKind.texture:
+        _texture = handle as web.WebGLTexture;
+    }
+    _valid = true;
+  }
+
   /// Wrapping a `ui.Image`'s backing texture is not possible on this backend:
   /// the framework rasterizes with its own WebGL context, and browsers do not
   /// share textures across contexts. Always throws, mirroring flutter_gpu's
@@ -237,7 +273,19 @@ final class WebGlTexture extends Texture {
   late final _GlFormat _glFormat;
   web.WebGLTexture? _texture;
   web.WebGLRenderbuffer? _renderbuffer;
+  web.WebGLFramebuffer? _externalFramebuffer;
+  bool _isExternal = false;
   bool _valid = false;
+
+  /// Internal: whether this wraps a GL object another system owns and reads
+  /// with GL's bottom-left origin. A pass drawing into one skips the shim's
+  /// top-down convention (see WebGlRenderPass).
+  bool get isExternal => _isExternal;
+
+  /// Internal: a complete framebuffer this texture stands for, which render
+  /// passes bind directly instead of attaching [glTexture]. Null for every
+  /// texture the backend created itself.
+  web.WebGLFramebuffer? get externalFramebuffer => _externalFramebuffer;
 
   @override
   bool get isValid => _valid;

@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../shared/encoded_image_types.dart';
+import '../shared/external_target.dart';
 import '../shared/gpu_capabilities.dart';
 import '../webgpu/webgpu_backend.dart' show createWebGpuBackend;
 import 'webgl/_webgl.dart' show createWebGlBackend;
@@ -16,5 +17,6 @@ import 'webgl/_webgl.dart' show createWebGlBackend;
 part 'backend.dart';
 part 'formats.dart';
 part 'host_buffer.dart';
+part 'surface_frame.dart';
 part 'types.dart';
 part 'vertex_layout.dart';

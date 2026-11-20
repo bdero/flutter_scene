@@ -105,6 +105,13 @@ abstract base class GpuContext {
     int mipLevelCount = 1,
   });
   bool supportsTextureCompression(TextureCompressionFamily family);
+
+  /// Creates a surface whose presented frames Flutter draws as a `ui.Image`.
+  GpuImageSurface createImageSurface(
+    int width,
+    int height, {
+    PixelFormat? format,
+  }) => GpuImageSurface._(this, width, height, format ?? defaultColorFormat);
   CommandBuffer createCommandBuffer();
   RenderPipeline createRenderPipeline(
     Shader vertexShader,
@@ -278,6 +285,25 @@ abstract base class GpuHost {
   ///
   /// [buffer] must not be used again. Work already submitted is unaffected.
   void releaseBuffer(DeviceBuffer buffer);
+
+  /// The platform graphics context behind this backend (the
+  /// `WebGL2RenderingContext` on WebGL2), for a runtime that must bind it.
+  Object? get nativeGraphicsContext;
+
+  /// A snapshot of [texture] as a platform image another graphics context can
+  /// consume (an `ImageBitmap` on the web), or null where the backend has no
+  /// such object.
+  Object? textureToPlatformImage(Texture texture);
+
+  /// Wraps a platform color target this backend can draw into but did not
+  /// allocate. See [GpuCapabilities.externalColorTargets].
+  Texture wrapExternalColorTarget(
+    Object handle, {
+    required int width,
+    required int height,
+    required ExternalTargetHandleKind kind,
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  });
 }
 
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) =>

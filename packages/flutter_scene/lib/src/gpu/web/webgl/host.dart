@@ -17,6 +17,36 @@ final class WebGlHost extends GpuHost {
     presentAsImage: true,
     // WebGL2 has no compute shaders and never will.
     compute: false,
+    // A WebGL framebuffer or texture from the same context binds as a render
+    // target like any other, which is how a WebXR layer is drawn into.
+    externalColorTargets: true,
+  );
+
+  @override
+  Object? get nativeGraphicsContext => webGlContext.gl;
+
+  /// Blits [texture] onto the shim's canvas and transfers it out as an
+  /// `ImageBitmap`, upright, the same path `textureToImage` takes.
+  @override
+  Object? textureToPlatformImage(Texture texture) =>
+      webGlContext.snapshotTextureBitmap(texture);
+
+  /// Wraps [handle], a `WebGLFramebuffer` or `WebGLTexture` created on this
+  /// backend's own context (see [nativeGraphicsContext]).
+  @override
+  Texture wrapExternalColorTarget(
+    Object handle, {
+    required int width,
+    required int height,
+    required ExternalTargetHandleKind kind,
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  }) => WebGlTexture.external(
+    webGlContext,
+    handle,
+    width: width,
+    height: height,
+    kind: kind,
+    format: format,
   );
 
   /// Hands [texture] to Flutter as a `ui.Image`.

@@ -136,6 +136,20 @@ Matrix4 finiteViewTransformOf(Camera camera, ui.Size dimensions, double far) {
           camera.getViewMatrix();
     }
   }
+  if (inner.runtimeType == OffAxisProjection) {
+    final offAxis = inner as OffAxisProjection;
+    if (!offAxis.far.isFinite) {
+      final finite = OffAxisProjection(
+        tanLeft: offAxis.tanLeft,
+        tanRight: offAxis.tanRight,
+        tanDown: offAxis.tanDown,
+        tanUp: offAxis.tanUp,
+        near: offAxis.near,
+        far: far > offAxis.near * 2 ? far : offAxis.near * 2,
+      );
+      return finite.getProjectionMatrix(1.0) * camera.getViewMatrix();
+    }
+  }
   return camera.getViewTransform(dimensions);
 }
 

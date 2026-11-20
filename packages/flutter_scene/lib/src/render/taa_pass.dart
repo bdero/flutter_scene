@@ -59,6 +59,9 @@ class TaaHistoryState {
   bool _hasHistory = false;
 
   Matrix4? previousViewTransform;
+
+  /// Frames this history has rendered, which indexes the jitter sequence.
+  int frameIndex = 0;
   Vector2 previousJitterNdc = Vector2.zero();
   Vector2 previousJitterUv = Vector2.zero();
 

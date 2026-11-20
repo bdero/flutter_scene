@@ -51,18 +51,20 @@ class SpotShadowInfo {
   final int tileResolution;
 }
 
-/// Forces every view to render its own spot and point shadow tiles, so
-/// parity tests can render the same frame with and without sharing.
+/// Forces every view to render its own shadow atlas, so parity tests can
+/// render the same frame with and without sharing.
 bool debugDisableSharedShadowTiles = false;
 
-/// One frame's spot and point shadow tiles, shared by its texture views and
-/// its screen view.
+/// One frame's shadow atlas, shared by the views that can sample the same
+/// tiles: a frame's texture views and its screen view, or the views of one
+/// render group.
 ///
 /// The casters are drawn once, from [cameraPosition] (the screen view's
-/// camera), so a mirror or render texture shows the shadows the screen view
-/// sees. The first view to render its [ShadowPass] fills this and later
-/// views publish the same atlas. Only frames without directional cascades
-/// share, since cascades fit each view.
+/// camera, or a group's first), so a mirror or render texture shows the
+/// shadows the screen view sees. The first view to render its [ShadowPass]
+/// fills this and later views publish the same atlas. Directional cascades
+/// fit a view, so an atlas holding them is shared only among views fitted
+/// together (a render group); spot and point tiles suit any view.
 // TODO(shared-shadow-opt-out): let a texture view that needs shadows drawn
 // from its own camera (a distant monitor view, say) render its own tiles.
 class SharedShadowAtlas {
@@ -116,8 +118,7 @@ class ShadowPass extends RenderGraphPass {
     ByteData? shadowUniform,
     ShadowCachePlan? cachePlan,
     SharedShadowAtlas? shared,
-  }) : assert(shared == null || cascades.isEmpty),
-       _renderScene = renderScene,
+  }) : _renderScene = renderScene,
        _cascades = cascades,
        _cascadeReceiverPlanes = cascadeReceiverPlanes,
        _tileResolution = tileResolution,
@@ -197,6 +198,10 @@ class ShadowPass extends RenderGraphPass {
       final info = shared!.spotInfo;
       if (info != null) {
         context.blackboard.set(kSpotShadowInfoBlackboardKey, info);
+      }
+      final uniform = _shadowUniform;
+      if (uniform != null) {
+        context.blackboard.set(kShadowUniformBlackboardKey, uniform);
       }
       return;
     }
@@ -304,7 +309,7 @@ class ShadowPass extends RenderGraphPass {
           renderPass,
           context.transientsBuffer,
           _cascades[c].lightSpaceMatrix,
-          _cameraPosition,
+          _casterCameraPosition,
           _casterFaces,
           filter: ShadowCasterFilter.dynamicOnly,
           casterChannelMask: _casterChannelMask,
@@ -436,7 +441,7 @@ class ShadowPass extends RenderGraphPass {
         renderPass,
         context.transientsBuffer,
         entry.matrix,
-        _cameraPosition,
+        _casterCameraPosition,
         _casterFaces,
         filter: ShadowCasterFilter.staticOnly,
         casterChannelMask: _casterChannelMask,

@@ -20,6 +20,28 @@ final class _WebGpuHost extends GpuHost {
     compute: false,
   );
 
+  // TODO(webgpu-xr): hand out the GPUDevice and wrap the GPUTextures a
+  // WebXR WebGPU binding (XRGPUBinding) gives each view, once a browser
+  // ships it to test against.
+  @override
+  Object? get nativeGraphicsContext => null;
+
+  @override
+  Texture wrapExternalColorTarget(
+    Object handle, {
+    required int width,
+    required int height,
+    required ExternalTargetHandleKind kind,
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  }) => throw UnsupportedError(
+    'The WebGPU backend cannot draw into external color targets yet.',
+  );
+
+  // Only the WebGL2 path hands frames to another context. See the note on
+  // nativeGraphicsContext.
+  @override
+  Object? textureToPlatformImage(Texture texture) => null;
+
   @override
   ui.Image textureToImage(Texture texture) => texture.asImage();
 
