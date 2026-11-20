@@ -6,6 +6,7 @@ library;
 
 import 'dart:ui' as ui;
 
+import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -14,7 +15,7 @@ import 'support/gpu_available.dart';
 
 // Records, for each pass that runs, its stage and what its context saw.
 class _Probe extends CustomRenderPass {
-  _Probe(this.stage, this.log, {this.inputs = const {}});
+  _Probe(this.stage, this.log, {this.inputs = const {}, this.drawMask = false});
 
   @override
   final RenderStage stage;
@@ -23,7 +24,9 @@ class _Probe extends CustomRenderPass {
   final Set<RenderInput> inputs;
 
   final List<String> log;
+  final bool drawMask;
   Object? currentColorError;
+  gpu.Texture? mask;
   bool sawDepth = false;
 
   @override
@@ -33,6 +36,7 @@ class _Probe extends CustomRenderPass {
   void execute(RenderPassContext context) {
     log.add(stage.name);
     sawDepth = context.sceneDepthLinear != null;
+    if (drawMask) mask = context.drawObjects();
     if (stage == RenderStage.beforeScene) {
       try {
         context.currentColor;
@@ -100,5 +104,17 @@ void main() {
     // Nothing else asked for depth, so no prepass ran for the later pass
     // either.
     expect(after.sawDepth, isFalse);
+  }, skip: noGpu);
+
+  test('drawObjects works at beforeScene', () {
+    final log = <String>[];
+    final scene = sceneWithContent();
+    final before = _Probe(RenderStage.beforeScene, log, drawMask: true);
+    scene.addRenderPass(before);
+    _render(scene);
+
+    final mask = before.mask!;
+    expect(mask.width, 16);
+    expect(mask.height, 16);
   }, skip: noGpu);
 }
