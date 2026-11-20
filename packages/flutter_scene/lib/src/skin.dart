@@ -167,6 +167,13 @@ base class Skin {
     );
   }
 
+  /// The joint matrices the last [getJointsTexture] computed, 16 floats each
+  /// in joint order, padded to the texture's size.
+  @internal
+  Float32List get currentJointMatrices =>
+      _jointMatrixFloats ??
+      (throw StateError('getJointsTexture has not computed the matrices.'));
+
   /// The edge length, in texels, of the joints texture produced by
   /// [getJointsTexture].
   int getTextureWidth() => _jointsTextureEdge(joints.length);

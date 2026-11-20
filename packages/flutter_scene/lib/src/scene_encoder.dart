@@ -2765,10 +2765,7 @@ base class SceneEncoder {
       record.material.lightListCount = record.lightListCount;
       record.material.lightChannelMask = record.item.lightChannelMask;
       record.material.setModelScaleFromTransform(record.item.worldTransform);
-      final joints = record.jointsTexture;
-      if (joints != null) {
-        record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
-      }
+      record.item.applyJointsTexture(record.geometry);
       record.item.applyMorphWeights(record.geometry);
       _encodeBlended(record);
     }
@@ -2858,10 +2855,7 @@ base class SceneEncoder {
       record.material.lightListCount = record.lightListCount;
       record.material.lightChannelMask = record.item.lightChannelMask;
       record.material.setModelScaleFromTransform(record.item.worldTransform);
-      final joints = record.jointsTexture;
-      if (joints != null) {
-        record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
-      }
+      record.item.applyJointsTexture(record.geometry);
       record.item.applyMorphWeights(record.geometry);
       _encodeBlended(record);
     }
