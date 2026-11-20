@@ -39,6 +39,8 @@
 * `.fscene` documents keep an `UnlitMaterial`'s `alphaMode`, so a translucent unlit material no longer reloads opaque.
 * Physical materials realized from a `.fscene` keep their `depthBias` and `depthLayer`.
 * Nodes added by a `.fscene` hot reload keep their shadow casting mode.
+* `GlobalIlluminationSettings.feed = IrradianceFeed.rayTraced` fills the irradiance field by tracing probe rays against the scene in a compute pass, so off-screen emitters, lights, and sky reach it and probes step out of walls. Falls back to the screen-space feed without compute.
+* On compute backends, skinned meshes are skinned in a compute pass once per frame instead of in every pass that draws them.
 * Update `flutter_scene-idioms` skill (v23) with render order and stacked translucent overlays.
 
 ## 0.24.6
