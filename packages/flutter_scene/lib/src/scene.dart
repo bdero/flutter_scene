@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/coplanar_overlaps.dart'
 import 'package:flutter_scene/src/depth_conflicts.dart'
     as depth_conflicts
     show DepthConflictReport, probeDepthConflicts;
+import 'package:flutter_scene/src/render/compute_skinning.dart';
 import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/near_fit.dart';
@@ -2856,6 +2857,8 @@ base class Scene implements SceneGraph {
     // The frame draws from here on, so the joint matrices the tick computed
     // (here or in update()) upload now, not on frames held above.
     renderScene.flushJointUploads();
+    // Skinned once here for every pass that draws the frame.
+    ComputeSkinning.instance.dispatch(renderScene);
 
     // A paced frame renders nothing, so the adaptive controller measures the
     // period between rendered frames rather than the vsync it ticks at.
