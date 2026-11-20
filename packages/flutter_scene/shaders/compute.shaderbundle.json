@@ -1,0 +1,6 @@
+{
+  "SkinVertices": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_skin_vertices.comp"
+  }
+}
