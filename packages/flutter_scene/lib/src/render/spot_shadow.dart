@@ -51,6 +51,23 @@ class SpotShadowFrame {
   /// The slot assigned to [component] (its atlas tile and matrix), or -1 when
   /// it is not a shadow caster this frame.
   int slotOf(SpotLightComponent component) => casters.indexOf(component);
+
+  int rasterResolution(int atlasResolution) =>
+      tileResolution.clamp(1, atlasResolution);
+
+  double atlasScale(int atlasResolution) =>
+      rasterResolution(atlasResolution) / atlasResolution;
+
+  Matrix4 samplingMatrix(int slot, int atlasResolution) {
+    final scale = atlasScale(atlasResolution);
+    if (scale == 1) return matrices[slot];
+    return (Matrix4.identity()
+          ..setEntry(0, 0, scale)
+          ..setEntry(1, 1, scale)
+          ..setEntry(0, 3, scale - 1)
+          ..setEntry(1, 3, scale - 1)) *
+        matrices[slot];
+  }
 }
 
 /// Selects up to [kMaxSpotShadows] shadow-casting spots from [spots] (see

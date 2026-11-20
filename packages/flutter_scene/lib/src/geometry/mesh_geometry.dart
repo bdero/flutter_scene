@@ -355,11 +355,11 @@ class MeshGeometry extends UnskinnedGeometry {
   }) {
     _ensureUpdatable('updatePositions');
     _checkAttributeLength('positions', positions.length, 3);
-    _cpuPositions = Float32List.fromList(positions);
     _writeStream(
       0,
       _positionRing,
       _cpuPositions,
+      positions,
       dirtyStart: dirtyStart,
       dirtyCount: dirtyCount,
     );
@@ -373,11 +373,11 @@ class MeshGeometry extends UnskinnedGeometry {
   void updateNormals(Float32List normals, {int? dirtyStart, int? dirtyCount}) {
     _ensureUpdatable('updateNormals');
     _checkAttributeLength('normals', normals.length, 3);
-    _cpuNormals = Float32List.fromList(normals);
     _writeStream(
       1,
       _normalRing,
       _cpuNormals,
+      normals,
       dirtyStart: dirtyStart,
       dirtyCount: dirtyCount,
     );
@@ -395,11 +395,11 @@ class MeshGeometry extends UnskinnedGeometry {
   }) {
     _ensureUpdatable('updateTexCoords');
     _checkAttributeLength('texCoords', texCoords.length, 2);
-    _cpuTexCoords = Float32List.fromList(texCoords);
     _writeStream(
       2,
       _texCoordRing,
       _cpuTexCoords,
+      texCoords,
       dirtyStart: dirtyStart,
       dirtyCount: dirtyCount,
     );
@@ -413,11 +413,11 @@ class MeshGeometry extends UnskinnedGeometry {
   }) {
     _ensureUpdatable('updateTexCoords1');
     _checkAttributeLength('texCoords1', texCoords1.length, 2);
-    _cpuTexCoords1 = Float32List.fromList(texCoords1);
     _writeStream(
       3,
       _texCoord1Ring,
       _cpuTexCoords1,
+      texCoords1,
       dirtyStart: dirtyStart,
       dirtyCount: dirtyCount,
     );
@@ -430,11 +430,11 @@ class MeshGeometry extends UnskinnedGeometry {
   void updateColors(Float32List colors, {int? dirtyStart, int? dirtyCount}) {
     _ensureUpdatable('updateColors');
     _checkAttributeLength('colors', colors.length, 4);
-    _cpuColors = Float32List.fromList(colors);
     _writeStream(
       4,
       _colorRing,
       _cpuColors,
+      colors,
       dirtyStart: dirtyStart,
       dirtyCount: dirtyCount,
     );
@@ -450,11 +450,11 @@ class MeshGeometry extends UnskinnedGeometry {
   }) {
     _ensureUpdatable('updateTangents');
     _checkAttributeLength('tangents', tangents.length, 4);
-    _cpuTangents = Float32List.fromList(tangents);
     _writeStream(
       5,
       _tangentRing,
       _cpuTangents,
+      tangents,
       dirtyStart: dirtyStart,
       dirtyCount: dirtyCount,
     );
@@ -627,11 +627,13 @@ class MeshGeometry extends UnskinnedGeometry {
   void _writeStream(
     int slot,
     _RingBufferStream ring,
-    Float32List attribute, {
+    Float32List attribute,
+    Float32List source, {
     int? dirtyStart,
     int? dirtyCount,
   }) {
     final (start, end) = _resolveDirtyRange(dirtyStart, dirtyCount);
+    attribute.setAll(0, source);
     _streamViews = List<gpu.BufferView>.of(_streamViews);
     _streamViews[slot] = ring.writeRange(
       _bytesOf(attribute),

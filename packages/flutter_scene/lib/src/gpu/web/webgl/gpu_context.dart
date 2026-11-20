@@ -71,6 +71,67 @@ final class WebGlContext extends GpuContext {
   late final web.OffscreenCanvas _canvas;
   late final web.WebGL2RenderingContext _gl;
 
+  final List<_WebGlCompletion> _completions = [];
+  List<CompletionCallback> _unfencedCallbacks = [];
+  Timer? _completionTimer;
+
+  void _enqueueCompletion(CompletionCallback callback) {
+    if (_unfencedCallbacks.isEmpty) scheduleMicrotask(_fenceSubmissions);
+    _unfencedCallbacks.add(Zone.current.bindUnaryCallbackGuarded(callback));
+  }
+
+  void _fenceSubmissions() {
+    final callbacks = _unfencedCallbacks;
+    _unfencedCallbacks = [];
+    // Passes encoded in one turn share a fence after their last command.
+    final sync = _gl.fenceSync(
+      web.WebGL2RenderingContext.SYNC_GPU_COMMANDS_COMPLETE,
+      0,
+    );
+    if (sync == null) {
+      Timer.run(() {
+        for (final callback in callbacks) {
+          callback(CompletionStatus.error);
+        }
+      });
+      return;
+    }
+    _completions.add(_WebGlCompletion(sync, callbacks));
+    _gl.flush();
+    _completionTimer ??= Timer(Duration.zero, _pollCompletions);
+  }
+
+  void _pollCompletions() {
+    _completionTimer = null;
+    var completed = 0;
+    final ready = <(_WebGlCompletion, CompletionStatus)>[];
+    for (final pending in _completions) {
+      // WebGL 2 sync objects signal only after returning to the event loop.
+      final result = _gl.clientWaitSync(pending.sync, 0, 0);
+      if (result == web.WebGL2RenderingContext.TIMEOUT_EXPIRED) break;
+      _gl.deleteSync(pending.sync);
+      final status =
+          result == web.WebGL2RenderingContext.ALREADY_SIGNALED ||
+              result == web.WebGL2RenderingContext.CONDITION_SATISFIED
+          ? CompletionStatus.successful
+          : CompletionStatus.error;
+      ready.add((pending, status));
+      completed++;
+    }
+    _completions.removeRange(0, completed);
+    for (final (pending, status) in ready) {
+      for (final callback in pending.callbacks) {
+        callback(status);
+      }
+    }
+    if (_completions.isNotEmpty) {
+      _completionTimer ??= Timer(
+        const Duration(milliseconds: 1),
+        _pollCompletions,
+      );
+    }
+  }
+
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
   /// buffer), in least-recently-used order; see WebGlRenderPass._applyVertexState.
   static const int _kMaxCachedVaos = 512;

@@ -267,6 +267,7 @@ class _PackedLights {
 class PunctualLightBuffer {
   final _TextureRing _paramsRing = _TextureRing();
   final _TextureRing _indexRing = _TextureRing();
+  int _indexCapacity = 0;
 
   bool _warnedOverflow = false;
 
@@ -298,6 +299,7 @@ class PunctualLightBuffer {
     // shader clamps its kernel with this, so it has to be the size the faces
     // actually got.
     int pointFaceResolution = 512,
+    int? shadowTileResolution,
     bool enableFroxels = true,
   }) {
     // One build per frame, so this is where the rings roll over.
@@ -343,7 +345,12 @@ class PunctualLightBuffer {
         packed.params.setRange(
           base + 16,
           base + 32,
-          spotShadows.matrices[slot].storage,
+          spotShadows
+              .samplingMatrix(
+                slot,
+                shadowTileResolution ?? spotShadows.tileResolution,
+              )
+              .storage,
         );
       }
     }
@@ -431,13 +438,25 @@ class PunctualLightBuffer {
         rectAreaLightCount: areas.length,
         spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
         spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
-        spotShadowSoftness: spotShadows?.softness ?? 0.0,
+        spotShadowSoftness:
+            (spotShadows?.softness ?? 0.0) *
+            (spotShadows?.atlasScale(
+                  shadowTileResolution ?? spotShadows.tileResolution,
+                ) ??
+                1),
         internalBuffer: _froxelsEligible ? this : null,
       );
     }
 
-    final indexWidth = math.min(indexLength, _indexTexMaxWidth);
-    final indexHeight = (indexLength + indexWidth - 1) ~/ indexWidth;
+    // Keep capacity as light lists shrink so their textures stay reusable.
+    if (indexLength > _indexCapacity) {
+      _indexCapacity = math.max(1, _indexCapacity);
+      while (_indexCapacity < indexLength) {
+        _indexCapacity *= 2;
+      }
+    }
+    final indexWidth = math.min(_indexCapacity, _indexTexMaxWidth);
+    final indexHeight = (_indexCapacity + indexWidth - 1) ~/ indexWidth;
     // RGBA32F; the light index rides in .r, the rest is unread padding.
     final indexData = Float32List(indexWidth * indexHeight * 4);
     for (var i = 0; i < indexLength; i++) {
@@ -456,7 +475,12 @@ class PunctualLightBuffer {
       rectAreaLightCount: areas.length,
       spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
       spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
-      spotShadowSoftness: spotShadows?.softness ?? 0.0,
+      spotShadowSoftness:
+          (spotShadows?.softness ?? 0.0) *
+          (spotShadows?.atlasScale(
+                shadowTileResolution ?? spotShadows.tileResolution,
+              ) ??
+              1),
       internalBuffer: _froxelsEligible ? this : null,
     );
   }
@@ -499,6 +523,7 @@ class PunctualLightBuffer {
   void releaseTextures() {
     _paramsRing.clear();
     _indexRing.clear();
+    _indexCapacity = 0;
     _froxelRing.clear();
     _cachedFroxels = null;
     _froxelCacheEpoch = -1;
