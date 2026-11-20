@@ -31,6 +31,8 @@ flutter:
     # Skinned animated test model (assets_src is a symlink into
     # examples/assets_src), for the skinned_animation scene.
     - assets_src/two_triangles.glb
+    # Posed by the compute skinning parity test.
+    - assets_src/dash.glb
     # Draco-compressed quads sampling KHR_texture_basisu KTX2 textures, for
     # the basisu_textures scene. Rebuilt by assets_gen/generate.sh.
     - assets/basisu_quads_draco.glb
