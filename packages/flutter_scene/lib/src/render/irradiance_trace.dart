@@ -135,13 +135,18 @@ class IrradianceTraceState {
         },
       );
       final transform = item.worldTransform;
+      // A mirroring transform flips the winding, so swap two corners to keep
+      // front faces counter-clockwise.
+      final order = transform.determinant() < 0
+          ? const [0, 2, 1]
+          : const [0, 1, 2];
       final source = mesh.positions;
       final indices = mesh.indices;
       final cornerCount = indices?.length ?? mesh.vertexCount;
       final corner = Vector3.zero();
       for (var c = 0; c + 2 < cornerCount; c += 3) {
         for (var k = 0; k < 3; k++) {
-          final v = indices == null ? c + k : indices[c + k];
+          final v = indices == null ? c + order[k] : indices[c + order[k]];
           corner.setValues(source[v * 3], source[v * 3 + 1], source[v * 3 + 2]);
           transform.transform3(corner);
           positions.addAll([corner.x, corner.y, corner.z]);
@@ -180,22 +185,27 @@ class IrradianceTraceState {
       m.metallicFactor,
       Object.hashAll(m.emissiveFactor.storage),
       m.emissiveStrength,
+      m.doubleSided,
     ),
-    UnlitMaterial m => Object.hashAll(m.baseColorFactor.storage),
-    _ => material.runtimeType,
+    UnlitMaterial m => Object.hash(
+      Object.hashAll(m.baseColorFactor.storage),
+      m.doubleSided,
+    ),
+    _ => Object.hash(material.runtimeType, material.doubleSided),
   };
 
-  // Diffuse albedo then emission, 4 floats each.
+  // Diffuse albedo with 1 in w when double-sided, then emission.
   // TODO(gi-trace-albedo): average the base color and emissive textures, and
   // read other material kinds, instead of the factors and a gray default.
   static List<double> _materialEntry(Material material) {
+    final sides = material.doubleSided ? 1.0 : 0.0;
     switch (material) {
       case PhysicallyBasedMaterial m:
         final diffuse = 1.0 - m.metallicFactor.clamp(0.0, 1.0);
         final base = m.baseColorFactor;
         final emissive = m.emissiveFactor;
         return [
-          base.x * diffuse, base.y * diffuse, base.z * diffuse, 0, //
+          base.x * diffuse, base.y * diffuse, base.z * diffuse, sides, //
           emissive.x * m.emissiveStrength,
           emissive.y * m.emissiveStrength,
           emissive.z * m.emissiveStrength,
@@ -205,9 +215,9 @@ class IrradianceTraceState {
         // An unlit surface shows its color whatever lights it, so to the
         // field it is an emitter.
         final base = m.baseColorFactor;
-        return [0, 0, 0, 0, base.x, base.y, base.z, 0];
+        return [0, 0, 0, sides, base.x, base.y, base.z, 0];
       default:
-        return [0.5, 0.5, 0.5, 0, 0, 0, 0, 0];
+        return [0.5, 0.5, 0.5, sides, 0, 0, 0, 0];
     }
   }
 
