@@ -1,0 +1,52 @@
+// Rebuilds a skinned mesh's bottom-level triangles from its compute-skinned,
+// world-space vertices, keeping each triangle's texture coordinates. One
+// invocation per triangle; the refit then brings the node bounds along.
+
+layout(local_size_x = 64) in;
+
+layout(std430) buffer;
+
+// The skinned vertex layout, 26 floats per vertex, position first.
+layout(binding = 0) readonly buffer Vertices {
+  float data[];
+}
+vertices;
+
+// Three vertex indices per triangle, in the bottom level's leaf order.
+layout(binding = 1) readonly buffer Corners {
+  uint data[];
+}
+corners;
+
+layout(binding = 2) buffer Triangles {
+  vec4 data[];
+}
+triangles;
+
+uniform SkinTriangleInfo {
+  // x: the first triangle. y: triangle count. z: the first corner index.
+  vec4 params;
+}
+info;
+
+const uint kVertexFloats = 26u;
+
+vec3 Position(uint vertex) {
+  uint base = vertex * kVertexFloats;
+  return vec3(vertices.data[base], vertices.data[base + 1u],
+              vertices.data[base + 2u]);
+}
+
+void main() {
+  if (gl_GlobalInvocationID.x >= uint(info.params.y)) {
+    return;
+  }
+  uint t = uint(info.params.x) + gl_GlobalInvocationID.x;
+  uint c = uint(info.params.z) + gl_GlobalInvocationID.x * 3u;
+  vec3 v0 = Position(corners.data[c]);
+  vec3 v1 = Position(corners.data[c + 1u]);
+  vec3 v2 = Position(corners.data[c + 2u]);
+  triangles.data[t * 4u] = vec4(v0, triangles.data[t * 4u].w);
+  triangles.data[t * 4u + 1u] = vec4(v1 - v0, triangles.data[t * 4u + 1u].w);
+  triangles.data[t * 4u + 2u] = vec4(v2 - v0, 0.0);
+}

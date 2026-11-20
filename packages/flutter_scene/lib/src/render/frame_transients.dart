@@ -85,11 +85,17 @@ class GpuSubmissionTracker {
     return count;
   }
 
-  /// Submits [commandBuffer] and records it for completion tracking.
-  void submit(gpu.CommandBuffer commandBuffer) {
+  /// Submits [commandBuffer] and records it for completion tracking, calling
+  /// [onCompleted] once the GPU finishes it.
+  void submit(gpu.CommandBuffer commandBuffer, {void Function()? onCompleted}) {
     final int id = record();
     try {
-      commandBuffer.submit(completionCallback: (_) => complete(id));
+      commandBuffer.submit(
+        completionCallback: (_) {
+          complete(id);
+          onCompleted?.call();
+        },
+      );
     } catch (_) {
       // A submission that never reaches the GPU never completes, and a
       // pending id would hold framesInFlight up for good.

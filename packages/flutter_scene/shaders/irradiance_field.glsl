@@ -18,6 +18,10 @@ const float kProbeIrradianceInterior = 6.0;
 const float kProbeDepthTile = 16.0;
 const float kProbeDepthInterior = 14.0;
 
+// First atlas row of the per-probe state strip, one texel per probe holding
+// its relocation offset in rgb and inactivity in alpha.
+const float kProbeStateOriginY = 2.0;
+
 vec2 ProbeOctSign(vec2 v) {
   return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
 }

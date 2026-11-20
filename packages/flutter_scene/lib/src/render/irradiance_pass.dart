@@ -106,6 +106,26 @@ class IrradianceFieldState {
     return ((now - previous) / 1e6).clamp(1.0 / 240.0, 1.0 / 10.0);
   }
 
+  /// Whether the traced feed wrote this frame's per-probe state rows into
+  /// [sampledAtlas], which the filter then leaves alone.
+  bool traceOwnsProbeState = false;
+
+  /// Whether the next blend resets every probe.
+  bool get resetPending => _resetPending;
+
+  /// The rows [scheduleRows] will return for [probeUpdateBudget], without
+  /// advancing the schedule, so a feed that runs before the blend can update
+  /// the same probes.
+  (int, int) peekScheduleRows(int probeUpdateBudget) {
+    final layout = _layout!;
+    if (probeUpdateBudget <= 0 || _resetPending) {
+      return (0, layout.tileRows);
+    }
+    final rows = math.max(1, probeUpdateBudget ~/ layout.tilesPerRow);
+    final start = _updateCursor % layout.tileRows;
+    return (start, math.min(layout.tileRows, start + rows));
+  }
+
   /// The tile rows this frame's blend and filter refresh, as a half-open
   /// range. A zero budget refreshes every row.
   (int, int) scheduleRows(int probeUpdateBudget) {
@@ -326,6 +346,7 @@ class IrradianceInjectPass extends RenderGraphPass {
 
   @override
   void execute(RenderGraphContext context) {
+    state.traceOwnsProbeState = false;
     final layout = state._layout;
     final placement = state._placement;
     final radiance = sceneRadiance;
@@ -763,7 +784,9 @@ class IrradianceFilterPass extends RenderGraphPass {
       _stripShader.cachedUniformSlot('StripInfo'),
       context.transientsBuffer.emplace(
         ByteData.sublistView(
-          Float32List(4)..[0] = layout.irradianceOriginY.toDouble(),
+          Float32List(4)
+            ..[0] = layout.irradianceOriginY.toDouble()
+            ..[1] = state.traceOwnsProbeState ? 1.0 : 0.0,
         ),
       ),
     );

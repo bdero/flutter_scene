@@ -9,7 +9,8 @@
 // paths safe.
 //
 // Requires the FragInfo block, the `irradiance_field` sampler, and
-// irradiance_field.glsl.
+// irradiance_field.glsl. Reads use an explicit level, which is identical on
+// the single-level atlas and lets a compute stage include this too.
 
 // Weights below this are crushed rather than cut, suppressing contributions
 // too small to matter without introducing a hard boundary.
@@ -42,7 +43,18 @@ highp vec4 IrradianceCageTap(vec3 offset, highp vec3 base_lattice, vec3 alpha,
   vec3 trilinear = max(mix(vec3(1.0) - alpha, alpha, offset), vec3(0.001));
   float trilinear_weight = trilinear.x * trilinear.y * trilinear.z;
 
-  highp vec3 probe_position = lattice * frag_info.gi_grid.xyz;
+  highp float index = ProbeLinearIndex(ProbeWrapSlot(lattice, counts), counts);
+  highp vec2 inverse_atlas = frag_info.gi_atlas.zw;
+
+  // The probe's relocation offset in rgb and inactivity in alpha, all zero
+  // unless the traced feed moved or retired it.
+  highp vec4 state = textureLod(
+      irradiance_field,
+      (ProbeTileOrigin(index, frag_info.gi_counts.w, kProbeStateOriginY, 1.0) +
+       vec2(0.5)) * inverse_atlas,
+      0.0);
+
+  highp vec3 probe_position = lattice * frag_info.gi_grid.xyz + state.xyz;
   highp vec3 to_probe = probe_position - biased_position;
   highp float probe_distance = length(to_probe);
   vec3 probe_direction =
@@ -52,9 +64,6 @@ highp vec4 IrradianceCageTap(vec3 offset, highp vec3 base_lattice, vec3 alpha,
   // faces away has no contribution left and goes black.
   float weight = pow(dot(probe_direction, direction) * 0.5 + 0.5, 2.0) + 0.2;
 
-  highp float index = ProbeLinearIndex(ProbeWrapSlot(lattice, counts), counts);
-  highp vec2 inverse_atlas = frag_info.gi_atlas.zw;
-
   if (frag_info.gi_visibility.x > 0.0) {
     highp vec2 depth_tile = ProbeTileOrigin(index, frag_info.gi_counts.w,
                                       frag_info.gi_atlas.y, kProbeDepthTile);
@@ -62,9 +71,10 @@ highp vec4 IrradianceCageTap(vec3 offset, highp vec3 base_lattice, vec3 alpha,
     // so both are scaled back before the comparison. Skipping that produces
     // banded, distance-dependent leaking that reads as a bias problem.
     highp float scale = frag_info.gi_visibility.z;
-    highp vec2 moments = texture(irradiance_field,
-                           ProbeAtlasUv(-probe_direction, depth_tile,
-                                        kProbeDepthInterior, inverse_atlas))
+    highp vec2 moments = textureLod(irradiance_field,
+                              ProbeAtlasUv(-probe_direction, depth_tile,
+                                           kProbeDepthInterior, inverse_atlas),
+                              0.0)
                        .rg;
     highp float mean = moments.x * scale;
     highp float mean_square = moments.y * scale * scale;
@@ -82,15 +92,16 @@ highp vec4 IrradianceCageTap(vec3 offset, highp vec3 base_lattice, vec3 alpha,
   if (weight < kProbeCrushThreshold) {
     weight *= weight * weight / (kProbeCrushThreshold * kProbeCrushThreshold);
   }
-  weight *= trilinear_weight * inside;
+  weight *= trilinear_weight * inside * (1.0 - clamp(state.a, 0.0, 1.0));
 
   highp vec2 irradiance_tile =
       ProbeTileOrigin(index, frag_info.gi_counts.w, frag_info.gi_atlas.x,
                       kProbeIrradianceTile);
   highp vec3 irradiance =
-      texture(irradiance_field,
-              ProbeAtlasUv(direction, irradiance_tile,
-                           kProbeIrradianceInterior, inverse_atlas))
+      textureLod(irradiance_field,
+                 ProbeAtlasUv(direction, irradiance_tile,
+                              kProbeIrradianceInterior, inverse_atlas),
+                 0.0)
           .rgb;
   return vec4(max(irradiance, vec3(0.0)) * weight, weight);
 }

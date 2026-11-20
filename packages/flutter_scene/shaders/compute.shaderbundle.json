@@ -10,5 +10,25 @@
   "GiGather": {
     "type": "compute",
     "file": "shaders/flutter_scene_gi_gather.comp"
+  },
+  "GiTraceCube": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_gi_trace_cube.comp"
+  },
+  "GiProbeState": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_gi_probe_state.comp"
+  },
+  "GiSkinTriangles": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_gi_skin_triangles.comp"
+  },
+  "GiRefit": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_gi_refit.comp"
+  },
+  "GiMaterialTileFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_gi_material_tile.frag"
   }
 }
