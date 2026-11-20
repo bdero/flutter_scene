@@ -465,6 +465,27 @@ void main() {
     } finally {
       deleteBackendFramebuffer(raw);
     }
+
+    // At half the render scale the session's frames shrink, and must still
+    // match the same pair placed by hand into a target of that size.
+    session.renderScale = 0.5;
+    final scaledFrame = await renderEmulatedFrames(scene, session);
+    final scaledTarget = scaledFrame.target!;
+    expect(
+      (scaledTarget.width, scaledTarget.height),
+      ((width * 0.5).round(), (height * 0.5).round()),
+      reason: 'the render scale did not resize the frame',
+    );
+    final scaled = await _rgbaBytes(scaledTarget.color.asImage());
+    final scaledFlat = ExternalRenderTarget.allocate(
+      width: scaledTarget.width,
+      height: scaledTarget.height,
+    );
+    renderFlatPair(scene, scaledFlat);
+    final scaledDiff = _meanAbsDiff(
+      scaled,
+      await _rgbaBytes(scaledFlat.color.asImage()),
+    );
     await session.end();
 
     final half = width ~/ 2;
@@ -492,7 +513,9 @@ void main() {
       'SMOKE webxr_emulated: ${width}x$height sessionDiff='
       '${sessionDiff.toStringAsFixed(3)} framebufferDiff='
       '${framebufferDiff.toStringAsFixed(3)} eyeDiff='
-      '${eyeDiff.toStringAsFixed(3)} coverage='
+      '${eyeDiff.toStringAsFixed(3)} scaledDiff='
+      '${scaledDiff.toStringAsFixed(3)} at '
+      '${scaledTarget.width}x${scaledTarget.height} coverage='
       '${leftCoverage.toStringAsFixed(3)}/${rightCoverage.toStringAsFixed(3)} '
       'topBottom session=${rows(emulated)} flat=${rows(reference)} '
       'framebuffer=${rows(framebuffer)}',
@@ -509,6 +532,11 @@ void main() {
       framebufferDiff,
       lessThan(0.5),
       reason: 'the raw framebuffer differs from the flat pair',
+    );
+    expect(
+      scaledDiff,
+      lessThan(0.5),
+      reason: 'the half-scale session frame differs from the flat pair',
     );
   });
 
