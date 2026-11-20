@@ -213,6 +213,11 @@ extension type GPUCommandEncoder._(JSObject _) implements JSObject {
     JSObject destination,
     JSObject copySize,
   );
+  external void copyBufferToTexture(
+    JSObject source,
+    JSObject destination,
+    JSObject copySize,
+  );
   external void copyBufferToBuffer(
     GPUBuffer source,
     int sourceOffset,
