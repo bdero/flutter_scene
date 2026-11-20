@@ -450,10 +450,8 @@ class _SceneViewState extends State<SceneView>
 
   void _onAssetsRefreshed() => _repaint.notify();
 
-  // A paced frame's GPU work (or deferred resource load) finished; paint the
-  // frame the view held. While the ticker is actively driving a revealed view,
-  // clear any rate-limit deadline so the next vsync runs _onTick and advances
-  // onTick in lockstep instead of painting out of band.
+  // A paced frame's GPU work, or a deferred load, finished. A running ticker
+  // paints on its next vsync, with a tick, so only its rate limit is reset.
   void _onRepaintRequested() {
     if (widget.autoTick && (_ticker?.isTicking ?? false) && _revealed) {
       _frameDue = null;

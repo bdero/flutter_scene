@@ -193,8 +193,8 @@ enum AntiAliasingMode {
   auto,
 }
 
-/// The default [Scene.maxGpuFramesInFlight] for this platform: 2 on iOS,
-/// macOS, and WebGPU, and 1 elsewhere.
+/// The default [Scene.maxGpuFramesInFlight] for this platform, 2 on iOS,
+/// macOS, and the WebGPU web backend, and 1 elsewhere.
 // TODO(gpu-pacing): Re-measure Android Vulkan once Flutter GPU submits off the
 // calling thread (flutter/flutter#194882), and measure Windows.
 @visibleForTesting
@@ -764,11 +764,12 @@ base class Scene implements SceneGraph {
   /// at the rate the GPU finishes frames, which it did anyway. Scene time
   /// still advances on a paced frame.
   ///
-  /// Defaults to 2 on iOS and macOS (Metal) and on WebGPU, where queuing a
-  /// second frame stalls neither thread and avoids waiting on asynchronous
-  /// queue-completion IPC before encoding the next frame. There a limit of 1 can halve the frame
+  /// Defaults to 2 on iOS and macOS, where Metal queues a second frame
+  /// without stalling either thread. There a limit of 1 can halve the frame
   /// rate of a scene the GPU has room for, since the GPU clocks down until
   /// each frame barely fits a vsync and a held frame then misses the next.
+  /// It is also 2 on WebGPU, whose completion signal arrives a round trip
+  /// late, so a limit of 1 holds frames the GPU has already finished.
   /// Elsewhere it defaults to 1. On Android's Vulkan backend a second frame
   /// blocks this thread or the raster thread once the GPU falls behind, which
   /// slows the whole app, and on GLES it gains little. An Android game whose
