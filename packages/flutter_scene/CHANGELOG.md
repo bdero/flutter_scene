@@ -1,3 +1,8 @@
+## Unreleased
+
+* `GlobalIlluminationSettings.feed = IrradianceFeed.rayTraced` fills the irradiance field by tracing probe rays against the scene in a compute pass, so off-screen emitters, lights, and sky reach it and probes step out of walls. Falls back to the screen-space feed without compute.
+* On compute backends, skinned meshes are skinned in a compute pass once per frame instead of in every pass that draws them.
+
 ## 0.24.4
 
 * A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
