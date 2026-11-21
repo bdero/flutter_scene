@@ -1,5 +1,6 @@
 ## 0.24.4
 
+* The sky in a planar reflection (`PlanarReflectionCamera`, or any camera with an oblique near plane) is no longer stretched.
 * `RenderStage.beforeScene` runs a `CustomRenderPass` before the view draws anything, so the same frame's materials can sample what it produces.
 * `Texture2DArray` uploads layered data textures, sampled in `.fmat` materials through `sampler2DArray` parameters. Arrays work on the web backends, and on Metal and Vulkan with Flutter 3.50 or newer (`Texture2DArray.isSupported`).
 * `Texture2D.fromData` builds a texture from raw texels in a `DataTextureFormat` (`r8`, `rg8`, `rgba8`, `r32Float`, `rgba16Float`, `rgba32Float`).
