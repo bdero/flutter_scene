@@ -39,6 +39,9 @@
 * The WebGPU web backend encodes draws without allocating or searching its bindings by name, reusing cached pipelines and bind groups across draws.
 * The WebGPU web backend waits on one queue fence for all the passes submitted in a turn instead of one per pass. Submitting a 12-pass frame went from 0.48 ms to 0.29 ms.
 * Ambient occlusion, screen-space reflections, depth of field, and SMAA reuse each other's intermediate textures within a frame, holding 28 to 48 MB less at 1080p.
+* The WebGPU web backend keeps two frames in flight, as Metal does. A 1080p PBR scene went from 11 to 55 fps.
+* A rate-limited `SceneView` whose ticker is running paints on its next vsync when a paced frame finishes, instead of repainting between ticks.
+* `Scene.warmUp` renders into a scratch surface at the view's aspect ratio, so warming up a live scene no longer evicts its render targets, disturbs TAA and SSGI history, or invalidates cached shadow cascades.
 * `PhysicallyBasedMaterial` and `UnlitMaterial` repack their texture transforms only when one changes, including an edit in place such as `transform.offset.x += 0.1`.
 * On the web, a batch of KTX2 textures or mip chain builds yields to the browser between textures instead of freezing the page until the whole batch finishes. One large texture still blocks while it decodes.
 * The WebGL2 web backend compiles shaders in parallel and checks a program's link only when it is first drawn, and `Scene.warmUp` starts every pipeline's compile before drawing with any. A warm-up on Windows (ANGLE) takes about half as long and no longer freezes the page while it compiles.
