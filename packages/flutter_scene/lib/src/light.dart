@@ -880,9 +880,8 @@ class SpotLight {
 
   /// Pixel resolution this spot asks for on its (square) shadow map tile.
   ///
-  /// The shared shadow atlas gives every tile one size, so this is only
-  /// honored when no directional cascade is already setting it, and only for
-  /// the first spot caster.
+  /// Spots share the first caster's requested resolution, capped by the atlas
+  /// tile size. Smaller shadows occupy a subregion of their atlas slot.
   int shadowMapResolution;
 
   /// Near clip distance of the shadow frustum. Geometry closer to the light
@@ -1099,6 +1098,7 @@ class Lighting {
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
     this.spotShadowSoftness = 0.0,
+    this.spotShadowRegionScale = 1.0,
     this.shadowMap,
     this.cascades = const [],
     this.ssaoMap,
@@ -1247,6 +1247,10 @@ class Lighting {
   final double spotShadowDepthBias;
   final double spotShadowNormalBias;
   final double spotShadowSoftness;
+
+  /// Fraction of each spot tile edge the spots drew into (see
+  /// [SpotShadowInfo.regionScale]), which bounds the shader's taps.
+  final double spotShadowRegionScale;
 
   /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
   /// cascade tiles as a horizontal strip) for [directionalLight], or

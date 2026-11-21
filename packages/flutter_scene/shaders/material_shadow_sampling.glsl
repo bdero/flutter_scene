@@ -411,17 +411,16 @@ highp vec2 PunctualLightSlice() {
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
 // One shadow comparison tap for a spot: places the in-tile `uv` in the spot's
 // atlas tile (`tile` of `total`, stored top-down so V is flipped) and returns 1
-// lit / 0 shadowed. `uv` is clamped into the tile so the kernel never reads a
-// neighbouring tile (the atlas is nearest-sampled, so there is no bilinear
-// bleed once it stays in-tile).
+// lit / 0 shadowed. `uv` is clamped to `bounds`, texel centers inside the
+// region the spot drew, so the kernel never reads a neighbouring tile or the
+// undrawn rest of its own (the atlas is nearest-sampled, so there is no
+// bilinear bleed once it stays inside).
 float SpotShadowTap(highp vec2 uv, highp float tile, highp float total,
-                    highp float receiver) {
-  highp vec2 atlas_uv = vec2((tile + clamp(uv.x, 0.0, 1.0)) / total,
-                       1.0 - clamp(uv.y, 0.0, 1.0));
+                    highp float receiver, highp vec2 bounds) {
+  highp vec2 atlas_uv = vec2((tile + clamp(uv.x, bounds.x, bounds.y)) / total,
+                       1.0 - clamp(uv.y, bounds.x, bounds.y));
   return receiver <= textureLod(shadow_map, atlas_uv, 0.0).r ? 1.0 : 0.0;
 }
-
-
 
 // Spot-shadow visibility (1 lit .. 0 shadowed) for the shadow-casting spot in
 // row `light_row`, slot `slot`. Its world -> spot-clip matrix rides in the
@@ -439,11 +438,15 @@ float SampleSpotShadow(int light_row, int slot, highp vec3 world_pos,
     return 1.0;
   }
   highp vec3 proj = clip.xyz / clip.w;
+  // The matrix maps the frustum onto the drawn region, [0, region] in tile UV.
   highp vec2 uv = proj.xy * 0.5 + 0.5;
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z < 0.0 ||
-      proj.z > 1.0) {
+  highp float region = frag_info.camera_position.w;
+  if (uv.x < 0.0 || uv.x > region || uv.y < 0.0 || uv.y > region ||
+      proj.z < 0.0 || proj.z > 1.0) {
     return 1.0;
   }
+  highp float half_texel = 0.5 / float(textureSize(shadow_map, 0).y);
+  highp vec2 bounds = vec2(half_texel, region - half_texel);
   highp float total = frag_info.shadow_cascade_count + frag_info.spot_shadow_params.x;
   highp float tile = frag_info.shadow_cascade_count + float(slot);
   highp float receiver = proj.z - frag_info.spot_shadow_params.y;
@@ -460,18 +463,18 @@ float SampleSpotShadow(int light_row, int slot, highp vec3 world_pos,
   highp vec2 b = vec2(a.x - a.y, a.x + a.y) * 0.70710678;
   // The center and the four axis taps first. Most fragments are fully lit or
   // fully shadowed, so the diagonal taps only run where these disagree.
-  float lit = SpotShadowTap(uv, tile, total, receiver) +
-              SpotShadowTap(uv + a, tile, total, receiver) +
-              SpotShadowTap(uv - a, tile, total, receiver) +
-              SpotShadowTap(uv + vec2(-a.y, a.x), tile, total, receiver) +
-              SpotShadowTap(uv + vec2(a.y, -a.x), tile, total, receiver);
+  float lit = SpotShadowTap(uv, tile, total, receiver, bounds) +
+              SpotShadowTap(uv + a, tile, total, receiver, bounds) +
+              SpotShadowTap(uv - a, tile, total, receiver, bounds) +
+              SpotShadowTap(uv + vec2(-a.y, a.x), tile, total, receiver, bounds) +
+              SpotShadowTap(uv + vec2(a.y, -a.x), tile, total, receiver, bounds);
   if (lit < 0.5 || lit > 4.5) {
     return lit * 0.2;
   }
-  lit += SpotShadowTap(uv + b, tile, total, receiver) +
-         SpotShadowTap(uv - b, tile, total, receiver) +
-         SpotShadowTap(uv + vec2(-b.y, b.x), tile, total, receiver) +
-         SpotShadowTap(uv + vec2(b.y, -b.x), tile, total, receiver);
+  lit += SpotShadowTap(uv + b, tile, total, receiver, bounds) +
+         SpotShadowTap(uv - b, tile, total, receiver, bounds) +
+         SpotShadowTap(uv + vec2(-b.y, b.x), tile, total, receiver, bounds) +
+         SpotShadowTap(uv + vec2(b.y, -b.x), tile, total, receiver, bounds);
   return lit / 9.0;
 }
 

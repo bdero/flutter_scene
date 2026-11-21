@@ -190,6 +190,25 @@ enum AntiAliasingMode {
   auto,
 }
 
+/// The tile edge of the shared shadow atlas. Every tile is one size, and the
+/// directional light wins because its cascades need the resolution most.
+/// Spots may draw a smaller region inside their tile, and point faces render
+/// at half the edge.
+// TODO(shadow-atlas-per-light-tiles): pack mixed tile sizes compactly and
+// honor independent point and spot resolutions beyond the first caster.
+int _sharedShadowTileResolution(
+  DirectionalLightComponent? lightComponent,
+  SpotShadowFrame? spotShadowFrame,
+  PointShadowFrame? pointShadowFrame,
+) {
+  if (lightComponent?.light.castsShadow == true) {
+    return lightComponent!.light.shadowMapResolution;
+  }
+  if (spotShadowFrame != null) return spotShadowFrame.tileResolution;
+  if (pointShadowFrame == null) return 1024;
+  return pointShadowFrame.casters.first.light.shadowMapResolution * 2;
+}
+
 /// The default [Scene.maxGpuFramesInFlight] for this platform, 2 on iOS,
 /// macOS, and web, and 1 elsewhere.
 // TODO(gpu-pacing): Re-measure Android Vulkan once Flutter GPU submits off the
@@ -1504,6 +1523,11 @@ base class Scene implements SceneGraph {
       renderScene.pointLights,
       views: captureViews,
     );
+    final captureTileResolution = _sharedShadowTileResolution(
+      lightComponent,
+      spotShadowFrame,
+      pointShadowFrame,
+    );
     final punctualLighting = _punctualLightBuffer.build(
       directionals: renderScene.directionalLights,
       primaryDirectional: lightComponent,
@@ -1514,6 +1538,8 @@ base class Scene implements SceneGraph {
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
+      pointFaceResolution: captureTileResolution ~/ 2,
+      shadowTileResolution: captureTileResolution,
       enableFroxels: punctualLightClustering,
     );
     return _captureEnvironmentAt(
@@ -1620,6 +1646,11 @@ base class Scene implements SceneGraph {
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
     final pointShadowFrame = collectPointShadows(renderScene.pointLights);
+    final captureTileResolution = _sharedShadowTileResolution(
+      lightComponent,
+      spotShadowFrame,
+      pointShadowFrame,
+    );
     final punctualLighting = _punctualLightBuffer.build(
       directionals: renderScene.directionalLights,
       primaryDirectional: lightComponent,
@@ -1630,6 +1661,8 @@ base class Scene implements SceneGraph {
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
+      pointFaceResolution: captureTileResolution ~/ 2,
+      shadowTileResolution: captureTileResolution,
       enableFroxels: punctualLightClustering,
     );
     final chosen = renderScene.irradianceVolumeComponents.isNotEmpty
@@ -2573,21 +2606,11 @@ base class Scene implements SceneGraph {
       views: shadowViews,
       previous: _grantedShadowCasters,
     );
-    // Every tile in the shared atlas is one size, so resolve it once here
-    // rather than per view: the point rows stamp their face resolution from
-    // it, and ShadowPass renders the faces at the same size. The directional
-    // light wins because its cascades need the resolution most.
-    // TODO(shadow-atlas-per-light-tiles): a per-light tile size needs the
-    // atlas to stop being one uniform strip, at which point
-    // PointLight.shadowMapResolution and SpotLight.shadowMapResolution can
-    // mean what they say for every light rather than only the first caster.
-    final shadowTileResolution = lightComponent?.light.castsShadow == true
-        ? lightComponent!.light.shadowMapResolution
-        : spotShadowFrame?.tileResolution ??
-              (pointShadowFrame == null
-                  ? 1024
-                  : pointShadowFrame.casters.first.light.shadowMapResolution *
-                        2);
+    final shadowTileResolution = _sharedShadowTileResolution(
+      lightComponent,
+      spotShadowFrame,
+      pointShadowFrame,
+    );
 
     // Without directional cascades the atlas holds only spot and point tiles,
     // so the texture views and the first screen view share one render of it,
@@ -2635,6 +2658,7 @@ base class Scene implements SceneGraph {
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
       pointFaceResolution: shadowTileResolution ~/ 2,
+      shadowTileResolution: shadowTileResolution,
       enableFroxels: punctualLightClustering,
     );
 

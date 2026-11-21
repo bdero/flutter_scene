@@ -36,9 +36,12 @@ class SpotShadowInfo {
     required this.firstTile,
     required this.totalTiles,
     required this.tileResolution,
+    this.regionScale = 1.0,
   });
 
-  /// World to clip matrix of each casting spot, in shadow slot order.
+  /// World to clip matrix of each casting spot, in shadow slot order. Clip
+  /// space is scaled into the tile's drawn region (see [regionScale]), so
+  /// `xy * 0.5 + 0.5` is the tile UV to sample.
   final List<Matrix4> matrices;
 
   /// Atlas tile index of slot 0; slot `i` is tile `firstTile + i`.
@@ -49,6 +52,11 @@ class SpotShadowInfo {
 
   /// Edge length of a tile in texels.
   final int tileResolution;
+
+  /// Fraction of each tile edge a spot drew into, from the tile's lower-left
+  /// corner in clip space. Below 1 when a spot asks for a smaller shadow map
+  /// than the atlas tile, and texels outside the region hold no spot depth.
+  final double regionScale;
 }
 
 /// Forces every view to render its own spot and point shadow tiles, so
@@ -255,13 +263,15 @@ class ShadowPass extends RenderGraphPass {
       ShadowCasterFilter filter = ShadowCasterFilter.all,
       int casterChannelMask = 0xFF,
       List<Plane> receiverPlanes = const [],
+      int? rasterResolution,
     }) {
+      final resolution = rasterResolution ?? _tileResolution;
       renderPass.setViewport(
         gpu.Viewport(
           x: tile * _tileResolution,
-          y: 0,
-          width: _tileResolution,
-          height: _tileResolution,
+          y: _tileResolution - resolution,
+          width: resolution,
+          height: resolution,
         ),
       );
       final encoder = ShadowEncoder(
@@ -332,6 +342,7 @@ class ShadowPass extends RenderGraphPass {
           spots.matrices[s],
           spots.casterFaces,
           casterChannelMask: spots.casterChannelMasks[s],
+          rasterResolution: spots.rasterResolution(_tileResolution),
         );
       }
     }
@@ -375,10 +386,14 @@ class ShadowPass extends RenderGraphPass {
     SpotShadowInfo? spotInfo;
     if (spotFrame != null) {
       spotInfo = SpotShadowInfo(
-        matrices: spotFrame.matrices,
+        matrices: [
+          for (var i = 0; i < spotFrame.matrices.length; i++)
+            spotFrame.samplingMatrix(i, _tileResolution),
+        ],
         firstTile: _cascades.length,
         totalTiles: totalTiles,
         tileResolution: _tileResolution,
+        regionScale: spotFrame.atlasScale(_tileResolution),
       );
       context.blackboard.set(kSpotShadowInfoBlackboardKey, spotInfo);
     }
