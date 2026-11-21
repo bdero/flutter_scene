@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_color_blit_pass.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 
 /// Renders one planar reflection group's mirrored scene capture.
@@ -78,6 +79,12 @@ class PlanarReflectionCapturePass extends RenderGraphPass {
     );
     if (shadowMap != null) {
       blackboard.set(kShadowMapBlackboardKey, shadowMap);
+      blackboard.set(
+        kShadowAtlasLayoutBlackboardKey,
+        context.blackboard.get<ShadowAtlasLayout>(
+          kShadowAtlasLayoutBlackboardKey,
+        ),
+      );
     }
     final inner = RenderGraphContext(
       transientsBuffer: context.transientsBuffer,

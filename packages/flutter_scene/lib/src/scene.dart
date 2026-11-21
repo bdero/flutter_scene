@@ -110,6 +110,7 @@ import 'render/dof_pass.dart';
 import 'material/shadow_catcher_material.dart';
 import 'render/shadow_catcher_bake_pass.dart';
 import 'render/shadow_cache.dart';
+import 'render/shadow_atlas_layout.dart';
 import 'render/shadow_pass.dart';
 import 'render/shadow_receiver_culling.dart';
 import 'render/ssao_pass.dart';
@@ -193,23 +194,29 @@ enum AntiAliasingMode {
   auto,
 }
 
-/// The tile edge of the shared shadow atlas. Every tile is one size, and the
-/// directional light wins because its cascades need the resolution most.
-/// Spots may draw a smaller region inside their tile, and point faces render
-/// at half the edge.
-// TODO(shadow-atlas-per-light-tiles): pack mixed tile sizes compactly and
-// honor independent point and spot resolutions beyond the first caster.
-int _sharedShadowTileResolution(
+/// Packs the frame's shadows into the shared atlas: the primary directional
+/// light's cascades, then each casting spot and point light at its own
+/// `shadowMapResolution`. Pure, so every view and capture of a frame plans
+/// the same layout the punctual light rows were stamped with.
+ShadowAtlasLayout? _planShadowAtlas(
   DirectionalLightComponent? lightComponent,
   SpotShadowFrame? spotShadowFrame,
   PointShadowFrame? pointShadowFrame,
 ) {
-  if (lightComponent?.light.castsShadow == true) {
-    return lightComponent!.light.shadowMapResolution;
-  }
-  if (spotShadowFrame != null) return spotShadowFrame.tileResolution;
-  if (pointShadowFrame == null) return 1024;
-  return pointShadowFrame.casters.first.light.shadowMapResolution * 2;
+  final light = lightComponent?.light;
+  final cascaded = light != null && light.castsShadow;
+  return ShadowAtlasLayout.plan(
+    cascadeCount: cascaded ? light.shadowCascadeCount.clamp(1, 4) : 0,
+    cascadeResolution: cascaded ? light.shadowMapResolution : 0,
+    spotResolutions: [
+      for (final caster in spotShadowFrame?.casters ?? const [])
+        caster.light.shadowMapResolution,
+    ],
+    pointFaceResolutions: [
+      for (final caster in pointShadowFrame?.casters ?? const [])
+        caster.light.shadowMapResolution,
+    ],
+  );
 }
 
 /// The default [Scene.maxGpuFramesInFlight] for this platform, 2 on iOS,
@@ -1526,7 +1533,7 @@ base class Scene implements SceneGraph {
       renderScene.pointLights,
       views: captureViews,
     );
-    final captureTileResolution = _sharedShadowTileResolution(
+    final shadowAtlas = _planShadowAtlas(
       lightComponent,
       spotShadowFrame,
       pointShadowFrame,
@@ -1541,8 +1548,7 @@ base class Scene implements SceneGraph {
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
-      pointFaceResolution: captureTileResolution ~/ 2,
-      shadowTileResolution: captureTileResolution,
+      shadowAtlas: shadowAtlas,
       enableFroxels: punctualLightClustering,
     );
     return _captureEnvironmentAt(
@@ -1649,7 +1655,7 @@ base class Scene implements SceneGraph {
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
     final pointShadowFrame = collectPointShadows(renderScene.pointLights);
-    final captureTileResolution = _sharedShadowTileResolution(
+    final shadowAtlas = _planShadowAtlas(
       lightComponent,
       spotShadowFrame,
       pointShadowFrame,
@@ -1664,8 +1670,7 @@ base class Scene implements SceneGraph {
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
-      pointFaceResolution: captureTileResolution ~/ 2,
-      shadowTileResolution: captureTileResolution,
+      shadowAtlas: shadowAtlas,
       enableFroxels: punctualLightClustering,
     );
     final chosen = renderScene.irradianceVolumeComponents.isNotEmpty
@@ -2609,7 +2614,7 @@ base class Scene implements SceneGraph {
       views: shadowViews,
       previous: _grantedShadowCasters,
     );
-    final shadowTileResolution = _sharedShadowTileResolution(
+    final shadowAtlas = _planShadowAtlas(
       lightComponent,
       spotShadowFrame,
       pointShadowFrame,
@@ -2660,8 +2665,7 @@ base class Scene implements SceneGraph {
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
-      pointFaceResolution: shadowTileResolution ~/ 2,
-      shadowTileResolution: shadowTileResolution,
+      shadowAtlas: shadowAtlas,
       enableFroxels: punctualLightClustering,
     );
 
@@ -3768,23 +3772,23 @@ base class Scene implements SceneGraph {
     }
 
     // Directional cascades, shadow-casting spots, and shadow-casting point
-    // lights share one atlas (and so one sampler in the lit shader). All tiles
-    // use one resolution, the directional light's when it casts, otherwise the
-    // spots', otherwise twice a point caster's face resolution (faces pack
-    // four to a tile at half the tile edge).
-    if (cascades.isNotEmpty ||
-        spotShadowFrame != null ||
-        pointShadowFrame != null) {
+    // lights share one atlas (and so one sampler in the lit shader), each
+    // light at its own resolution.
+    final shadowAtlas = _planShadowAtlas(
+      lightComponent,
+      spotShadowFrame,
+      pointShadowFrame,
+    );
+    if (shadowAtlas != null &&
+        (cascades.isNotEmpty ||
+            spotShadowFrame != null ||
+            pointShadowFrame != null)) {
       graph.addPass(
         ShadowPass(
           renderScene: renderScene,
           cascades: effectiveCascades,
           cascadeReceiverPlanes: cascadeReceiverPlanes,
-          tileResolution: cascades.isNotEmpty
-              ? light!.shadowMapResolution
-              : spotShadowFrame?.tileResolution ??
-                    pointShadowFrame!.casters.first.light.shadowMapResolution *
-                        2,
+          layout: shadowAtlas,
           casterFaces: cascades.isNotEmpty
               ? light!.shadowCasterFaces
               : ShadowCasterFaces.front,
@@ -3809,6 +3813,7 @@ base class Scene implements SceneGraph {
                   effectiveCascades,
                   lightDirection ?? light!.direction,
                   light!.color * light.intensity,
+                  atlas: shadowAtlas,
                 )
               : null,
         ),
