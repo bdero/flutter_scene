@@ -322,6 +322,38 @@ void main() {
     },
   );
 
+  testWidgets('repaintOnGpuCompletion: false ignores repaintRequested', (
+    tester,
+  ) async {
+    final scene = _tryScene();
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    var paints = 0;
+    await tester.pumpWidget(
+      _sized(
+        SceneView(
+          scene,
+          autoTick: false,
+          repaintOnGpuCompletion: false,
+          cameraBuilder: (_) {
+            paints++;
+            return PerspectiveCamera();
+          },
+        ),
+      ),
+    );
+    final paintsBefore = paints;
+    final paintBox = tester.renderObject(find.bySubtype<CustomPaint>());
+
+    notifySceneRepaintForTesting(scene);
+    expect(paintBox.debugNeedsPaint, isFalse);
+
+    await tester.pump();
+    expect(paints, paintsBefore);
+  });
+
   testWidgets('turning autoTick back on continues the clock', (tester) async {
     final scene = _tryScene();
     if (scene == null) {
