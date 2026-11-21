@@ -218,6 +218,9 @@ class ShadowPass extends RenderGraphPass {
     final pointCount = _pointShadows?.casters.length ?? 0;
     final totalTiles =
         _cascades.length + spotCount + pointCount * kPointShadowTilesPerLight;
+    // TODO(shadow-atlas-max-size): one row of tiles can exceed the device's
+    // max texture width (four 2048 cascades plus a spot is 10240). Wrap tiles
+    // into rows or shrink the tile to fit.
     final atlasWidth = _tileResolution * totalTiles;
     // fp32 (not fp16): the far cascade's orthographic depth range spans
     // hundreds of world units, and fp16's ~11-bit mantissa quantizes

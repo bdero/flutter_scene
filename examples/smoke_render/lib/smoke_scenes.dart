@@ -1328,7 +1328,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
-  // A 512 spot sharing the atlas with a 2048 directional light draws into a
+  // A 256 spot sharing the atlas with a 1024 directional light draws into a
   // quarter of its tile. A soft spot kernel over a blocker at the cone edge
   // guards that its taps stay inside the drawn region on every backend.
   SmokeScene('spot_shadow_region', () {
@@ -1356,7 +1356,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         DirectionalLight(
           intensity: 0.8,
           castsShadow: true,
-          shadowMapResolution: 2048,
+          shadowMapResolution: 1024,
         ),
       ),
     );
@@ -1371,7 +1371,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
               direction: vm.Vector3(0.75, -1.0, -0.1),
               outerConeAngle: 0.6,
               castsShadow: true,
-              shadowMapResolution: 512,
+              shadowMapResolution: 256,
               shadowSoftness: 3.0,
             ),
           ),
