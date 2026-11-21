@@ -299,7 +299,6 @@ class PunctualLightBuffer {
     // shader clamps its kernel with this, so it has to be the size the faces
     // actually got.
     int pointFaceResolution = 512,
-    int? shadowTileResolution,
     bool enableFroxels = true,
   }) {
     // One build per frame, so this is where the rings roll over.
@@ -345,12 +344,7 @@ class PunctualLightBuffer {
         packed.params.setRange(
           base + 16,
           base + 32,
-          spotShadows
-              .samplingMatrix(
-                slot,
-                shadowTileResolution ?? spotShadows.tileResolution,
-              )
-              .storage,
+          spotShadows.matrices[slot].storage,
         );
       }
     }
@@ -438,12 +432,7 @@ class PunctualLightBuffer {
         rectAreaLightCount: areas.length,
         spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
         spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
-        spotShadowSoftness:
-            (spotShadows?.softness ?? 0.0) *
-            (spotShadows?.atlasScale(
-                  shadowTileResolution ?? spotShadows.tileResolution,
-                ) ??
-                1),
+        spotShadowSoftness: spotShadows?.softness ?? 0.0,
         internalBuffer: _froxelsEligible ? this : null,
       );
     }
@@ -475,12 +464,7 @@ class PunctualLightBuffer {
       rectAreaLightCount: areas.length,
       spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
       spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
-      spotShadowSoftness:
-          (spotShadows?.softness ?? 0.0) *
-          (spotShadows?.atlasScale(
-                shadowTileResolution ?? spotShadows.tileResolution,
-              ) ??
-              1),
+      spotShadowSoftness: spotShadows?.softness ?? 0.0,
       internalBuffer: _froxelsEligible ? this : null,
     );
   }
