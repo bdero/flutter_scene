@@ -1,5 +1,6 @@
 ## 0.24.4
 
+* `BloomSettings.levels` sets how many levels the bloom chain blurs through (3 to 6). Fewer levels take fewer passes and give a tighter glow at the same brightness.
 * Crossfading clips no longer dips a node's rotation toward its bind pose.
 * A component that sets its node's `visible` in `update` shows or hides the node and its descendants that frame, not the next.
 * The sky in a planar reflection (`PlanarReflectionCamera`, or any camera with an oblique near plane) is no longer stretched.
