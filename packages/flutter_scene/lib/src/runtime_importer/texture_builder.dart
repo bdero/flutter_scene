@@ -7,6 +7,7 @@ import '../texture/basisu/basis_ktx2.dart';
 import '../texture/basisu/basis_ktx2_loader.dart';
 import '../texture/compressed_texture.dart';
 import '../texture/ktx2/ktx2.dart';
+import '../texture/mipmap.dart';
 import '../texture/texture2d.dart';
 import 'gltf_resources.dart';
 
@@ -15,8 +16,9 @@ import 'gltf_resources.dart';
 ///
 /// Image data is sourced from the GLB binary chunk (images referenced
 /// via `bufferView`), from a `data:` URI (decoded inline), or from an
-/// external file URI fetched through [resolveUri] when one is given
-/// (multi-file glTF). A texture with a KHR_texture_basisu extension prefers
+/// external file URI. An external image goes to [resolveTexture] when one is
+/// given, which supplies the finished texture; otherwise its bytes are
+/// fetched through [resolveUri] when one is given (multi-file glTF). A texture with a KHR_texture_basisu extension prefers
 /// its KTX2 image; KTX2 payloads (detected by magic bytes or an image/ktx2
 /// mime type) decode on a shared background isolate, everything else goes
 /// through the platform image codec. An image that can't be sourced or
@@ -70,6 +72,7 @@ Future<List<Texture2D>> buildTextures(
   GltfDocument doc,
   Uint8List bufferData, {
   GltfResourceResolver? resolveUri,
+  GltfTextureResolver? resolveTexture,
   GltfWarningCallback? onWarning,
   int? maxTextureSize,
 }) async {
@@ -95,6 +98,24 @@ Future<List<Texture2D>> buildTextures(
     final imageIdx = tex.imageSource;
     if (imageIdx == null || imageIdx < 0 || imageIdx >= doc.images.length) {
       warn('glTF texture $i has no image source, using a placeholder.');
+      continue;
+    }
+    final externalUri = _externalImageUri(doc.images[imageIdx]);
+    if (resolveTexture != null && externalUri != null) {
+      try {
+        results[i] = await resolveTexture(externalUri, contents[i]);
+        if (results[i] == null) {
+          warn(
+            'glTF image $imageIdx URI "$externalUri" resolved to no texture. '
+            'Using placeholder.',
+          );
+        }
+      } catch (e) {
+        warn(
+          'Failed to resolve glTF image $imageIdx URI "$externalUri": $e. '
+          'Using placeholder.',
+        );
+      }
       continue;
     }
     final imageBytes = await resolveGltfImageBytes(
@@ -151,6 +172,47 @@ Future<List<Texture2D>> buildTextures(
     for (int i = 0; i < results.length; i++)
       _withGltfSampler(results[i], doc, i) ?? _placeholder(),
   ];
+}
+
+/// The percent-decoded URI of [image] when it names an external file, or null
+/// when its bytes are embedded (a `bufferView` or a `data:` URI).
+String? _externalImageUri(GltfImage image) {
+  final uri = image.uri;
+  if (image.bufferView != null || uri == null || uri.startsWith('data:')) {
+    return null;
+  }
+  return Uri.decodeComponent(uri);
+}
+
+/// Decodes one glTF image's encoded [bytes] into a texture the way the
+/// runtime importer does: KTX2 (detected by magic bytes or a [mimeType] of
+/// `image/ktx2`) through the engine's KTX2 loaders, anything else through the
+/// platform image codec. [content] selects mip downsampling; [maxTextureSize]
+/// caps the longest side of a non-KTX2 image. For a [GltfTextureResolver]
+/// that loads and caches external images itself. Throws when the image cannot
+/// be decoded.
+///
+/// Unlike [buildTextures], a standard KTX2 image decodes in its own isolate
+/// job rather than one batch per import.
+/// {@category Assets and loading}
+Future<Texture2D> decodeGltfTexture(
+  Uint8List bytes, {
+  TextureContent content = TextureContent.color,
+  String? mimeType,
+  int? maxTextureSize,
+}) async {
+  if (looksLikeKtx2(bytes) || mimeType == 'image/ktx2') {
+    final texture = await loadKtx2Texture(bytes, content: content);
+    if (texture == null) {
+      throw Ktx2FormatException('Failed to load KTX2 texture');
+    }
+    return texture;
+  }
+  return Texture2D.fromEncodedBytes(
+    bytes,
+    content: content,
+    maxSize: maxTextureSize,
+  );
 }
 
 /// Applies glTF texture [textureIndex]'s sampler (wrap and filter modes) to
