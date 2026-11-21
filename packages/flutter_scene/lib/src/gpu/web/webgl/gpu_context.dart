@@ -19,6 +19,7 @@ final class WebGlContext extends GpuContext {
       alpha: true,
       depth: false,
       stencil: false,
+      powerPreference: 'high-performance',
       preserveDrawingBuffer: true,
     );
     // Lets a WebXR session bind this context's framebuffers without a later
