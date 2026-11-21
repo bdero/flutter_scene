@@ -1328,10 +1328,11 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
-  // A 256 spot sharing the atlas with a 1024 directional light draws into a
-  // quarter of its tile. A soft spot kernel over a blocker at the cone edge
-  // guards that its taps stay inside the drawn region on every backend.
-  SmokeScene('spot_shadow_region', () {
+  // Mixed shadow sizes in one atlas: 2048 cascades, a soft 512 spot, a sharp
+  // 1024 spot, and a 256 point light. Four 2048 cascades plus a spot tile in
+  // one row would pass 8192, so this guards the 2D packing and each light's
+  // own tile, bias, and softness on every backend.
+  SmokeScene('shadow_atlas_packing', () {
     final scene = Scene();
     scene.environmentIntensity = 0.15;
     final material = PhysicallyBasedMaterial()
@@ -1340,39 +1341,70 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..roughnessFactor = 0.9
       ..vertexColorWeight = 0.0;
     scene.add(
-      Node(mesh: Mesh(PlaneGeometry(width: 4.0, depth: 3.2), material)),
+      Node(mesh: Mesh(PlaneGeometry(width: 6.0, depth: 4.0), material)),
     );
+    for (final x in [-1.3, 1.3]) {
+      scene.add(
+        Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5)), material))
+          ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0.25, 0.0)),
+      );
+    }
     scene.add(
-      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5)), material))
-        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.0, 0.25, 0.0)),
-    );
-    scene.add(
-      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.16, 1.2, 0.16)), material))
-        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.2, 0.6, -1.0)),
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.14, 0.7, 0.14)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.0, 0.35, 0.6)),
     );
     scene.add(
       _directionalLightNode(
         vm.Vector3(-0.5, -1.0, 0.35),
         DirectionalLight(
-          intensity: 0.8,
+          intensity: 0.5,
+          castsShadow: true,
+          shadowMapResolution: 2048,
+        ),
+      ),
+    );
+    Node spot(vm.Vector3 position, vm.Vector3 direction, SpotLight light) =>
+        Node()
+          ..localTransform = vm.Matrix4.translation(position)
+          ..addComponent(SpotLightComponent(light..direction = direction));
+    scene.add(
+      spot(
+        vm.Vector3(-3.0, 2.2, 0.3),
+        vm.Vector3(0.75, -1.0, -0.1),
+        SpotLight(
+          intensity: 10.0,
+          range: 12.0,
+          outerConeAngle: 0.6,
+          castsShadow: true,
+          shadowMapResolution: 512,
+          shadowSoftness: 3.0,
+        ),
+      ),
+    );
+    scene.add(
+      spot(
+        vm.Vector3(3.0, 2.2, -0.3),
+        vm.Vector3(-0.75, -1.0, 0.1),
+        SpotLight(
+          intensity: 10.0,
+          range: 12.0,
+          outerConeAngle: 0.6,
           castsShadow: true,
           shadowMapResolution: 1024,
+          shadowSoftness: 0.5,
         ),
       ),
     );
     scene.add(
       Node()
-        ..localTransform = vm.Matrix4.translation(vm.Vector3(-1.7, 2.2, 0.3))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.0, 0.9, 1.3))
         ..addComponent(
-          SpotLightComponent(
-            SpotLight(
-              intensity: 10.0,
-              range: 12.0,
-              direction: vm.Vector3(0.75, -1.0, -0.1),
-              outerConeAngle: 0.6,
+          PointLightComponent(
+            PointLight(
+              intensity: 3.0,
+              range: 6.0,
               castsShadow: true,
               shadowMapResolution: 256,
-              shadowSoftness: 3.0,
             ),
           ),
         ),
@@ -1380,7 +1412,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     return (
       scene: scene,
       camera: PerspectiveCamera(
-        position: vm.Vector3(3.3, 3.1, 3.8),
+        position: vm.Vector3(0.0, 4.0, 5.0),
         target: vm.Vector3(0, 0.2, 0),
       ),
     );

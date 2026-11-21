@@ -46,7 +46,11 @@
 * Transient buffers, light index textures, and `MeshGeometry` attribute updates (`updatePositions` and the rest) reuse their allocations rather than reallocating each frame.
 * A rate-limited `SceneView` whose ticker is running paints on its next vsync when a paced frame finishes, instead of repainting between ticks.
 * `Scene.warmUp` renders into a scratch surface at the view's aspect ratio, so warming up a live scene no longer evicts its render targets, disturbs TAA and SSGI history, or invalidates cached shadow cascades.
-* A shadow-casting `SpotLight` whose `shadowMapResolution` is below the shared shadow atlas tile (set by a shadow-casting `DirectionalLight`) renders at its own resolution. `SpotShadowInfo.regionScale` reports the fraction of each tile it drew.
+* Shadow-casting spot and point lights each use their own `shadowMapResolution`, bias, and softness, instead of the first caster's or the directional light's.
+* The shadow atlas packs its tiles in two dimensions and stays within 8192 texels, so a 2048 `DirectionalLight` with a shadow-casting spot no longer fails on mobile and web.
+* God rays read the right cascades when spot or point lights also cast shadows.
+* BREAKING: `SpotShadowInfo` gives each spot's atlas tile in `rects`, replacing `firstTile`, `totalTiles`, and `tileResolution`. `RenderPassContext.shadowInfo` adds a `cascade_atlas` vec4 placing the cascades.
+* `Lighting.spotShadowDepthBias`, `spotShadowNormalBias`, and `spotShadowSoftness` are deprecated and unused.
 * `PhysicallyBasedMaterial` and `UnlitMaterial` repack their texture transforms only when one changes, including an edit in place such as `transform.offset.x += 0.1`.
 * On the web, a batch of KTX2 textures or mip chain builds yields to the browser between textures instead of freezing the page until the whole batch finishes. One large texture still blocks while it decodes.
 * The WebGL2 web backend compiles shaders in parallel and checks a program's link only when it is first drawn, and `Scene.warmUp` starts every pipeline's compile before drawing with any. A warm-up on Windows (ANGLE) takes about half as long and no longer freezes the page while it compiles.

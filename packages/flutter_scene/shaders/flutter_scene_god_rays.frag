@@ -34,12 +34,14 @@ uniform PostCameraInfo {
 cam;
 
 // Per-cascade world->light-clip matrices, view-space split distances, the light
-// travel direction (xyz) with the cascade count in w, and the light color.
+// travel direction (xyz) with the cascade count in w, the light color, and the
+// cascades' atlas placement (xy one tile's UV extent, z cascades per row).
 uniform PostShadowInfo {
   mat4 light_space_matrix[4];
   vec4 cascade_splits;
   vec4 light_direction;
   vec4 light_color;
+  vec4 cascade_atlas;
 }
 shadow;
 
@@ -82,9 +84,11 @@ vec3 ViewPositionAt(vec2 uv) {
     vec3 proj = lc.xyz / lc.w;                                             \
     if (abs(proj.x) < 1.0 && abs(proj.y) < 1.0) {                          \
       vec2 tile_uv = proj.xy * 0.5 + 0.5;                                  \
-      vec2 atlas_uv = vec2((float(IDX) + tile_uv.x) / float(COUNT),        \
-                           tile_uv.y);                                     \
-      atlas_uv.y = 1.0 - atlas_uv.y; /* atlas stored top-down */           \
+      float cols = shadow.cascade_atlas.z;                                 \
+      vec2 cell = vec2(mod(float(IDX), cols), floor(float(IDX) / cols));   \
+      /* atlas stored top-down */                                          \
+      vec2 atlas_uv =                                                      \
+          (cell + vec2(tile_uv.x, 1.0 - tile_uv.y)) * shadow.cascade_atlas.xy; \
       float caster = texture(input_shadow, atlas_uv).r;                    \
       RESULT = (proj.z - kShadowBias) <= caster ? 1.0 : 0.0;               \
       return RESULT;                                                       \

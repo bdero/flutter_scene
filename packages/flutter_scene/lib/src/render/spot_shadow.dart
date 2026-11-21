@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/spot_light_component.dart';
-import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
 import 'package:flutter_scene/src/render/shadow_caster_selection.dart';
 
 /// The most spot lights that can cast a shadow at once. Each takes a tile in
@@ -13,18 +12,12 @@ import 'package:flutter_scene/src/render/shadow_caster_selection.dart';
 const int kMaxSpotShadows = 4;
 
 /// The shadow-casting spots selected for a frame, in slot order (a spot's slot
-/// is its index here, matching its shadow atlas tile and its matrix). All tiles
-/// share one resolution and bias, taken from the first caster (per-spot shadow
-/// parameters are a future refinement).
+/// is its index here, matching its shadow atlas tile and its matrix). Each
+/// spot's resolution, bias, softness, and caster faces are its own light's.
 class SpotShadowFrame {
   SpotShadowFrame({
     required this.casters,
     required this.matrices,
-    required this.tileResolution,
-    required this.depthBias,
-    required this.normalBias,
-    required this.softness,
-    required this.casterFaces,
     required this.casterChannelMasks,
     required this.dropped,
   });
@@ -34,12 +27,6 @@ class SpotShadowFrame {
 
   /// World -> spot-clip matrix per caster (parallel to [casters]).
   final List<Matrix4> matrices;
-
-  final int tileResolution;
-  final double depthBias;
-  final double normalBias;
-  final double softness;
-  final ShadowCasterFaces casterFaces;
 
   /// Each caster's shadow-caster channel mask (parallel to [casters]); a node
   /// renders into that spot's tile only when its light channels intersect.
@@ -51,23 +38,6 @@ class SpotShadowFrame {
   /// The slot assigned to [component] (its atlas tile and matrix), or -1 when
   /// it is not a shadow caster this frame.
   int slotOf(SpotLightComponent component) => casters.indexOf(component);
-
-  int rasterResolution(int atlasResolution) =>
-      tileResolution.clamp(1, atlasResolution);
-
-  double atlasScale(int atlasResolution) =>
-      rasterResolution(atlasResolution) / atlasResolution;
-
-  Matrix4 samplingMatrix(int slot, int atlasResolution) {
-    final scale = atlasScale(atlasResolution);
-    if (scale == 1) return matrices[slot];
-    return (Matrix4.identity()
-          ..setEntry(0, 0, scale)
-          ..setEntry(1, 1, scale)
-          ..setEntry(0, 3, scale - 1)
-          ..setEntry(1, 3, scale - 1)) *
-        matrices[slot];
-  }
 }
 
 /// Selects up to [kMaxSpotShadows] shadow-casting spots from [spots] (see
@@ -96,15 +66,9 @@ SpotShadowFrame? collectSpotShadows(
         caster.worldDirection,
       ),
   ];
-  final first = casters.first.light;
   return SpotShadowFrame(
     casters: casters,
     matrices: matrices,
-    tileResolution: first.shadowMapResolution,
-    depthBias: first.shadowDepthBias,
-    normalBias: first.shadowNormalBias,
-    softness: first.shadowSoftness,
-    casterFaces: first.shadowCasterFaces,
     casterChannelMasks: [
       for (final caster in casters) caster.light.shadowCasterChannelMask,
     ],

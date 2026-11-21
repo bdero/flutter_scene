@@ -25,6 +25,7 @@ import 'package:flutter_scene/src/render/render_stats.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/wireframe_overlay.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/render/sh_composite.dart';
 import 'package:flutter_scene/src/render/skybox_encoder.dart';
@@ -375,11 +376,12 @@ class ScenePass extends RenderGraphPass {
           ? 0
           : _punctualLighting.pointShadowTileCount,
       rectAreaLightCount: _punctualLighting.rectAreaLightCount,
-      spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
-      spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
-      spotShadowSoftness: _punctualLighting.spotShadowSoftness,
-      spotShadowRegionScale: _punctualLighting.spotShadowRegionScale,
       shadowMap: shadowMap,
+      shadowAtlas: shadowMap == null
+          ? null
+          : context.blackboard.get<ShadowAtlasLayout>(
+              kShadowAtlasLayoutBlackboardKey,
+            ),
       cascades: shadowMap == null ? const [] : _cascades,
       ssaoMap: ssaoMap,
       specularOcclusionMode: ssaoMap == null ? 0.0 : _specularOcclusionMode,

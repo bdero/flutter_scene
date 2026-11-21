@@ -20,21 +20,25 @@ import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/shader_uniform_bindings.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Packs the `PostShadowInfo` std140 block a depth-aware custom pass reads
 /// (exposed as [RenderPassContext.shadowInfo]) from the frame's [cascades],
-/// the light's world-space travel [direction], and its [color] premultiplied by
-/// intensity. Layout: `mat4 light_space_matrix[4]` (world -> cascade clip),
-/// `vec4 cascade_splits` (view-space split distance per cascade), `vec4
-/// light_direction` (xyz direction, w = cascade count), `vec4 light_color`.
+/// the light's world-space travel [direction], its [color] premultiplied by
+/// intensity, and where the cascades sit in the shadow [atlas]. Layout:
+/// `mat4 light_space_matrix[4]` (world -> cascade clip), `vec4
+/// cascade_splits` (view-space split distance per cascade), `vec4
+/// light_direction` (xyz direction, w = cascade count), `vec4 light_color`,
+/// `vec4 cascade_atlas` (see [RenderPassContext.shadowInfo]).
 ByteData packPostShadowInfo(
   List<ShadowCascade> cascades,
   Vector3 direction,
-  Vector3 color,
-) {
-  final f = Float32List(76); // 4 mat4 + 3 vec4
+  Vector3 color, {
+  ShadowAtlasLayout? atlas,
+}) {
+  final f = Float32List(80); // 4 mat4 + 4 vec4
   final count = cascades.length < 4 ? cascades.length : 4;
   for (var i = 0; i < count; i++) {
     f.setRange(i * 16, i * 16 + 16, cascades[i].lightSpaceMatrix.storage);
@@ -47,6 +51,12 @@ ByteData packPostShadowInfo(
   f[72] = color.x;
   f[73] = color.y;
   f[74] = color.z;
+  if (atlas != null && atlas.cascadeColumns > 0) {
+    final extent = atlas.cascadeUvExtent;
+    f[76] = extent.x;
+    f[77] = extent.y;
+    f[78] = atlas.cascadeColumns.toDouble();
+  }
   return ByteData.sublistView(f);
 }
 
@@ -262,9 +272,10 @@ class RenderPassContext {
   gpu.Texture? get sceneDepthLinear =>
       _context.blackboard.get<gpu.Texture>(kLinearDepthBlackboardKey);
 
-  /// The shared shadow atlas (a horizontal strip of tiles, window-space depth
-  /// in the red channel): the directional cascades first, then one tile per
-  /// casting spot (see [spotShadows]). Non-null when the pass declared
+  /// The shared shadow atlas (square tiles, window-space depth in the red
+  /// channel, stored top-down): the directional cascades in a grid at its
+  /// top-left corner (see [shadowInfo]), one tile per casting spot (see
+  /// [spotShadows]), and the point lights' cube faces. Non-null when the pass declared
   /// [RenderInput.shadowMap] and a light cast this frame. Pair with
   /// [shadowInfo] for the cascades.
   gpu.Texture? get shadowMap =>
@@ -280,8 +291,11 @@ class RenderPassContext {
   /// The packed `PostShadowInfo` std140 uniform block matching [shadowMap]:
   /// four `mat4` world->cascade-clip matrices, a `vec4` of the cascades'
   /// view-space split distances, a `vec4` light direction (xyz world travel
-  /// direction, w = cascade count), and a `vec4` light color (rgb, premultiplied
-  /// by intensity). Bind it under a `PostShadowInfo` block via
+  /// direction, w = cascade count), a `vec4` light color (rgb, premultiplied
+  /// by intensity), and a `vec4` cascade atlas placement: xy one cascade
+  /// tile's extent in atlas UV and z the cascades per row, so cascade `i` with
+  /// tile UV `uv` samples `(vec2(i % z, i / z) + vec2(uv.x, 1.0 - uv.y)) * xy`.
+  /// Bind it under a `PostShadowInfo` block via
   /// [applyShader]'s `uniforms`. Null when [shadowMap] is null.
   ByteData? get shadowInfo =>
       _context.blackboard.get<ByteData>(kShadowUniformBlackboardKey);

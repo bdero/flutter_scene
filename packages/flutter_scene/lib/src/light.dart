@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/generated_assets/lighting_features.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
 import 'package:flutter_scene/src/shaders.dart'
     show compiledOutLightingFeatures;
 import 'package:flutter_scene/src/render/punctual_lights.dart'
@@ -643,12 +644,9 @@ class PointLight {
   /// expensive shadow type per light.
   bool castsShadow;
 
-  /// Pixel resolution this light asks for on each (square) cube face.
-  ///
-  /// The shared shadow atlas gives every tile one size, so this is only
-  /// honored when no directional cascade and no shadow-casting spot is
-  /// already setting it, and only for the first point caster. Otherwise the
-  /// faces render at half whatever tile size the atlas chose.
+  /// Pixel resolution of each (square) cube face. The faces render at this
+  /// size unless the frame's shadows overflow the shared atlas, which halves
+  /// every spot and point shadow until they fit.
   int shadowMapResolution;
 
   /// Near clip distance of each face's shadow frustum. Geometry closer to
@@ -878,10 +876,9 @@ class SpotLight {
   /// room (shadow-casting spots are limited; the rest shade unshadowed).
   bool castsShadow;
 
-  /// Pixel resolution this spot asks for on its (square) shadow map tile.
-  ///
-  /// Spots share the first caster's requested resolution, capped by the atlas
-  /// tile size. Smaller shadows occupy a subregion of their atlas slot.
+  /// Pixel resolution of this spot's (square) shadow map. It renders at this
+  /// size unless the frame's shadows overflow the shared atlas, which halves
+  /// every spot and point shadow until they fit.
   int shadowMapResolution;
 
   /// Near clip distance of the shadow frustum. Geometry closer to the light
@@ -1095,11 +1092,14 @@ class Lighting {
     this.spotShadowCount = 0,
     this.pointShadowTileCount = 0,
     this.rectAreaLightCount = 0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowDepthBias = 0.0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowNormalBias = 0.0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowSoftness = 0.0,
-    this.spotShadowRegionScale = 1.0,
     this.shadowMap,
+    this.shadowAtlas,
     this.cascades = const [],
     this.ssaoMap,
     this.specularOcclusionMode = 0.0,
@@ -1233,29 +1233,37 @@ class Lighting {
   final int punctualIndexWidth;
   final int punctualIndexHeight;
 
-  /// Number of shadow-casting spots this frame; their tiles follow the
-  /// directional cascades in [shadowMap] and their matrices ride in
+  /// Number of shadow-casting spots this frame; their tiles are in
+  /// [shadowMap], and their matrices, tiles, and shadow parameters ride in
   /// [punctualParamsTexture]. Zero disables spot shadow sampling.
   final int spotShadowCount;
 
   /// Number of atlas tiles claimed by shadow-casting point lights this frame
-  /// (two per caster, each packing four quarter-tile cube faces); they follow
-  /// the spot tiles in [shadowMap]. Zero disables point shadow sampling.
+  /// (two per caster, each packing four quarter-tile cube faces) in
+  /// [shadowMap]. Zero disables point shadow sampling.
   final int pointShadowTileCount;
 
-  /// Shared spot-shadow sampling parameters.
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowDepthBias;
+
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowNormalBias;
+
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowSoftness;
 
-  /// Fraction of each spot tile edge the spots drew into (see
-  /// [SpotShadowInfo.regionScale]), which bounds the shader's taps.
-  final double spotShadowRegionScale;
-
-  /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
-  /// cascade tiles as a horizontal strip) for [directionalLight], or
-  /// null when shadows are off for this frame. Sampled with [cascades].
+  /// The shared shadow atlas (a depth-in-`.r` texture holding the cascade,
+  /// spot, and point light tiles) for [directionalLight] and the punctual
+  /// lights, or null when shadows are off for this frame. Sampled with
+  /// [cascades].
   final gpu.Texture? shadowMap;
+
+  /// Where the tiles of [shadowMap] are.
+  @internal
+  final ShadowAtlasLayout? shadowAtlas;
 
   /// The shadow cascades matching [shadowMap], near-to-far, or empty
   /// when there is no shadow map this frame.
