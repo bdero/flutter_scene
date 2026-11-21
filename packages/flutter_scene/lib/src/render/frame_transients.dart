@@ -213,14 +213,21 @@ class ImmediatePoolTransients implements FrameTransients {
   /// Buffers handed out since the last submission; stamped by it.
   final List<_TransientBlock> _used = [];
 
-  /// Stamped buffers, reusable once the watermark passes their stamp.
-  final List<_TransientBlock> _pooled = [];
+  /// Stamped buffers in submission order, awaiting completion.
+  final ListQueue<_TransientBlock> _pending = ListQueue();
+
+  /// Completed buffers, newest last within each size class.
+  final Map<int, List<_TransientBlock>> _available = {};
 
   int _frame = 0;
+  int _completed = 0;
 
   /// Total live buffers. For tests.
   @visibleForTesting
-  int get bufferCount => _used.length + _pooled.length;
+  int get bufferCount =>
+      _used.length +
+      _pending.length +
+      _available.values.fold(0, (total, blocks) => total + blocks.length);
 
   /// Device buffers every [ImmediatePoolTransients] has created. For tests
   /// that check steady-state rendering allocates nothing.
@@ -242,24 +249,18 @@ class ImmediatePoolTransients implements FrameTransients {
   gpu.BufferView emplaceTyped(TypedData data) {
     final length = data.lengthInBytes;
     final sizeClass = _sizeClassFor(length);
-    final completed = _tracker.completedThrough;
+    _promoteCompleted();
 
     // Most recently used first, so surplus buffers age out.
-    _TransientBlock? block;
-    for (var i = _pooled.length - 1; i >= 0; i--) {
-      final candidate = _pooled[i];
-      if (candidate.length == sizeClass && candidate.stamp <= completed) {
-        block = candidate;
-        _pooled.removeAt(i);
-        break;
-      }
-    }
-    block ??= _TransientBlock(
-      _createBuffer(sizeClass),
-      sizeClass,
-      false,
-      staged: false,
-    );
+    final available = _available[sizeClass];
+    final block = available != null && available.isNotEmpty
+        ? available.removeLast()
+        : _TransientBlock(
+            _createBuffer(sizeClass),
+            sizeClass,
+            false,
+            staged: false,
+          );
     block.lastUsed = _frame;
     _used.add(block);
 
@@ -293,19 +294,35 @@ class ImmediatePoolTransients implements FrameTransients {
   }
 
   void _onBeforeSubmit(int id) {
+    _promoteCompleted();
     for (final block in _used) {
       block.stamp = id;
-      _pooled.add(block);
+      if (id <= _completed) {
+        (_available[block.length] ??= []).add(block);
+      } else {
+        _pending.addLast(block);
+      }
     }
     _used.clear();
+  }
+
+  void _promoteCompleted() {
+    final completed = _tracker.completedThrough;
+    if (completed == _completed) return;
+    _completed = completed;
+    while (_pending.isNotEmpty && _pending.first.stamp <= completed) {
+      final block = _pending.removeFirst();
+      (_available[block.length] ??= []).add(block);
+    }
   }
 
   @override
   void beginFrame() {
     _onBeforeSubmit(_tracker.latestSubmission);
     _frame++;
-    final completed = _tracker.completedThrough;
-    _pooled.removeWhere((block) => block.retireIfIdle(completed, _frame));
+    for (final blocks in _available.values) {
+      blocks.removeWhere((block) => block.retireIfIdle(_completed, _frame));
+    }
   }
 }
 

@@ -2576,14 +2576,9 @@ base class Scene implements SceneGraph {
       views: shadowViews,
       previous: _grantedShadowCasters,
     );
-    // Every tile in the shared atlas is one size, so resolve it once here
-    // rather than per view: the point rows stamp their face resolution from
-    // it, and ShadowPass renders the faces at the same size. The directional
-    // light wins because its cascades need the resolution most.
-    // TODO(shadow-atlas-per-light-tiles): a per-light tile size needs the
-    // atlas to stop being one uniform strip, at which point
-    // PointLight.shadowMapResolution and SpotLight.shadowMapResolution can
-    // mean what they say for every light rather than only the first caster.
+    // Spots may rasterize a smaller region inside each uniform atlas slot.
+    // TODO(shadow-atlas-per-light-tiles): pack mixed tile sizes compactly and
+    // honor independent point and spot resolutions beyond the first caster.
     final shadowTileResolution = lightComponent?.light.castsShadow == true
         ? lightComponent!.light.shadowMapResolution
         : spotShadowFrame?.tileResolution ??
@@ -2638,6 +2633,7 @@ base class Scene implements SceneGraph {
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
       pointFaceResolution: shadowTileResolution ~/ 2,
+      shadowTileResolution: shadowTileResolution,
       enableFroxels: punctualLightClustering,
     );
 

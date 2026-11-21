@@ -27,10 +27,8 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 ///    driver more work than the display pipeline can absorb before its next
 ///    present.
 ///
-/// Elsewhere this is close to free. The web shim runs the callback
-/// synchronously, and the backends that submit from the calling thread
-/// complete it as the buffer retires. Either way a caller resumes on a later
-/// microtask, never on a blocked thread.
+/// Other backends complete asynchronously after the GPU work retires. The
+/// caller resumes without blocking the thread.
 ///
 /// Completes immediately rather than throwing when there is no GPU context
 /// yet, and gives up after [timeout] rather than hanging on a backend that

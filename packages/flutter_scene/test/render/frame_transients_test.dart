@@ -418,6 +418,111 @@ void main() {
       );
     });
 
+    test('immediate pool: reuses newest eligible buffers by size class', () {
+      final tracker = GpuSubmissionTracker();
+      final pool = ImmediatePoolTransients(tracker);
+      final aSmall = pool.emplace(_bytes(100));
+      final aLarge = pool.emplace(_bytes(700));
+      final a = tracker.record();
+      final bSmallOlder = pool.emplace(_bytes(100));
+      final bSmallNewer = pool.emplace(_bytes(100));
+      final bLarge = pool.emplace(_bytes(700));
+      final b = tracker.record();
+      final cSmall = pool.emplace(_bytes(100));
+      final c = tracker.record();
+
+      tracker.complete(b);
+      final dSmall = pool.emplace(_bytes(100));
+      final d = tracker.record();
+      expect(pool.bufferCount, 7);
+      expect(tracker.completedThrough, 0);
+      expect(
+        [
+          aSmall,
+          bSmallOlder,
+          bSmallNewer,
+          cSmall,
+        ].any((view) => identical(view.buffer, dSmall.buffer)),
+        isFalse,
+      );
+
+      tracker.complete(a);
+      expect(tracker.completedThrough, b);
+      for (final expected in [bSmallNewer, bSmallOlder, aSmall]) {
+        expect(
+          identical(pool.emplace(_bytes(80)).buffer, expected.buffer),
+          isTrue,
+        );
+      }
+      for (final expected in [bLarge, aLarge]) {
+        expect(
+          identical(pool.emplace(_bytes(600)).buffer, expected.buffer),
+          isTrue,
+        );
+      }
+      tracker.complete(c);
+      expect(
+        identical(pool.emplace(_bytes(100)).buffer, cSmall.buffer),
+        isTrue,
+      );
+      tracker.complete(d);
+      expect(
+        identical(pool.emplace(_bytes(100)).buffer, dSmall.buffer),
+        isTrue,
+      );
+      expect(pool.bufferCount, 7);
+    });
+
+    test('immediate pool: seals unsubmitted data at a completed watermark', () {
+      final tracker = GpuSubmissionTracker();
+      final pool = ImmediatePoolTransients(tracker);
+      final first = pool.emplace(_bytes(100));
+      final id = tracker.record();
+      final second = pool.emplace(_bytes(100));
+      tracker.complete(id);
+
+      pool.beginFrame();
+      expect(
+        identical(pool.emplace(_bytes(100)).buffer, second.buffer),
+        isTrue,
+      );
+      expect(identical(pool.emplace(_bytes(100)).buffer, first.buffer), isTrue);
+      pool.beginFrame();
+      expect(tracker.completedThrough, id);
+      expect(identical(pool.emplace(_bytes(100)).buffer, first.buffer), isTrue);
+      expect(
+        identical(pool.emplace(_bytes(100)).buffer, second.buffer),
+        isTrue,
+      );
+      expect(pool.bufferCount, 2);
+    });
+
+    test('immediate pool: retires idle completed buffers across classes', () {
+      final tracker = GpuSubmissionTracker();
+      final pool = ImmediatePoolTransients(tracker);
+      final small = pool.emplace(_bytes(100));
+      pool.emplace(_bytes(700));
+      final id = tracker.record();
+      for (var i = 0; i <= kTransientIdleFrames; i++) {
+        pool.beginFrame();
+      }
+      expect(pool.bufferCount, 2);
+
+      tracker.complete(id);
+      expect(identical(pool.emplace(_bytes(100)).buffer, small.buffer), isTrue);
+      final reused = tracker.record();
+      pool.beginFrame();
+      expect(pool.bufferCount, 1);
+      for (var i = 0; i <= kTransientIdleFrames; i++) {
+        pool.beginFrame();
+      }
+      expect(pool.bufferCount, 1);
+
+      tracker.complete(reused);
+      pool.beginFrame();
+      expect(pool.bufferCount, 0);
+    });
+
     test('immediate pool: releases buffers left idle', () {
       final tracker = GpuSubmissionTracker();
       final pool = ImmediatePoolTransients(tracker);
