@@ -378,6 +378,7 @@ class ScenePass extends RenderGraphPass {
       spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
       spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
       spotShadowSoftness: _punctualLighting.spotShadowSoftness,
+      spotShadowRegionScale: _punctualLighting.spotShadowRegionScale,
       shadowMap: shadowMap,
       cascades: shadowMap == null ? const [] : _cascades,
       ssaoMap: ssaoMap,

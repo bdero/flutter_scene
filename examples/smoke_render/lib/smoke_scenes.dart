@@ -1328,6 +1328,63 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // A 512 spot sharing the atlas with a 2048 directional light draws into a
+  // quarter of its tile. A soft spot kernel over a blocker at the cone edge
+  // guards that its taps stay inside the drawn region on every backend.
+  SmokeScene('spot_shadow_region', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.15;
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.75, 0.74, 0.70, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 4.0, depth: 3.2), material)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.0, 0.25, 0.0)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.16, 1.2, 0.16)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.2, 0.6, -1.0)),
+    );
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.5, -1.0, 0.35),
+        DirectionalLight(
+          intensity: 0.8,
+          castsShadow: true,
+          shadowMapResolution: 2048,
+        ),
+      ),
+    );
+    scene.add(
+      Node()
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(-1.7, 2.2, 0.3))
+        ..addComponent(
+          SpotLightComponent(
+            SpotLight(
+              intensity: 10.0,
+              range: 12.0,
+              direction: vm.Vector3(0.75, -1.0, -0.1),
+              outerConeAngle: 0.6,
+              castsShadow: true,
+              shadowMapResolution: 512,
+              shadowSoftness: 3.0,
+            ),
+          ),
+        ),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(3.3, 3.1, 3.8),
+        target: vm.Vector3(0, 0.2, 0),
+      ),
+    );
+  }),
   // SMAA 1x over thin rotated bars, the classic aliasing torture test. The
   // edges must resolve smooth (not stair-stepped like none, not smeared
   // like fxaa). Guards the three-pass chain and the area/search texture

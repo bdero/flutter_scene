@@ -42,6 +42,7 @@
 * The WebGPU web backend keeps two frames in flight, as Metal does. A 1080p PBR scene went from 11 to 55 fps.
 * A rate-limited `SceneView` whose ticker is running paints on its next vsync when a paced frame finishes, instead of repainting between ticks.
 * `Scene.warmUp` renders into a scratch surface at the view's aspect ratio, so warming up a live scene no longer evicts its render targets, disturbs TAA and SSGI history, or invalidates cached shadow cascades.
+* A shadow-casting `SpotLight` whose `shadowMapResolution` is below the shared shadow atlas tile (set by a shadow-casting `DirectionalLight`) renders at its own resolution. `SpotShadowInfo.regionScale` reports the fraction of each tile it drew.
 * `PhysicallyBasedMaterial` and `UnlitMaterial` repack their texture transforms only when one changes, including an edit in place such as `transform.offset.x += 0.1`.
 * On the web, a batch of KTX2 textures or mip chain builds yields to the browser between textures instead of freezing the page until the whole batch finishes. One large texture still blocks while it decodes.
 * The WebGL2 web backend compiles shaders in parallel and checks a program's link only when it is first drawn, and `Scene.warmUp` starts every pipeline's compile before drawing with any. A warm-up on Windows (ANGLE) takes about half as long and no longer freezes the page while it compiles.

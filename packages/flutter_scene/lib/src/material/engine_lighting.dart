@@ -271,12 +271,13 @@ class EngineLightingUniforms {
     fragInfo[201] = lighting.projectionOffsetY;
     fragInfo[202] = lighting.orthographic ? 1.0 : 0.0;
     fragInfo[203] = froxels?.depthOffset ?? 0.0;
-    // camera_position [204..207]: the eye, for projecting world positions.
+    // camera_position [204..207]: the eye, for projecting world positions,
+    // and in w the spot shadow region scale.
     final cameraPosition = lighting.cameraPosition;
     fragInfo[204] = cameraPosition?.x ?? 0.0;
     fragInfo[205] = cameraPosition?.y ?? 0.0;
     fragInfo[206] = cameraPosition?.z ?? 0.0;
-    fragInfo[207] = 0.0;
+    fragInfo[207] = lighting.spotShadowRegionScale;
     // spot_shadow_params [12..15] (more of the unused SH region): the shared
     // spot-shadow parameters. x is the total non-cascade tile count (spot
     // tiles then point-shadow tiles); 0 disables both spot and point shadow

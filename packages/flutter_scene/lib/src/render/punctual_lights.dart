@@ -75,6 +75,7 @@ class PunctualLighting {
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
     this.spotShadowSoftness = 0.0,
+    this.spotShadowRegionScale = 1.0,
     this.internalBuffer,
   });
 
@@ -91,6 +92,7 @@ class PunctualLighting {
       spotShadowDepthBias = 0.0,
       spotShadowNormalBias = 0.0,
       spotShadowSoftness = 0.0,
+      spotShadowRegionScale = 1.0,
       internalBuffer = null;
 
   /// The buffer that built this result, for per-view froxel builds
@@ -131,6 +133,9 @@ class PunctualLighting {
   final double spotShadowDepthBias;
   final double spotShadowNormalBias;
   final double spotShadowSoftness;
+
+  /// See [SpotShadowInfo.regionScale].
+  final double spotShadowRegionScale;
 }
 
 // A ring of exactly-sized host-visible RGBA32F textures, so a frame in flight is
@@ -298,6 +303,7 @@ class PunctualLightBuffer {
     // shader clamps its kernel with this, so it has to be the size the faces
     // actually got.
     int pointFaceResolution = 512,
+    int? shadowTileResolution,
     bool enableFroxels = true,
   }) {
     // One build per frame, so this is where the rings roll over.
@@ -331,6 +337,11 @@ class PunctualLightBuffer {
     // matrix (texels 4-7) into its parameters row, so the shader can sample the
     // right shared-atlas tile without a separate matrices texture.
     final spotTileCount = spotShadows?.matrices.length ?? 0;
+    final spotTileResolution =
+        shadowTileResolution ?? spotShadows?.tileResolution ?? 1;
+    final spotRegionScale = spotShadows?.atlasScale(spotTileResolution) ?? 1.0;
+    // Softness is in sampling UV, which the region scale shrinks.
+    final spotSoftness = (spotShadows?.softness ?? 0.0) * spotRegionScale;
     if (spotShadows != null) {
       final spotRowStart =
           directionals.where((d) => !identical(d, primaryDirectional)).length +
@@ -343,7 +354,7 @@ class PunctualLightBuffer {
         packed.params.setRange(
           base + 16,
           base + 32,
-          spotShadows.matrices[slot].storage,
+          spotShadows.samplingMatrix(slot, spotTileResolution).storage,
         );
       }
     }
@@ -431,7 +442,8 @@ class PunctualLightBuffer {
         rectAreaLightCount: areas.length,
         spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
         spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
-        spotShadowSoftness: spotShadows?.softness ?? 0.0,
+        spotShadowSoftness: spotSoftness,
+        spotShadowRegionScale: spotRegionScale,
         internalBuffer: _froxelsEligible ? this : null,
       );
     }
@@ -456,7 +468,8 @@ class PunctualLightBuffer {
       rectAreaLightCount: areas.length,
       spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
       spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
-      spotShadowSoftness: spotShadows?.softness ?? 0.0,
+      spotShadowSoftness: spotSoftness,
+      spotShadowRegionScale: spotRegionScale,
       internalBuffer: _froxelsEligible ? this : null,
     );
   }
