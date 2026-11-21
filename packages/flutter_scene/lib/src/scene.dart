@@ -21,9 +21,6 @@ import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
-import 'package:flutter_scene/src/render/transients_execution_native.dart'
-    if (dart.library.js_interop) 'package:flutter_scene/src/render/transients_execution_web.dart'
-    show kImmediateGpuExecution;
 import 'package:flutter_scene/src/render/instance_packing.dart'
     show beginRetainedInstanceFrame;
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
@@ -194,12 +191,12 @@ enum AntiAliasingMode {
 }
 
 /// The default [Scene.maxGpuFramesInFlight] for this platform, 2 on iOS,
-/// macOS, and the WebGPU web backend, and 1 elsewhere.
+/// macOS, and web, and 1 elsewhere.
 // TODO(gpu-pacing): Re-measure Android Vulkan once Flutter GPU submits off the
 // calling thread (flutter/flutter#194882), and measure Windows.
 @visibleForTesting
 int get defaultMaxGpuFramesInFlight {
-  if (kIsWeb) return kImmediateGpuExecution ? 1 : 2;
+  if (kIsWeb) return 2;
   return switch (defaultTargetPlatform) {
     TargetPlatform.iOS || TargetPlatform.macOS => 2,
     _ => 1,
@@ -786,8 +783,8 @@ base class Scene implements SceneGraph {
   /// without stalling either thread. There a limit of 1 can halve the frame
   /// rate of a scene the GPU has room for, since the GPU clocks down until
   /// each frame barely fits a vsync and a held frame then misses the next.
-  /// It is also 2 on WebGPU, whose completion signal arrives a round trip
-  /// late, so a limit of 1 holds frames the GPU has already finished.
+  /// It is also 2 on web, where completion is only seen after a trip through
+  /// the event loop, so a limit of 1 holds frames the GPU has already finished.
   /// Elsewhere it defaults to 1. On Android's Vulkan backend a second frame
   /// blocks this thread or the raster thread once the GPU falls behind, which
   /// slows the whole app, and on GLES it gains little. An Android game whose
@@ -2576,9 +2573,14 @@ base class Scene implements SceneGraph {
       views: shadowViews,
       previous: _grantedShadowCasters,
     );
-    // Spots may rasterize a smaller region inside each uniform atlas slot.
-    // TODO(shadow-atlas-per-light-tiles): pack mixed tile sizes compactly and
-    // honor independent point and spot resolutions beyond the first caster.
+    // Every tile in the shared atlas is one size, so resolve it once here
+    // rather than per view: the point rows stamp their face resolution from
+    // it, and ShadowPass renders the faces at the same size. The directional
+    // light wins because its cascades need the resolution most.
+    // TODO(shadow-atlas-per-light-tiles): a per-light tile size needs the
+    // atlas to stop being one uniform strip, at which point
+    // PointLight.shadowMapResolution and SpotLight.shadowMapResolution can
+    // mean what they say for every light rather than only the first caster.
     final shadowTileResolution = lightComponent?.light.castsShadow == true
         ? lightComponent!.light.shadowMapResolution
         : spotShadowFrame?.tileResolution ??
@@ -2633,7 +2635,6 @@ base class Scene implements SceneGraph {
       spotShadows: spotShadowFrame,
       pointShadows: pointShadowFrame,
       pointFaceResolution: shadowTileResolution ~/ 2,
-      shadowTileResolution: shadowTileResolution,
       enableFroxels: punctualLightClustering,
     );
 

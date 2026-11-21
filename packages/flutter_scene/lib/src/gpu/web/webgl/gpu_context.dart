@@ -76,7 +76,10 @@ final class WebGlContext extends GpuContext {
   Timer? _completionTimer;
 
   void _enqueueCompletion(CompletionCallback callback) {
-    if (_unfencedCallbacks.isEmpty) scheduleMicrotask(_fenceSubmissions);
+    // Root-zone scheduling keeps a fake clock from capturing the shared poll.
+    if (_unfencedCallbacks.isEmpty) {
+      Zone.root.scheduleMicrotask(_fenceSubmissions);
+    }
     _unfencedCallbacks.add(Zone.current.bindUnaryCallbackGuarded(callback));
   }
 
@@ -89,7 +92,7 @@ final class WebGlContext extends GpuContext {
       0,
     );
     if (sync == null) {
-      Timer.run(() {
+      Zone.root.createTimer(Duration.zero, () {
         for (final callback in callbacks) {
           callback(CompletionStatus.error);
         }
@@ -98,7 +101,7 @@ final class WebGlContext extends GpuContext {
     }
     _completions.add(_WebGlCompletion(sync, callbacks));
     _gl.flush();
-    _completionTimer ??= Timer(Duration.zero, _pollCompletions);
+    _completionTimer ??= Zone.root.createTimer(Duration.zero, _pollCompletions);
   }
 
   void _pollCompletions() {
@@ -125,7 +128,7 @@ final class WebGlContext extends GpuContext {
       }
     }
     if (_completions.isNotEmpty) {
-      _completionTimer ??= Timer(
+      _completionTimer ??= Zone.root.createTimer(
         const Duration(milliseconds: 1),
         _pollCompletions,
       );

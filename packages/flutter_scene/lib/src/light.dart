@@ -880,8 +880,9 @@ class SpotLight {
 
   /// Pixel resolution this spot asks for on its (square) shadow map tile.
   ///
-  /// Spots share the first caster's requested resolution, capped by the atlas
-  /// tile size. Smaller shadows occupy a subregion of their atlas slot.
+  /// The shared shadow atlas gives every tile one size, so this is only
+  /// honored when no directional cascade is already setting it, and only for
+  /// the first spot caster.
   int shadowMapResolution;
 
   /// Near clip distance of the shadow frustum. Geometry closer to the light

@@ -38,7 +38,7 @@ class SpotShadowInfo {
     required this.tileResolution,
   });
 
-  /// World to sampling-clip matrices, including each spot's atlas subregion.
+  /// World to clip matrix of each casting spot, in shadow slot order.
   final List<Matrix4> matrices;
 
   /// Atlas tile index of slot 0; slot `i` is tile `firstTile + i`.
@@ -255,15 +255,13 @@ class ShadowPass extends RenderGraphPass {
       ShadowCasterFilter filter = ShadowCasterFilter.all,
       int casterChannelMask = 0xFF,
       List<Plane> receiverPlanes = const [],
-      int? rasterResolution,
     }) {
-      final resolution = rasterResolution ?? _tileResolution;
       renderPass.setViewport(
         gpu.Viewport(
           x: tile * _tileResolution,
-          y: _tileResolution - resolution,
-          width: resolution,
-          height: resolution,
+          y: 0,
+          width: _tileResolution,
+          height: _tileResolution,
         ),
       );
       final encoder = ShadowEncoder(
@@ -334,7 +332,6 @@ class ShadowPass extends RenderGraphPass {
           spots.matrices[s],
           spots.casterFaces,
           casterChannelMask: spots.casterChannelMasks[s],
-          rasterResolution: spots.rasterResolution(_tileResolution),
         );
       }
     }
@@ -378,10 +375,7 @@ class ShadowPass extends RenderGraphPass {
     SpotShadowInfo? spotInfo;
     if (spotFrame != null) {
       spotInfo = SpotShadowInfo(
-        matrices: [
-          for (var i = 0; i < spotFrame.matrices.length; i++)
-            spotFrame.samplingMatrix(i, _tileResolution),
-        ],
+        matrices: spotFrame.matrices,
         firstTile: _cascades.length,
         totalTiles: totalTiles,
         tileResolution: _tileResolution,
