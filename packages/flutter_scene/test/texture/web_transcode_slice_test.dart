@@ -23,15 +23,18 @@ void main() {
 
   test('yields to the event loop once the budget is spent', () async {
     final slicer = WebTimeSlicer(sliceBudget: Duration.zero);
+    final peer = WebTimeSlicer(sliceBudget: Duration.zero);
     final events = <String>[];
+    Future<void>? peerDone;
     await Future.wait([
       slicer.run(() {
         events.add('a');
-        Timer.run(() => events.add('timer'));
+        peerDone = peer.run(() => events.add('peer'));
       }),
       slicer.run(() => events.add('b')),
     ]);
-    expect(events, ['a', 'timer', 'b']);
+    await peerDone;
+    expect(events, ['a', 'peer', 'b']);
   });
 
   test(
