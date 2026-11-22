@@ -1627,9 +1627,8 @@ base class Node implements SceneGraph {
       break;
     }
 
-    // A component may change its owner's visibility during this tick. Use the
-    // resulting state for both this node's render items and its descendants,
-    // so hide/show takes effect in the same frame.
+    // After the tick, so a component that shows or hides its node does so
+    // this frame.
     _effectiveVisible = ancestorsVisible && visible;
 
     if (_effectiveVisible) {

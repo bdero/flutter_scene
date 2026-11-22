@@ -41,44 +41,40 @@ class _VisibilityComponent extends Component {
 }
 
 void main() {
-  test(
-    'component visibility reaches own and descendant render items in the same pass',
-    () async {
-      final renderScene = RenderScene();
-      final root = Node()..debugMountInto(renderScene);
-      final control = _VisibilityComponent();
-      final parent = Node(mesh: Mesh(_StubGeometry(), _StubMaterial()))
-        ..addComponent(control);
-      final child = Node(mesh: Mesh(_StubGeometry(), _StubMaterial()));
-      final instanced = Node()
-        ..addComponent(
-          InstancedMeshComponent(
-            InstancedMesh(geometry: _StubGeometry(), material: _StubMaterial())
-              ..addInstance(Matrix4.identity()),
-          ),
-        );
-      parent
-        ..add(child)
-        ..add(instanced);
-      root.add(parent);
-      await Future<void>.delayed(Duration.zero);
+  test('component visibility reaches own and descendant render items in the same pass', () async {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final control = _VisibilityComponent();
+    final parent = Node(mesh: Mesh(_StubGeometry(), _StubMaterial()))
+      ..addComponent(control);
+    final child = Node(mesh: Mesh(_StubGeometry(), _StubMaterial()));
+    final instanced = Node()
+      ..addComponent(
+        InstancedMeshComponent(
+          InstancedMesh(geometry: _StubGeometry(), material: _StubMaterial())
+            ..addInstance(Matrix4.identity()),
+        ),
+      );
+    parent
+      ..add(child)
+      ..add(instanced);
+    root.add(parent);
+    await Future<void>.delayed(Duration.zero);
 
-      root.scenePrePass(.016);
-      expect(renderScene.items, hasLength(3));
-      expect(renderScene.items.every((item) => !item.visible), isTrue);
+    root.scenePrePass(.016);
+    expect(renderScene.items, hasLength(3));
+    expect(renderScene.items.every((item) => !item.visible), isTrue);
 
-      control.show = true;
-      root.scenePrePass(.016);
-      expect(renderScene.items.every((item) => item.visible), isTrue);
-      expect(control.ticks, 2); // Hidden components must be able to show again.
+    // A hidden node's component still ticks, so it can show the node again.
+    control.show = true;
+    root.scenePrePass(.016);
+    expect(renderScene.items.every((item) => item.visible), isTrue);
+    expect(control.ticks, 2);
 
-      root.visible = false;
-      root.scenePrePass(.016);
-      expect(renderScene.items.every((item) => !item.visible), isTrue);
-      expect(
-        control.ticks,
-        3,
-      ); // Showing oneself cannot bypass a hidden ancestor.
-    },
-  );
+    // Showing itself cannot override a hidden ancestor.
+    root.visible = false;
+    root.scenePrePass(.016);
+    expect(renderScene.items.every((item) => !item.visible), isTrue);
+    expect(control.ticks, 3);
+  });
 }
