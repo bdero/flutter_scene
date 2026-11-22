@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart';
@@ -321,22 +322,50 @@ EnvironmentMap buildEnvironmentFromFaces(
 
 /// How many [SkyBakeJob.advance] calls one bake cycle takes.
 int skyBakeStepCount({required bool cube}) =>
-    SkyBakeJob._firstBandStep + kPrefilterBandCount * (cube ? 6 : 1) + 1;
+    SkyBakeJob._firstBandStep +
+    (cube ? skyBakeCubePrefilterSteps.length : kPrefilterBandCount) +
+    1;
 
-/// The cube face and roughness band the cube layout's prefilter step [index]
-/// runs: all six faces of band 0, then of band 1, and so on.
-({int face, int band}) skyBakeCubePrefilterStep(int index) =>
-    (face: index % 6, band: index ~/ 6);
+// Mirrors kPrefilterSamples in flutter_scene_prefilter_radiance_cube.frag.
+const int _kPrefilterSamples = 256;
+
+/// The relative GPU cost of prefiltering one cube face of [band], its texel
+/// count times the GGX samples per texel. The mirror band is one fetch.
+@visibleForTesting
+int cubePrefilterPassCost(int band) =>
+    (1 << 2 * (kPrefilterBandCount - band)) *
+    (band == 0 ? 1 : _kPrefilterSamples);
+
+/// The (face, band) passes each cube layout prefilter step runs, in band
+/// order. A step holds at most the cost of one band 1 face, the costliest
+/// pass, and at most six passes, bounding each pass's fixed overhead too. The
+/// heavy bands take a frame per face and the light ones share one.
+final List<List<({int face, int band})>> skyBakeCubePrefilterSteps = () {
+  final budget = cubePrefilterPassCost(1);
+  final steps = <List<({int face, int band})>>[];
+  var cost = budget;
+  for (var band = 0; band < kPrefilterBandCount; band++) {
+    final passCost = cubePrefilterPassCost(band);
+    for (var face = 0; face < 6; face++) {
+      if (cost + passCost > budget || steps.last.length == 6) {
+        steps.add([]);
+        cost = 0;
+      }
+      steps.last.add((face: face, band: band));
+      cost += passCost;
+    }
+  }
+  return steps;
+}();
 
 /// An incremental sky bake: one GPU pass per [advance] call, so a refreshing
 /// sky-driven environment costs a bounded slice per frame instead of a spike.
 ///
 /// A cycle is `6 + 1 + prefilter + 1` steps: the six cube faces, the
 /// equirect assembly, the prefilter (the bulk of the bake's cost), and finally
-/// the SH projection. The prefilter runs one roughness band of one cube face
-/// per step on the cube layout (`6 * kPrefilterBandCount` steps), or one band
-/// per step on the atlas layout. The
-/// outputs are double-buffered: a cycle writes into the atlas/SH pair the
+/// the SH projection. The cube layout's prefilter runs the
+/// [skyBakeCubePrefilterSteps], the atlas layout's one roughness band per
+/// step. The outputs are double-buffered: a cycle writes into the atlas/SH pair the
 /// scene is *not* currently sampling, and the finished pair is returned by
 /// the last [advance] for the caller to publish, so a partially-baked
 /// environment is never visible. Capture targets (faces, equirect) are
@@ -415,14 +444,15 @@ class SkyBakeJob {
     } else if (step < _shStep) {
       final index = step - _firstBandStep;
       if (_useCube) {
-        final (:face, :band) = skyBakeCubePrefilterStep(index);
-        prefilterEquirectRadianceCubeFace(
-          _equirect!,
-          _atlases[_writeIndex]!,
-          face,
-          band,
-          sourceIsLinear: true,
-        );
+        for (final (:face, :band) in skyBakeCubePrefilterSteps[index]) {
+          prefilterEquirectRadianceCubeFace(
+            _equirect!,
+            _atlases[_writeIndex]!,
+            face,
+            band,
+            sourceIsLinear: true,
+          );
+        }
       } else {
         final band = index;
         prefilterEquirectRadianceBand(
