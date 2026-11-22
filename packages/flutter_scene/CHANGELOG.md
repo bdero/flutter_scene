@@ -51,6 +51,8 @@
 * The WebGPU web backend waits on one queue fence for all the passes submitted in a turn instead of one per pass. Submitting a 12-pass frame went from 0.48 ms to 0.29 ms.
 * Ambient occlusion, screen-space reflections, depth of field, and SMAA reuse each other's intermediate textures within a frame, holding 28 to 48 MB less at 1080p.
 * The web backends keep two frames in flight, as Metal does. A 1080p PBR scene on WebGPU went from 11 to 55 fps.
+* WebGL2 asks for the high-performance GPU, as WebGPU does, so machines with two GPUs render on the faster one.
+* Sliced web texture loads yield with `scheduler.yield()` where the browser has it, so they no longer wait about 4 ms per yield.
 * WebGL reports GPU completion through fences, so a GPU-bound scene paces its frames instead of stalling the rest of the app.
 * WebGL skips render state calls that change nothing.
 * Transient buffers, light index textures, and `MeshGeometry` attribute updates (`updatePositions` and the rest) reuse their allocations rather than reallocating each frame.
