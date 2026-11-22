@@ -41,7 +41,7 @@ class _VisibilityComponent extends Component {
 }
 
 void main() {
-  test('component visibility reaches own and descendant render items in the same pass', () async {
+  test('visibility set in update applies in the same pass', () async {
     final renderScene = RenderScene();
     final root = Node()..debugMountInto(renderScene);
     final control = _VisibilityComponent();
