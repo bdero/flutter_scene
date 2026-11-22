@@ -335,8 +335,15 @@ final class WebGlRenderPass extends RenderPass {
   }
 
   /// Applies one recorded vertex-stream binding to the currently bound VAO:
-  /// binds the stream's GL buffer and points/enables its attributes.
-  void _applyVertexBinding(BufferView bufferView, int slot) {
+  /// binds the stream's GL buffer and points its attributes. When
+  /// [configureVao] is true (newly created VAO), also enables each attribute
+  /// array and sets its instance divisor; cached VAO hits retain both states
+  /// and only re-point buffer/offset when the bound [BufferView] changes.
+  void _applyVertexBinding(
+    BufferView bufferView,
+    int slot, {
+    required bool configureVao,
+  }) {
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline!;
     bufferView.buffer.webGl._bindForTarget(
@@ -357,7 +364,9 @@ final class WebGlRenderPass extends RenderPass {
             'Vertex shader has no input named "${attribute.name}"',
           );
         }
-        gl.enableVertexAttribArray(input.location);
+        if (configureVao) {
+          gl.enableVertexAttribArray(input.location);
+        }
         final name = attribute.format.name;
         final unsigned = name.startsWith('uint');
         if (unsigned || name.startsWith('sint')) {
@@ -382,7 +391,9 @@ final class WebGlRenderPass extends RenderPass {
             bufferView.offsetInBytes + attribute.offsetInBytes,
           );
         }
-        gl.vertexAttribDivisor(input.location, divisor);
+        if (configureVao) {
+          gl.vertexAttribDivisor(input.location, divisor);
+        }
       }
       return;
     }
@@ -390,7 +401,9 @@ final class WebGlRenderPass extends RenderPass {
     final inputs = pipeline.vertexShader.vertexInputs;
     final stride = pipeline.vertexShader.vertexStride;
     for (final input in inputs) {
-      gl.enableVertexAttribArray(input.location);
+      if (configureVao) {
+        gl.enableVertexAttribArray(input.location);
+      }
       gl.vertexAttribPointer(
         input.location,
         input.componentCount,
@@ -399,9 +412,11 @@ final class WebGlRenderPass extends RenderPass {
         stride,
         bufferView.offsetInBytes + input.offsetInBytes,
       );
-      // Divisor state lives in the VAO and may be left over from an
-      // instanced layout; reset it for vertex-rate inputs.
-      gl.vertexAttribDivisor(input.location, 0);
+      if (configureVao) {
+        // Divisor state lives in the VAO and may be left over from an
+        // instanced layout; reset it for vertex-rate inputs.
+        gl.vertexAttribDivisor(input.location, 0);
+      }
     }
   }
 
@@ -415,10 +430,12 @@ final class WebGlRenderPass extends RenderPass {
   /// (pipeline, buffers, offsets), so their full attribute state is captured
   /// in a VAO once and re-bound with a single call thereafter.
   ///
-  /// Instance-rate streams are excluded from the cache key and re-pointed on
-  /// the bound VAO every draw: they ride the per-frame bump allocator, so
-  /// their offset changes per draw and every instanced draw re-points them
-  /// anyway.
+  /// Instance-rate slot indices are included in the VAO key so their attribute
+  /// enable and divisor=1 states are configured once on VAO creation. On a
+  /// cached VAO hit, an instance stream whose `(buffer, offset)` matches what
+  /// that VAO already points at needs no GL calls at all (e.g. retained
+  /// `InstancedMesh` buffers); when a pooled transient buffer changes, only
+  /// `bindBuffer` and `vertexAttrib[I]Pointer` are re-issued.
   void _applyVertexState({required bool needsIndex}) {
     if (_inlineVertexBufferView != null) {
       _ensureVao();
@@ -426,12 +443,17 @@ final class WebGlRenderPass extends RenderPass {
     }
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline!;
-    final key = StringBuffer()..write(identityHashCode(pipeline));
+    final key = StringBuffer()..write(pipeline._id);
     for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-      if (instanceRate) continue;
+      if (instanceRate) {
+        key
+          ..write('|i:')
+          ..write(slot);
+        continue;
+      }
       key
         ..write('|')
-        ..write(identityHashCode(view.buffer))
+        ..write(view.buffer.webGl._id)
         ..write(':')
         ..write(view.offsetInBytes)
         ..write(':')
@@ -441,39 +463,46 @@ final class WebGlRenderPass extends RenderPass {
     if (indexView != null) {
       key
         ..write('#')
-        ..write(identityHashCode(indexView.buffer))
+        ..write(indexView.buffer.webGl._id)
         ..write(':')
         ..write(indexView.offsetInBytes);
     }
     final cacheKey = key.toString();
     final cache = _gpuContext._vaoCache;
     // Remove-and-reinsert keeps the map in least-recently-used order.
-    var vao = cache.remove(cacheKey);
-    if (vao != null) {
-      cache[cacheKey] = vao;
-      gl.bindVertexArray(vao);
-    } else {
-      vao = gl.createVertexArray();
-      if (vao == null) {
-        throw StateError('Failed to create WebGL vertex array');
-      }
-      gl.bindVertexArray(vao);
+    final cached = cache.remove(cacheKey);
+    if (cached != null) {
+      cache[cacheKey] = cached;
+      gl.bindVertexArray(cached.vao);
       for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-        if (instanceRate) continue;
-        _applyVertexBinding(view, slot);
+        if (!instanceRate) continue;
+        if (cached.matchesInstanceBinding(slot, view)) continue;
+        _applyVertexBinding(view, slot, configureVao: false);
+        cached.recordInstanceBinding(slot, view);
       }
-      // ELEMENT_ARRAY_BUFFER binding is VAO state; capture it with the rest.
-      indexView?.buffer.webGl._bindForTarget(
-        web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
-      );
-      cache[cacheKey] = vao;
-      if (cache.length > WebGlContext._kMaxCachedVaos) {
-        final oldest = cache.keys.first;
-        gl.deleteVertexArray(cache.remove(oldest)!);
+      return;
+    }
+
+    final vao = gl.createVertexArray();
+    if (vao == null) {
+      throw StateError('Failed to create WebGL vertex array');
+    }
+    gl.bindVertexArray(vao);
+    final entry = _CachedVao(vao);
+    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
+      _applyVertexBinding(view, slot, configureVao: true);
+      if (instanceRate) {
+        entry.recordInstanceBinding(slot, view);
       }
     }
-    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-      if (instanceRate) _applyVertexBinding(view, slot);
+    // ELEMENT_ARRAY_BUFFER binding is VAO state; capture it with the rest.
+    indexView?.buffer.webGl._bindForTarget(
+      web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
+    );
+    cache[cacheKey] = entry;
+    if (cache.length > WebGlContext._kMaxCachedVaos) {
+      final oldest = cache.keys.first;
+      gl.deleteVertexArray(cache.remove(oldest)!.vao);
     }
   }
 
@@ -515,9 +544,7 @@ final class WebGlRenderPass extends RenderPass {
     // UNIFORM_BUFFER_OFFSET_ALIGNMENT.
     final blockBinding = pipeline._structBlockBindings[struct.name];
     if (blockBinding != null) {
-      final glBuffer = bufferView.buffer.webGl._bindForTarget(
-        web.WebGL2RenderingContext.UNIFORM_BUFFER,
-      );
+      final glBuffer = bufferView.buffer.webGl._ensureNonElementBuffer();
       // Bind at least the driver-reported block data size; the emplaced
       // length alone can be smaller than the driver's padded size, and a
       // too-small range makes the draw a no-op. DeviceBuffer pads its GL

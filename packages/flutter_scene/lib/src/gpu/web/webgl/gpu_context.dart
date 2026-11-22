@@ -143,8 +143,7 @@ final class WebGlContext extends GpuContext {
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
   /// buffer), in least-recently-used order; see WebGlRenderPass._applyVertexState.
   static const int _kMaxCachedVaos = 512;
-  final Map<String, web.WebGLVertexArrayObject> _vaoCache =
-      <String, web.WebGLVertexArrayObject>{};
+  final Map<String, _CachedVao> _vaoCache = <String, _CachedVao>{};
 
   int _maxSupportedAnisotropy = 1;
 
@@ -446,18 +445,16 @@ final class WebGlContext extends GpuContext {
     if (_canvas.width != texture.width) _canvas.width = texture.width;
     if (_canvas.height != texture.height) _canvas.height = texture.height;
 
-    final readFbo = _gl.createFramebuffer();
-    if (readFbo == null) {
-      throw StateError('Failed to create framebuffer for present blit');
-    }
+    final readFbo =
+        texture.webGl.externalFramebuffer ??
+        _framebufferFor(
+          texture,
+          0,
+          0,
+          null,
+          () => WebGlRenderPass._createFramebuffer(_gl, texture, 0, 0, null),
+        );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.READ_FRAMEBUFFER, readFbo);
-    _gl.framebufferTexture2D(
-      web.WebGL2RenderingContext.READ_FRAMEBUFFER,
-      web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
-      web.WebGL2RenderingContext.TEXTURE_2D,
-      texture.webGl.glTexture,
-      0,
-    );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
     // The blit runs outside any pass and GL keeps the last pass's scissor and
     // color mask, so a region copy (one eye of a shared target) would clip it.
@@ -483,7 +480,6 @@ final class WebGlContext extends GpuContext {
       web.WebGL2RenderingContext.NEAREST,
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, null);
-    _gl.deleteFramebuffer(readFbo);
   }
 
   /// Synchronously snapshot [texture] into a `ui.Image`. Blits to the
@@ -588,4 +584,26 @@ _createGeometryBuffers(int vertexBytes, int indexBytes) {
 /// `EXT_clip_control`, which sets the clip-space origin and depth range.
 extension type _ExtClipControl._(JSObject _) implements JSObject {
   external void clipControlEXT(int origin, int depth);
+}
+
+/// Cached VAO paired with the last `(bufferId, offset)` bound to each
+/// instance-rate vertex slot on that VAO.
+final class _CachedVao {
+  _CachedVao(this.vao);
+
+  final web.WebGLVertexArrayObject vao;
+  final Map<int, (int, int)> _instanceBindings = {};
+
+  bool matchesInstanceBinding(int slot, BufferView view) {
+    final buffer = view.buffer.webGl;
+    if (!buffer._valid || buffer._glOtherBuffer == null) return false;
+    final previous = _instanceBindings[slot];
+    return previous != null &&
+        previous.$1 == buffer._id &&
+        previous.$2 == view.offsetInBytes;
+  }
+
+  void recordInstanceBinding(int slot, BufferView view) {
+    _instanceBindings[slot] = (view.buffer.webGl._id, view.offsetInBytes);
+  }
 }
