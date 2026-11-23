@@ -846,6 +846,14 @@ void main() {
     );
   });
 
+  test('back faces mirror the whole tangent frame', () {
+    // The normal and bitangent flip with the face, so without the tangent a
+    // double-sided normal map reads its red channel inverted from behind.
+    final normals = File('shaders/normals.glsl').readAsStringSync();
+
+    expect(normals, contains('frame[0] *= gl_FrontFacing ? 1.0 : -1.0;'));
+  });
+
   test('vertex bodies carry normals by the inverse-transpose', () {
     final helper = File('shaders/normal_transform.glsl').readAsStringSync();
     final unskinned = File(

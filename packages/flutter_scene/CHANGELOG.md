@@ -6,6 +6,7 @@
 
 ## 0.24.4
 
+* Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
 * A refreshing `SkyEnvironment` no longer hitches on the cube radiance layout. Its prefilter splits the heaviest roughness bands across frames, one cube face each.
 * `BloomSettings.levels` sets how many levels the bloom chain blurs through (3 to 6). Fewer levels take fewer passes and give a tighter glow at the same brightness.
 * Crossfading clips no longer dips a node's rotation toward its bind pose.
