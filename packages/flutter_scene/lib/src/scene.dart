@@ -232,6 +232,27 @@ int get defaultMaxGpuFramesInFlight {
   };
 }
 
+bool _directionalLightDrivesShadows(DirectionalLight light) =>
+    light.intensity > 0.0 || light.shadowAmbientStrength > 0.0;
+
+/// Whether [light] should render directional shadow cascades this frame.
+///
+/// Skips cascades when [DirectionalLight.intensity] is <= 0 unless
+/// [DirectionalLight.shadowAmbientStrength] is positive, a visible
+/// [ShadowCatcherMaterial] exists, god rays are enabled, or a custom pass
+/// requests [RenderInput.shadowMap].
+@visibleForTesting
+bool shouldRenderDirectionalShadows(
+  DirectionalLight? light, {
+  required bool hasShadowCatcher,
+  bool hasGodRays = false,
+  bool hasCustomShadowMapPass = false,
+}) {
+  if (light == null || !light.castsShadow) return false;
+  if (_directionalLightDrivesShadows(light)) return true;
+  return hasShadowCatcher || hasGodRays || hasCustomShadowMapPass;
+}
+
 /// The region [Scene.warmUp] renders, 64 wide at the presented view's aspect
 /// (16 to 128 tall) so cached shadow cascades stay valid, or 64x64 before any
 /// frame has presented.
@@ -1573,7 +1594,7 @@ base class Scene implements SceneGraph {
       views: captureViews,
     );
     final shadowAtlas = _planShadowAtlas(
-      lightComponent,
+      _directionalShadowsActive(lightComponent?.light) ? lightComponent : null,
       spotShadowFrame,
       pointShadowFrame,
     );
@@ -1695,7 +1716,7 @@ base class Scene implements SceneGraph {
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
     final pointShadowFrame = collectPointShadows(renderScene.pointLights);
     final shadowAtlas = _planShadowAtlas(
-      lightComponent,
+      _directionalShadowsActive(lightComponent?.light) ? lightComponent : null,
       spotShadowFrame,
       pointShadowFrame,
     );
@@ -2802,8 +2823,12 @@ base class Scene implements SceneGraph {
       views: shadowViews,
       previous: _grantedShadowCasters,
     );
+    final frameDirectionalShadowsActive = _directionalShadowsActive(
+      lightComponent?.light,
+      includeGodRays: true,
+    );
     final shadowAtlas = _planShadowAtlas(
-      lightComponent,
+      frameDirectionalShadowsActive ? lightComponent : null,
       spotShadowFrame,
       pointShadowFrame,
     );
@@ -2830,7 +2855,7 @@ base class Scene implements SceneGraph {
     _sharedShadowAtlas =
         !debugDisableSharedShadowTiles &&
             anchor != null &&
-            lightComponent?.light.castsShadow != true &&
+            !frameDirectionalShadowsActive &&
             (spotShadowFrame != null || pointShadowFrame != null)
         ? SharedShadowAtlas(anchor.camera.position)
         : null;
@@ -3195,6 +3220,31 @@ base class Scene implements SceneGraph {
   // renders both never shares an attachment between them.
   final Surface _externalSurface = Surface();
 
+  bool _hasVisibleShadowCatcher() {
+    for (final item in renderScene.items) {
+      if (item.visible && item.material is ShadowCatcherMaterial) return true;
+    }
+    return false;
+  }
+
+  bool _hasCustomShadowMapPass() => _passesWithInputs.any(
+    (pass) => pass.inputs.contains(RenderInput.shadowMap),
+  );
+
+  bool _directionalShadowsActive(
+    DirectionalLight? light, {
+    bool includeGodRays = false,
+  }) {
+    if (light == null || !light.castsShadow) return false;
+    if (_directionalLightDrivesShadows(light)) return true;
+    return shouldRenderDirectionalShadows(
+      light,
+      hasShadowCatcher: _hasVisibleShadowCatcher(),
+      hasGodRays: includeGodRays && godRays.enabled,
+      hasCustomShadowMapPass: _hasCustomShadowMapPass(),
+    );
+  }
+
   // What each view of a multi-view group shares this frame, keyed by view.
   // Single-view groups share nothing and are left out.
   Map<RenderView, _GroupShared> _prepareGroupShared(
@@ -3203,6 +3253,10 @@ base class Scene implements SceneGraph {
     ui.Size Function(RenderView view) viewSizeOf,
   ) {
     final shared = <RenderView, _GroupShared>{};
+    final castsDirectional = _directionalShadowsActive(
+      lighting.lightComponent?.light,
+      includeGodRays: true,
+    );
     for (final group in groups) {
       if (group.views.length < 2) continue;
       if (!group.sharedCulling && !group.sharedShadows) continue;
@@ -3215,8 +3269,7 @@ base class Scene implements SceneGraph {
       List<ShadowCascade>? cascades;
       Camera? combined;
       final light = lighting.lightComponent?.light;
-      final castsDirectional = light != null && light.castsShadow;
-      if (group.sharedShadows && castsDirectional) {
+      if (group.sharedShadows && castsDirectional && light != null) {
         combined = combinedViewCamera(cameras, sizes);
         if (combined != null) {
           // The combined projection ignores the aspect ratio, so any will do.
@@ -4059,9 +4112,33 @@ base class Scene implements SceneGraph {
         projection.scaleX > 0.0 &&
         projection.scaleY > 0.0 &&
         projection.far > projection.near;
-    final cascades = light != null && light.castsShadow && projectionValid
+    // Baked shadow catchers refresh their footprint caches right after the
+    // atlas renders, so the scene pass samples a current cache this frame.
+    // Live catchers may widen their own shadow filter, which the receiver
+    // culling margin must cover. Both live and baked catchers still sample the
+    // directional shadow map even when the directional light's intensity is 0.
+    List<RenderItem>? catcherBakes;
+    var hasShadowCatcher = false;
+    var maxReceiverSoftness = light?.shadowSoftness ?? 0.0;
+    for (final item in renderScene.items) {
+      final material = item.material;
+      if (!item.visible || material is! ShadowCatcherMaterial) continue;
+      hasShadowCatcher = true;
+      if (material.needsBakedShadowRefresh) {
+        (catcherBakes ??= []).add(item);
+      }
+      maxReceiverSoftness = math.max(maxReceiverSoftness, material.softness);
+    }
+    final hasCustomShadowMapPass = _hasCustomShadowMapPass();
+    final directionalShadowsActive = shouldRenderDirectionalShadows(
+      light,
+      hasShadowCatcher: hasShadowCatcher,
+      hasGodRays: godRays.enabled && !captureLinearColor && !debugActive,
+      hasCustomShadowMapPass: hasCustomShadowMapPass,
+    );
+    final cascades = directionalShadowsActive && projectionValid
         ? groupShared?.cascades ??
-              light.computeCascades(
+              light!.computeCascades(
                 camera,
                 pixelSize.width / pixelSize.height,
                 lightDirection,
@@ -4189,18 +4266,21 @@ base class Scene implements SceneGraph {
           : ShadowCachePlan(plan.cascades, const [], plan.entries, plan.cache);
       effectiveCascades = groupShadows.effectiveCascades;
     } else {
-      if (cascades.isNotEmpty &&
-          hasStaticShadowCasters &&
+      if (hasStaticShadowCasters &&
           light != null &&
-          light.cacheStaticShadows) {
-        shadowCachePlan = (_directionalShadowCache ??= DirectionalShadowCache())
-            .plan(
-              light: light,
-              lightDirection: lightDirection ?? light.direction,
-              idealCascades: cascades,
-              staticSignature: staticShadowSignature,
-            );
-        effectiveCascades = shadowCachePlan.cascades;
+          light.castsShadow &&
+          light.cacheStaticShadows &&
+          projectionValid) {
+        if (cascades.isNotEmpty) {
+          shadowCachePlan =
+              (_directionalShadowCache ??= DirectionalShadowCache()).plan(
+                light: light,
+                lightDirection: lightDirection ?? light.direction,
+                idealCascades: cascades,
+                staticSignature: staticShadowSignature,
+              );
+          effectiveCascades = shadowCachePlan.cascades;
+        }
       } else {
         _directionalShadowCache = null;
       }
@@ -4208,21 +4288,6 @@ base class Scene implements SceneGraph {
         ?..planned = true
         ..cachePlan = shadowCachePlan
         ..effectiveCascades = effectiveCascades;
-    }
-
-    // Baked shadow catchers refresh their footprint caches right after the
-    // atlas renders, so the scene pass samples a current cache this frame.
-    // Live catchers may widen their own shadow filter, which the receiver
-    // culling margin must cover.
-    List<RenderItem>? catcherBakes;
-    var maxReceiverSoftness = light?.shadowSoftness ?? 0.0;
-    for (final item in renderScene.items) {
-      final material = item.material;
-      if (!item.visible || material is! ShadowCatcherMaterial) continue;
-      if (material.needsBakedShadowRefresh) {
-        (catcherBakes ??= []).add(item);
-      }
-      maxReceiverSoftness = math.max(maxReceiverSoftness, material.softness);
     }
 
     // Cull cascade casters that cannot shadow anything this view shades. Only
@@ -4248,9 +4313,7 @@ base class Scene implements SceneGraph {
           effectiveCascades.isNotEmpty &&
           catcherBakes == null &&
           !planarReaders &&
-          !_passesWithInputs.any(
-            (pass) => pass.inputs.contains(RenderInput.shadowMap),
-          );
+          !hasCustomShadowMapPass;
       if (receiverCullingAllowed) {
         // Receivers past the last cascade never sample the atlas, so an
         // infinite far plane can stop there. A group's receivers are bounded
@@ -4309,7 +4372,7 @@ base class Scene implements SceneGraph {
     // lights share one atlas (and so one sampler in the lit shader), each
     // light at its own resolution.
     final shadowAtlas = _planShadowAtlas(
-      lightComponent,
+      directionalShadowsActive ? lightComponent : null,
       spotShadowFrame,
       pointShadowFrame,
     );
