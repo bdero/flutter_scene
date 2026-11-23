@@ -479,7 +479,7 @@ void main() {
     final plain = texture(width, height);
     final plainTarget = ExternalRenderTarget.texture(plain);
     await render(() => pair(plainTarget));
-    final reference = await _rgbaBytes(plain.asImage());
+    final reference = await _rasterRgbaBytes(plain.asImage());
     final sharedDraws = shadowDraws();
 
     // The same group drawn onto a canvas.
@@ -509,7 +509,7 @@ void main() {
     final List<int> unsharedDraws;
     try {
       await render(() => pair(plainTarget));
-      unshared = await _rgbaBytes(plain.asImage());
+      unshared = await _rasterRgbaBytes(plain.asImage());
       unsharedDraws = shadowDraws();
     } finally {
       debugDisableSharedShadowTiles = false;
@@ -534,7 +534,7 @@ void main() {
     final leasedSpent = leased!.isSpent;
     final surfaceImage = surface.currentImage;
     expect(surfaceImage, isNotNull, reason: 'the surface presented nothing');
-    final leasedPixels = await _rgbaBytes(surfaceImage!);
+    final leasedPixels = await _rasterRgbaBytes(surfaceImage!);
 
     // An eye filling a frame of its own takes the path with no copy.
     final eyeSurface = gpu_shim.gpuContext.createImageSurface(
@@ -552,7 +552,7 @@ void main() {
         ),
       ],
     );
-    final eyePixels = await _rgbaBytes(eyeSurface.currentImage!);
+    final eyePixels = await _rasterRgbaBytes(eyeSurface.currentImage!);
 
     // A call that throws hands the lease back unpresented.
     final abandoned = ExternalRenderTarget.surfaceFrame(
@@ -596,7 +596,7 @@ void main() {
       Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
     );
     await FrameCompletion.afterSubmissions().whenGpuDone;
-    final srgbSampled = await _rgbaBytes(sampled.asImage());
+    final srgbSampled = await _rasterRgbaBytes(sampled.asImage());
 
     // A background shows wherever the scene left the target clear.
     const background = Color(0xFF204060);
@@ -606,7 +606,7 @@ void main() {
       backgroundColor: background,
     );
     await render(() => pair(backedTarget));
-    final backedPixels = await _rgbaBytes(backed.asImage());
+    final backedPixels = await _rasterRgbaBytes(backed.asImage());
 
     // The scene covers a small part of each eye, so the differences are
     // taken over the pixels it drew, not diluted by the clear ones.
@@ -1285,6 +1285,28 @@ _frameStats(ByteData rgba, int w, int h) {
 Future<Uint8List> _rgbaBytes(ui.Image image) async {
   final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
   return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+}
+
+// TODO(gles-readback): use _rgbaBytes once the Flutter floor carries
+// flutter/flutter#195927.
+/// [_rgbaBytes] of [source] drawn into a picture first, so the pixels are
+/// read on the raster thread. On GLES before flutter/flutter#195927, reading
+/// a GPU texture's image directly happens on the IO thread, which can miss the
+/// raster thread's latest draws into it.
+Future<Uint8List> _rasterRgbaBytes(ui.Image source) async {
+  final recorder = ui.PictureRecorder();
+  ui.Canvas(
+    recorder,
+  ).drawImage(source, ui.Offset.zero, ui.Paint()..blendMode = ui.BlendMode.src);
+  final image = await recorder.endRecording().toImage(
+    source.width,
+    source.height,
+  );
+  try {
+    return await _rgbaBytes(image);
+  } finally {
+    image.dispose();
+  }
 }
 
 /// Mean absolute channel difference between two RGBA buffers, in 0..255.
