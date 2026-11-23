@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-performance
-version: 5
+version: 6
 description: Make a flutter_scene app hit frame budget. Use whenever a scene janks, stutters, or drops frames, or when the ask is to make it faster or run on mobile or web, because code-driven scenes are reliably slow and the fix depends on which thread is over budget, not on a guessed poly count.
 ---
 
@@ -58,7 +58,7 @@ Percentiles clean but the **worst** frame is tens to hundreds of milliseconds, a
 - **Keep warmup draws brief.** One frame compiles the pipeline. A material that samples scene depth also forces the full-resolution depth prepass while it is live, so a lingering warmup shows up as raster cost.
 - **Do not trust repeat measurements.** GPU drivers cache compiled shaders across runs, so the second profiling session hits caches the first did not. First-run cost is what a fresh install pays.
 - **Mind `fxc` on Windows.** Windows (native and WebGL2) compiles each shader through ANGLE and Direct3D's `fxc` on its first draw, and a `lit` `.fmat` looping over `<noise.glsl>` table noise can stall for seconds. Use `shading_model: unlit` for effect materials, and `NoiseValue*`/`NoiseHash*` or a baked texture in loops.
-- **Compile out lit features the app never uses.** Every lit shader carries the irradiance field, rect area lights, environment blending, parallax reflection, ambient occlusion, and point shadows, and one in use forces the whole full-size shader. Set the unused ones to `false` under `hooks: user_defines: flutter_scene: lighting_features:` in the app (or workspace root) pubspec, mirrored as `flutter_scene_lighting_features` under the app's own name when its hook calls `buildMaterials`. The irradiance field and rect area lights are most of the cost. A scene that turns on a compiled-out feature draws without it and prints a debug warning.
+- **Compile out lit features the app never uses.** Every lit shader carries the irradiance field, rect area lights, environment blending, parallax reflection, ambient occlusion, and point shadows, and one in use forces the whole full-size shader. Set the unused ones to `false` under `hooks: user_defines: flutter_scene: lighting_features:` in the app (or workspace root) pubspec, mirrored as `flutter_scene_lighting_features` under the app's own name when its hook calls `buildMaterials`. The irradiance field is the largest cost, but each of the others can still cost from a couple hundred milliseconds to over a second, depending on the GPU. A scene that turns on a compiled-out feature draws without it and prints a debug warning.
 
 ## More depth
 
