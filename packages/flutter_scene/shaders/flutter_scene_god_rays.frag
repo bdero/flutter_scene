@@ -82,10 +82,12 @@ vec3 ViewPositionAt(vec2 uv) {
   {                                                                        \
     vec4 lc = shadow.light_space_matrix[IDX] * vec4(P, 1.0);               \
     vec3 proj = lc.xyz / lc.w;                                             \
-    if (abs(proj.x) < 1.0 && abs(proj.y) < 1.0) {                          \
-      vec2 tile_uv = proj.xy * 0.5 + 0.5;                                  \
-      float cols = shadow.cascade_atlas.z;                                 \
-      vec2 cell = vec2(mod(float(IDX), cols), floor(float(IDX) / cols));   \
+    if (abs(proj.x) < 1.0 && abs(proj.y) < 1.0 &&                          \
+        proj.z >= 0.0 && proj.z <= 1.0) {                                  \
+      vec2 tile_uv = clamp(proj.xy * 0.5 + 0.5, vec2(0.001), vec2(0.999)); \
+      float cols = max(shadow.cascade_atlas.z, 1.0);                       \
+      float row = floor((float(IDX) + 0.5) / cols);                        \
+      vec2 cell = vec2(float(IDX) - row * cols, row);                      \
       /* atlas stored top-down */                                          \
       vec2 atlas_uv =                                                      \
           (cell + vec2(tile_uv.x, 1.0 - tile_uv.y)) * shadow.cascade_atlas.xy; \
