@@ -615,6 +615,16 @@ Still silent.
 
 ---
 
+## 42. Assigning a Flutter color straight to an engine color field
+
+**Mistake.** `material.baseColorFactor = Vector4(c.r, c.g, c.b, c.a)` from a Flutter `Color`, `..baseColorFactor = vm.Colors.cadetBlue`, or the same for `emissiveFactor`, a light's `color`, or `Fog.color`, then expecting the surface to match a widget of that color.
+
+**Symptom.** Midtones come out lighter and washed out, because the fields are linear and the values are sRGB. Unlit white still renders as 240, not 255, because the default `pbrNeutral` tone curve rolls off highlights.
+
+**Do instead.** Convert with `material.setBaseColor(color)`, `setEmissiveColor`, `light.setColor`, `fog.setColor`, or `color.toLinearRgba()`/`toLinearRgb()` for any other linear field. For an all-flat scene, set `scene.toneMapping = ToneMappingMode.linear` (with `exposure` 1.0) so the resolve is identity. When the rest of the scene keeps its tone curve, set `displayReferred = true` on the `UnlitMaterial`s that must match; they composite past the tone curve at the cost of one extra layer and pass, cast no shadows, and do not sort against translucent geometry. Unenforceable at runtime.
+
+---
+
 ## Now caught by the engine, in one place
 
 For quick reference, these traps became loud in 0.22.0. If you hit one you get an error, not silent
