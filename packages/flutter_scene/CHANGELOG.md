@@ -1,3 +1,9 @@
+## 0.25.0
+
+* A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
+* BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
+* BREAKING: `SpotShadowInfo` drops the deprecated `firstTile`, `totalTiles`, and `tileResolution`, and `rects` is required.
+
 ## 0.24.4
 
 * A refreshing `SkyEnvironment` no longer hitches on the cube radiance layout. Its prefilter splits the heaviest roughness bands across frames, one cube face each.
@@ -20,8 +26,6 @@
 * `WidgetHost` keeps a scene's `WidgetComponent`s live when it renders without a `SceneView`.
 * On the web, `Texture.asImage()` after a pass that set a scissor no longer drops the pixels outside it.
 * Two views with temporal anti-aliasing no longer share one history and reproject each other's frames.
-* A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
-* BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * `SceneView.errorBuilder` shows a failed engine resource load (such as a shader bundle a web build could not fetch) with a `retry` callback, instead of leaving the view on its loading widget.
 * Placeholder textures always bind with a nearest sampler, so on OpenGL ES, which keeps sampler state on the texture, an untextured slot no longer reads slightly under white depending on bind order.
 * `Scene.warmUp` takes `extraNodes` (and `SceneView` takes `warmUpExtraNodes`), drawn only in the warm-up frames, so content added later compiles its pipelines before it first shows instead of stalling that frame.
@@ -66,7 +70,7 @@
 * Shadow-casting spot and point lights each use their own `shadowMapResolution`, bias, and softness, instead of the first caster's or the directional light's.
 * The shadow atlas packs its tiles in two dimensions and stays within 8192 texels, so a 2048 `DirectionalLight` with a shadow-casting spot no longer fails on mobile and web.
 * God rays read the right cascades when spot or point lights also cast shadows.
-* BREAKING: `SpotShadowInfo` gives each spot's atlas tile in `rects`, replacing `firstTile`, `totalTiles`, and `tileResolution`. `RenderPassContext.shadowInfo` adds a `cascade_atlas` vec4 placing the cascades.
+* `SpotShadowInfo` gives each spot's atlas tile in `rects`; `firstTile`, `totalTiles`, and `tileResolution` are deprecated and read 0. `RenderPassContext.shadowInfo` adds a `cascade_atlas` vec4 placing the cascades.
 * `Lighting.spotShadowDepthBias`, `spotShadowNormalBias`, and `spotShadowSoftness` are deprecated and unused.
 * `PhysicallyBasedMaterial` and `UnlitMaterial` repack their texture transforms only when one changes, including an edit in place such as `transform.offset.x += 0.1`.
 * On the web, a batch of KTX2 textures or mip chain builds yields to the browser between textures instead of freezing the page until the whole batch finishes. One large texture still blocks while it decodes.
