@@ -20,8 +20,6 @@
 * `WidgetHost` keeps a scene's `WidgetComponent`s live when it renders without a `SceneView`.
 * On the web, `Texture.asImage()` after a pass that set a scissor no longer drops the pixels outside it.
 * Two views with temporal anti-aliasing no longer share one history and reproject each other's frames.
-* A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
-* BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * `SceneView.errorBuilder` shows a failed engine resource load (such as a shader bundle a web build could not fetch) with a `retry` callback, instead of leaving the view on its loading widget.
 * Placeholder textures always bind with a nearest sampler, so on OpenGL ES, which keeps sampler state on the texture, an untextured slot no longer reads slightly under white depending on bind order.
 * `Scene.warmUp` takes `extraNodes` (and `SceneView` takes `warmUpExtraNodes`), drawn only in the warm-up frames, so content added later compiles its pipelines before it first shows instead of stalling that frame.

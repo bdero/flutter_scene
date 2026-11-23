@@ -75,7 +75,6 @@ const List<String> standardVertexShaderNames = [
   'SkinnedVertex',
   'MorphedSkinnedVertex',
   'LineSegmentsVertex',
-  'PolylineVertex',
 ];
 
 final RegExp _mslVarying = RegExp(

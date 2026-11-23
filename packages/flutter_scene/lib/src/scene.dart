@@ -16,7 +16,6 @@ import 'package:flutter_scene/src/depth_conflicts.dart'
 import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/near_fit.dart';
-import 'package:flutter_scene/src/render/view_sizing.dart';
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/region_copy.dart';
@@ -4010,10 +4009,6 @@ base class Scene implements SceneGraph {
         viewIndex,
         cullingFrustum,
       ),
-    );
-    setCurrentViewSizing(
-      view.camera.getViewTransform(viewportSize ?? pixelSize),
-      viewportSize ?? pixelSize,
     );
     // A linear capture skips every resampling pass, but multisampling
     // resolves inside the scene pass, so a view that asks for it keeps it.

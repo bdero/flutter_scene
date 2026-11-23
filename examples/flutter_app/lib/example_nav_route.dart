@@ -66,6 +66,9 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
     _loopWaypoints.first,
   ]);
 
+  // Every camera-facing marking line, rebuilt each frame.
+  final List<PolylineGeometry> markings = [];
+
   // The car model, loaded asynchronously, with the scale and ground
   // offset that fit it to the road.
   Node? carNode;
@@ -200,6 +203,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
         _offsetPath(road, side, lift: _markingHeight),
         width: 8,
       );
+      markings.add(line);
       scene.add(Node(mesh: Mesh(line, UnlitMaterial())));
     }
 
@@ -214,6 +218,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
         cap: PolylineCap.round,
       ),
     );
+    markings.add(center);
     scene.add(
       Node(
         mesh: Mesh(
@@ -298,27 +303,36 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
           Positioned.fill(
             child: GestureDetector(
               onPanUpdate: _freeCamera ? _onFreeCameraLook : null,
-              child: SceneView(
-                scene,
-                cameraBuilder: (elapsed) => _camera,
-                onTick: (elapsed, deltaSeconds) {
-                  _elapsedSeconds = elapsed.inMicroseconds / 1e6;
-                  _applyCarParts();
-                  if (_freeCamera) _freeCam.move(_elapsedSeconds);
-                  _camera = _NavRouteFrame(
-                    scene: scene,
-                    road: mainRoad,
-                    carNode: carNode,
-                    carScale: carScale,
-                    carLift: carLift,
-                    followCam: _followCam,
-                    freeCamera: _freeCamera,
-                    freeCam: _freeCam,
-                    navNode: _navNode,
-                    navMaterial: _navMaterial,
-                    elapsedSeconds: _elapsedSeconds,
-                  ).update();
-                  exampleSettings.applyTo(scene);
+              // LayoutBuilder gives the per-frame frame updater the viewport
+              // size it needs to lay out the camera-facing marking lines.
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = constraints.biggest;
+                  return SceneView(
+                    scene,
+                    cameraBuilder: (elapsed) => _camera,
+                    onTick: (elapsed, deltaSeconds) {
+                      _elapsedSeconds = elapsed.inMicroseconds / 1e6;
+                      _applyCarParts();
+                      if (_freeCamera) _freeCam.move(_elapsedSeconds);
+                      _camera = _NavRouteFrame(
+                        scene: scene,
+                        road: mainRoad,
+                        markings: markings,
+                        carNode: carNode,
+                        carScale: carScale,
+                        carLift: carLift,
+                        followCam: _followCam,
+                        freeCamera: _freeCamera,
+                        freeCam: _freeCam,
+                        navNode: _navNode,
+                        navMaterial: _navMaterial,
+                        elapsedSeconds: _elapsedSeconds,
+                        size: size,
+                      ).update();
+                      exampleSettings.applyTo(scene);
+                    },
+                  );
                 },
               ),
             ),
@@ -449,6 +463,7 @@ class _NavRouteFrame {
   _NavRouteFrame({
     required this.scene,
     required this.road,
+    required this.markings,
     required this.carNode,
     required this.carScale,
     required this.carLift,
@@ -458,10 +473,12 @@ class _NavRouteFrame {
     required this.navNode,
     required this.navMaterial,
     required this.elapsedSeconds,
+    required this.size,
   });
 
   final Scene scene;
   final ScenePath road;
+  final List<PolylineGeometry> markings;
   final Node? carNode;
   final double carScale;
   final double carLift;
@@ -471,6 +488,7 @@ class _NavRouteFrame {
   final Node navNode;
   final UnlitMaterial navMaterial;
   final double elapsedSeconds;
+  final Size size;
 
   PerspectiveCamera update() {
     // The car's pose on the loop. Distance runs backward along the path
@@ -493,6 +511,11 @@ class _NavRouteFrame {
     } else {
       camera = _followCamera(carPosition, travelDirection);
       freeCam.syncTo(camera);
+    }
+
+    // The camera-facing marking lines are rebuilt for the current view.
+    for (final marking in markings) {
+      marking.updateForCamera(camera, size);
     }
 
     // The route line: a thick blue ribbon along the lane ahead of the
