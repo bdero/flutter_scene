@@ -1225,6 +1225,123 @@ void main() {
     );
   });
 
+  testWidgets('an unlit Color reaches the screen as its widget value', (
+    tester,
+  ) async {
+    // setBaseColor decodes sRGB to the linear factor. It must come back out
+    // byte-exact wherever the display transform is identity, that is under
+    // linear tone mapping, and on a display-referred surface (which encodes
+    // the linear tint) under any curve.
+    await tester.pumpWidget(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await Scene.preload(smaa: true);
+
+    final material = UnlitMaterial()..alphaMode = AlphaMode.opaque;
+    final scene = Scene()..environment = EnvironmentMap.empty();
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(4, 4, 0.01)), material)),
+    );
+
+    final boundaryKey = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: kSmokeClear,
+          body: Center(
+            child: RepaintBoundary(
+              key: boundaryKey,
+              child: SizedBox(
+                width: kSmokeSize.toDouble(),
+                height: kSmokeSize.toDouble(),
+                child: SceneView(
+                  scene,
+                  camera: PerspectiveCamera(position: vm.Vector3(0, 0, 3)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final isAndroid =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    final frames = isAndroid ? 2 : 10;
+    Future<(int, int, int)> render() async {
+      await _settleGpu();
+      var paced = false;
+      for (var i = 0; i < frames; i++) {
+        paced = await _pumpSettled(
+          tester,
+          scene,
+          const Duration(milliseconds: 50),
+        );
+      }
+      await _capturableFrame(
+        tester,
+        scene,
+        const Duration(milliseconds: 50),
+        paced,
+        null,
+      );
+      final boundary =
+          boundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
+      final rgba = (await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      ))!;
+      final o = ((image.height ~/ 2) * image.width + image.width ~/ 2) * 4;
+      final pixel = (
+        rgba.getUint8(o),
+        rgba.getUint8(o + 1),
+        rgba.getUint8(o + 2),
+      );
+      image.dispose();
+      return pixel;
+    }
+
+    const colors = [Color(0xFFFFFFFF), Color(0xFFC08040), Color(0xFF1B4080)];
+    final cases = <(String, bool, ToneMappingMode)>[
+      ('scene-referred linear', false, ToneMappingMode.linear),
+      ('display-referred pbrNeutral', true, ToneMappingMode.pbrNeutral),
+    ];
+    final mismatches = <String>[];
+    for (final (label, displayReferred, mode) in cases) {
+      material.displayReferred = displayReferred;
+      scene.toneMapping = mode;
+      final row = <String>[];
+      for (final color in colors) {
+        material.setBaseColor(color);
+        final out = await render();
+        final expected = (
+          (color.r * 255).round(),
+          (color.g * 255).round(),
+          (color.b * 255).round(),
+        );
+        row.add('$expected->$out');
+        // One step of slack for the shader's sRGB encode.
+        if ((out.$1 - expected.$1).abs() > 1 ||
+            (out.$2 - expected.$2).abs() > 1 ||
+            (out.$3 - expected.$3).abs() > 1) {
+          mismatches.add('$label $expected gave $out');
+        }
+      }
+      debugPrint('SMOKE unlit_color $label: ${row.join('  ')}');
+    }
+    expect(
+      mismatches,
+      isEmpty,
+      reason: 'a Color set with setBaseColor must reach the screen unchanged',
+    );
+  });
+
   tearDownAll(() {
     binding.reportData = <String, dynamic>{...captures};
   });

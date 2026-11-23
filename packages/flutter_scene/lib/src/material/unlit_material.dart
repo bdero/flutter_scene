@@ -1,4 +1,7 @@
+import 'dart:ui' show Color;
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/color_conversion.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
@@ -86,13 +89,24 @@ class UnlitMaterial extends Material {
   /// depth test against the scene but takes no exposure, grading, tone
   /// mapping, fog or bloom, and does not order against translucent geometry.
   ///
-  /// With this set, [baseColorFactor] multiplies in display space rather than
-  /// linear space.
+  /// [baseColorFactor] and vertex colors stay linear either way; with this
+  /// set they are encoded to display values before tinting the texture.
   @override
   bool displayReferred = false;
 
   /// Linear RGBA tint multiplied with [baseColorTexture].
+  ///
+  /// Flutter colors (and `vector_math`'s `Colors` constants) are sRGB, so
+  /// convert one with [setBaseColor] or [ColorToLinear.toLinearRgba] rather
+  /// than copying its channels.
   Vector4 baseColorFactor = Colors.white;
+
+  /// Sets [baseColorFactor] from a Flutter [Color], decoding it from sRGB.
+  ///
+  /// The surface then shows the color's widget value wherever the scene's
+  /// display transform is identity, which is always for a [displayReferred]
+  /// surface and under `ToneMappingMode.linear` at exposure 1 otherwise.
+  void setBaseColor(Color color) => baseColorFactor = color.toLinearRgba();
 
   /// How strongly per-vertex colors influence the final color. `0`
   /// disables vertex color contribution; `1` (the default) fully

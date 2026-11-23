@@ -126,6 +126,7 @@ export 'src/ambient_occlusion.dart'
         AmbientOcclusionSettings,
         SpecularAmbientOcclusionMode;
 export 'src/auto_exposure.dart' show AutoExposureSettings;
+export 'src/color_conversion.dart' show ColorToLinear;
 export 'src/coplanar_overlaps.dart' show CoplanarOverlap;
 export 'src/depth_conflicts.dart' show DepthConflict, DepthConflictReport;
 export 'src/depth_of_field.dart' show DepthOfField, DepthOfFieldQuality;
