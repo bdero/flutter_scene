@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart'
     show PipelineOwner, RenderCustomPaint, SemanticsBuilderCallback;
@@ -338,8 +340,98 @@ class SceneView extends StatefulWidget {
     Camera? sceneCamera,
   }) => camera ?? cameraBuilder?.call(elapsed) ?? sceneCamera ?? _defaultCamera;
 
+  /// Duration [_SceneViewState] pauses its web [Ticker] after a frame ticks on
+  /// high-refresh displays, leaving a `1.25 * vsync` wakeup margin before the
+  /// next deadline ([remaining], defaulting to [targetPeriod]). Returns `null`
+  /// when waking that early would not skip a VSync, no skipped edge has
+  /// confirmed a mismatch yet, or too little time remains to sleep.
+  @visibleForTesting
+  static Duration? computePacedTickerSleep({
+    required Duration targetPeriod,
+    required Duration? measuredVsyncInterval,
+    required bool sawSkippedVsync,
+    Duration? remaining,
+  }) {
+    if (measuredVsyncInterval == null) return null;
+    final vsyncUs = measuredVsyncInterval.inMicroseconds;
+    final periodUs = targetPeriod.inMicroseconds;
+    if (vsyncUs < 1000 || vsyncUs > 25000) return null;
+    final marginUs = (vsyncUs * 1.25).round();
+    // Sleeping only skips a VSync when wakeup lands past the next edge.
+    if (periodUs <= vsyncUs + marginUs) return null;
+    // Low-rate pacing (<= 25 fps) sleeps immediately once VSync is measured;
+    // higher rates wait for at least one skipped VSync to confirm mismatch.
+    if (!sawSkippedVsync && periodUs < 40000) return null;
+    final sleepUs = (remaining ?? targetPeriod).inMicroseconds - marginUs;
+    return sleepUs < 2000 ? null : Duration(microseconds: sleepUs);
+  }
+
   @override
   State<SceneView> createState() => _SceneViewState();
+}
+
+// Tracks VSync cadence and timer-based sleep state for rate-limited web views.
+final class _PacedTickerSleep {
+  // Re-probe VSync cadence periodically in case the window moves across
+  // displays with different refresh rates.
+  static const int _kReprobeIntervalFrames = 120;
+
+  Timer? wakeTimer;
+  Duration? sleepStartTimeStamp;
+  Duration? lastVsyncElapsed;
+  Duration? vsyncInterval;
+  bool sawSkippedVsync = false;
+  bool skippedSinceLastFrame = false;
+  bool sleptBeforeFrame = false;
+  int sleptSinceReprobe = 0;
+
+  bool get isSleeping => wakeTimer != null;
+
+  void cancelTimer() {
+    wakeTimer?.cancel();
+    wakeTimer = null;
+  }
+
+  void reset() {
+    cancelTimer();
+    sleepStartTimeStamp = null;
+    lastVsyncElapsed = null;
+    sawSkippedVsync = false;
+    skippedSinceLastFrame = false;
+    sleptBeforeFrame = false;
+    sleptSinceReprobe = 0;
+  }
+
+  void recordVsync(Duration elapsed) {
+    final prevElapsed = lastVsyncElapsed;
+    lastVsyncElapsed = elapsed;
+    if (prevElapsed == null) return;
+    final deltaUs = (elapsed - prevElapsed).inMicroseconds;
+    if (deltaUs < 1000 || deltaUs > 25000) return;
+    final prev = vsyncInterval;
+    vsyncInterval = prev == null
+        ? Duration(microseconds: deltaUs)
+        : Duration(microseconds: (prev.inMicroseconds * 3 + deltaUs) ~/ 4);
+  }
+
+  void noteSkip() {
+    sawSkippedVsync = true;
+    skippedSinceLastFrame = true;
+  }
+
+  void noteFrameStarted() {
+    if (!sleptBeforeFrame && !skippedSinceLastFrame) {
+      sawSkippedVsync = false;
+    }
+    sleptBeforeFrame = false;
+    skippedSinceLastFrame = false;
+  }
+
+  bool consumeReprobeDue() {
+    if (sleptSinceReprobe < _kReprobeIntervalFrames) return false;
+    sleptSinceReprobe = 0;
+    return true;
+  }
 }
 
 // Used when a scene has no camera set up at all, so a bare SceneView(scene)
@@ -378,9 +470,10 @@ class _SceneViewState extends State<SceneView>
   // deltas; null until the first revealed tick.
   DateTime? _lastTickTime;
 
-  // When the next frame is due under [SceneView.maxFrameRate], in ticker
-  // time; null renders the next tick.
+  // When the next frame is due under [SceneView.maxFrameRate], in scheduler
+  // frame-timestamp time; null renders the next tick.
   Duration? _frameDue;
+  final _PacedTickerSleep _pace = _PacedTickerSleep();
 
   Clock get _clock => widget.clock ?? clock;
 
@@ -450,12 +543,77 @@ class _SceneViewState extends State<SceneView>
 
   void _onAssetsRefreshed() => _repaint.notify();
 
-  // A paced frame's GPU work, or a deferred load, finished. A running ticker
-  // paints on its next vsync, with a tick, so only its rate limit is reset.
-  void _onRepaintRequested() {
-    if (widget.autoTick && (_ticker?.isTicking ?? false) && _revealed) {
-      _frameDue = null;
+  void _resumePacedTicker() {
+    _pace.wakeTimer = null;
+    if (!mounted || !widget.autoTick || !_revealed) return;
+    if (!(_ticker?.isActive ?? false)) {
+      _pace.lastVsyncElapsed = null;
+      (_ticker ??= createTicker(_onTick)).start();
+      _resumed = true;
+      _pace.sleptBeforeFrame = true;
+    }
+  }
+
+  void _resetPacing({required bool wakeIfSleeping}) {
+    final wasSleeping = _pace.isSleeping;
+    final sleepStart = _pace.sleepStartTimeStamp;
+    _pace.reset();
+    _frameDue = null;
+    if (wakeIfSleeping && sleepStart != null && widget.autoTick && _revealed) {
+      _pace.sleepStartTimeStamp = sleepStart;
+      if (wasSleeping) _resumePacedTicker();
+    }
+  }
+
+  void _afterFrameTick(
+    double? rate,
+    DateTime frameStartNow,
+    Duration frameTimeStamp,
+  ) {
+    if (!kIsWeb ||
+        widget.clock != null ||
+        rate == null ||
+        rate <= 0 ||
+        !widget.autoTick ||
+        !_revealed ||
+        !(_ticker?.isActive ?? false)) {
       return;
+    }
+    if (_pace.consumeReprobeDue()) return;
+    final due = _frameDue;
+    if (due == null) return;
+    final period = Duration(microseconds: (1e6 / rate).round());
+    final tickElapsed = _clock.now().difference(frameStartNow);
+    // Skip sleeping if the wall clock stepped backward mid-tick.
+    if (tickElapsed.isNegative) return;
+    final sleep = SceneView.computePacedTickerSleep(
+      targetPeriod: period,
+      measuredVsyncInterval: _pace.vsyncInterval,
+      sawSkippedVsync: _pace.sawSkippedVsync,
+      remaining: (due - frameTimeStamp) - tickElapsed,
+    );
+    if (sleep == null) return;
+    assert(!_pace.isSleeping);
+    _pace.sleepStartTimeStamp = frameTimeStamp;
+    _pace.sleptSinceReprobe++;
+    _ticker?.stop();
+    _pace.lastVsyncElapsed = null;
+    _pace.wakeTimer = Timer(sleep, _resumePacedTicker);
+  }
+
+  // A paced frame's GPU work, or a deferred load, finished. A running or
+  // sleeping ticker paints on its next vsync with a tick.
+  void _onRepaintRequested() {
+    if (widget.autoTick && _revealed) {
+      if (_pace.isSleeping) {
+        _pace.cancelTimer();
+        _frameDue = null;
+        _resumePacedTicker();
+        if (_ticker?.isTicking ?? false) return;
+      } else if (_ticker?.isTicking ?? false) {
+        _frameDue = null;
+        return;
+      }
     }
     _repaint.notify();
   }
@@ -500,15 +658,17 @@ class _SceneViewState extends State<SceneView>
   @override
   void didUpdateWidget(SceneView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.maxFrameRate != oldWidget.maxFrameRate) _frameDue = null;
+    if (widget.maxFrameRate != oldWidget.maxFrameRate ||
+        (widget.clock != null && _pace.isSleeping)) {
+      _resetPacing(wakeIfSleeping: true);
+    }
     if (widget.autoTick != oldWidget.autoTick) {
       // One ticker for the state's life, stopped and restarted: the
       // single-ticker mixin rejects a second.
+      _resetPacing(wakeIfSleeping: false);
       if (widget.autoTick) {
         (_ticker ??= createTicker(_onTick)).start();
         _resumed = true;
-        // The deadline was in the stopped ticker's time.
-        _frameDue = null;
       } else {
         _ticker?.stop();
       }
@@ -549,7 +709,14 @@ class _SceneViewState extends State<SceneView>
         !identical(_scene, oldScene)) {
       _revealed = !_gated;
       if (_gated) {
+        final wasSleeping = _pace.isSleeping;
+        _resetPacing(wakeIfSleeping: false);
+        if (wasSleeping && widget.autoTick) {
+          (_ticker ??= createTicker(_onTick)).start();
+        }
         _startRevealWatch();
+      } else if (!identical(_scene, oldScene) && _pace.isSleeping) {
+        _resetPacing(wakeIfSleeping: true);
       }
     }
     // Repaint immediately so a changed camera / scene is reflected even when
@@ -640,6 +807,7 @@ class _SceneViewState extends State<SceneView>
 
   void _onTick(Duration elapsed) {
     final now = _clock.now();
+    final frameTimeStamp = SchedulerBinding.instance.currentFrameTimeStamp;
     if (!_revealed) {
       // Hold the origin at the latest tick so the first revealed frame's delta
       // is a single frame, not the whole time spent on the loading screen.
@@ -650,20 +818,36 @@ class _SceneViewState extends State<SceneView>
     }
     if (_resumed) {
       _resumed = false;
-      _tickOrigin = elapsed - _elapsed.value;
-      _lastTickTime = now;
+      final sleepStart = _pace.sleepStartTimeStamp;
+      _pace.sleepStartTimeStamp = null;
+      final fromPaceSleep = sleepStart != null;
+      var resumedElapsed = _elapsed.value;
+      // Preserve monotonic timestamp-based elapsed across adaptive sleeps.
+      if (fromPaceSleep) {
+        final slept = frameTimeStamp - sleepStart;
+        if (!slept.isNegative) resumedElapsed += slept;
+      }
+      _tickOrigin = elapsed - resumedElapsed;
+      if (!fromPaceSleep) _lastTickTime = now;
+      _pace.lastVsyncElapsed = elapsed;
+    } else {
+      _pace.recordVsync(elapsed);
     }
     final rate = widget.maxFrameRate;
     if (rate != null && rate > 0) {
       final period = Duration(microseconds: (1e6 / rate).round());
       final due = _frameDue;
       // A quarter period of slack picks the refresh nearest the deadline.
-      if (due != null && elapsed < due - period ~/ 4) return;
+      if (due != null && frameTimeStamp < due - period ~/ 4) {
+        _pace.noteSkip();
+        return;
+      }
       // Deadlines advance by whole periods to hold the average rate; one
       // missed by more than a period restarts from this frame.
-      _frameDue = due == null || elapsed - due > period
-          ? elapsed + period
+      _frameDue = due == null || frameTimeStamp - due > period
+          ? frameTimeStamp + period
           : due + period;
+      _pace.noteFrameStarted();
     }
     final revealElapsed = elapsed - _tickOrigin;
     final deltaSeconds = _lastTickTime == null
@@ -673,6 +857,7 @@ class _SceneViewState extends State<SceneView>
     _elapsed.value = revealElapsed;
     widget.onTick?.call(revealElapsed, deltaSeconds);
     _repaint.notify();
+    _afterFrameTick(rate, now, frameTimeStamp);
   }
 
   Camera? _lastBuiltCamera;
@@ -790,6 +975,7 @@ class _SceneViewState extends State<SceneView>
       _onSemanticsChanged,
     );
     _scene.repaintRequested.removeListener(_onRepaintRequested);
+    _pace.cancelTimer();
     _ticker?.dispose();
     _repaint.dispose();
     _elapsed.dispose();
