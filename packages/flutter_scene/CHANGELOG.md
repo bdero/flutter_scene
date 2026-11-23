@@ -64,7 +64,7 @@
 * Shadow-casting spot and point lights each use their own `shadowMapResolution`, bias, and softness, instead of the first caster's or the directional light's.
 * The shadow atlas packs its tiles in two dimensions and stays within 8192 texels, so a 2048 `DirectionalLight` with a shadow-casting spot no longer fails on mobile and web.
 * God rays read the right cascades when spot or point lights also cast shadows.
-* BREAKING: `SpotShadowInfo` gives each spot's atlas tile in `rects`, replacing `firstTile`, `totalTiles`, and `tileResolution`. `RenderPassContext.shadowInfo` adds a `cascade_atlas` vec4 placing the cascades.
+* `SpotShadowInfo` gives each spot's atlas tile in `rects`; `firstTile`, `totalTiles`, and `tileResolution` are deprecated and read 0. `RenderPassContext.shadowInfo` adds a `cascade_atlas` vec4 placing the cascades.
 * `Lighting.spotShadowDepthBias`, `spotShadowNormalBias`, and `spotShadowSoftness` are deprecated and unused.
 * `PhysicallyBasedMaterial` and `UnlitMaterial` repack their texture transforms only when one changes, including an edit in place such as `transform.offset.x += 0.1`.
 * On the web, a batch of KTX2 textures or mip chain builds yields to the browser between textures instead of freezing the page until the whole batch finishes. One large texture still blocks while it decodes.

@@ -36,7 +36,16 @@ const String kSpotShadowInfoBlackboardKey = 'spot_shadow_info';
 /// {@category Rendering}
 class SpotShadowInfo {
   /// Creates the layout record for one frame's spot shadows.
-  const SpotShadowInfo({required this.matrices, required this.rects});
+  const SpotShadowInfo({
+    required this.matrices,
+    this.rects = const [],
+    @Deprecated('Use rects. Unused since tiles are packed per light.')
+    this.firstTile = 0,
+    @Deprecated('Use rects. Unused since tiles are packed per light.')
+    this.totalTiles = 0,
+    @Deprecated('Use rects. Unused since tiles are packed per light.')
+    this.tileResolution = 0,
+  });
 
   /// World to clip matrix of each casting spot, in shadow slot order.
   final List<Matrix4> matrices;
@@ -46,6 +55,18 @@ class SpotShadowInfo {
   /// `uv = clip.xy / clip.w * 0.5 + 0.5` samples
   /// `rect.xy + vec2(uv.x, 1.0 - uv.y) * rect.zw`.
   final List<Vector4> rects;
+
+  /// Always 0 from the engine; the atlas no longer places spots in a row.
+  @Deprecated('Use rects. Unused since tiles are packed per light.')
+  final int firstTile;
+
+  /// Always 0 from the engine; the atlas no longer places spots in a row.
+  @Deprecated('Use rects. Unused since tiles are packed per light.')
+  final int totalTiles;
+
+  /// Always 0 from the engine; each spot sets its own resolution.
+  @Deprecated('Use rects. Unused since tiles are packed per light.')
+  final int tileResolution;
 }
 
 /// Forces every view to render its own shadow atlas, so parity tests can
