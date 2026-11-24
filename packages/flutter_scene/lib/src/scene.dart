@@ -1537,8 +1537,8 @@ base class Scene implements SceneGraph {
       final lead = members.first;
       final plane = lead.worldPlane();
       final scale = lead.resolutionScale.clamp(0.1, 1.0);
-      final width = math.max(1, (pixelSize.width * scale).round());
-      final height = math.max(1, (pixelSize.height * scale).round());
+      final width = scaledResolutionDimension(pixelSize.width.floor(), scale);
+      final height = scaledResolutionDimension(pixelSize.height.floor(), scale);
       final captureSize = ui.Size(width.toDouble(), height.toDouble());
       final resources = _planarCaptureResources.putIfAbsent(
         key,

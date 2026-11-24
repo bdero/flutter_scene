@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -99,8 +98,8 @@ class SsrPass extends RenderGraphPass {
     // bilinear-upscaled by the composite, so the reflection layer scales
     // cheaply while the scene image stays full resolution.
     final scale = _settings.resolutionScale.clamp(0.1, 1.0);
-    final traceWidth = math.max(1, (width * scale).round());
-    final traceHeight = math.max(1, (height * scale).round());
+    final traceWidth = scaledResolutionDimension(width, scale);
+    final traceHeight = scaledResolutionDimension(height, scale);
     final reflection = context.texturePool.acquireScoped(
       TransientTextureDescriptor.color(
         width: traceWidth,

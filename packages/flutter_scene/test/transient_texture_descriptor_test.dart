@@ -3,6 +3,8 @@
 // backend caches one framebuffer per color texture and never re-attaches
 // depth), while everything else stays shared.
 
+import 'dart:ui' as ui;
+
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,5 +52,19 @@ void main() {
     );
     expect(a, equals(b));
     expect(a.hashCode, b.hashCode);
+  });
+
+  test('half and scaled resolution helpers align on odd viewports', () {
+    expect(halfResolutionDimension(1), 1);
+    expect(halfResolutionDimension(3), 1);
+    expect(halfResolutionDimension(1365), 682);
+    expect(
+      halfResolutionSize(const ui.Size(1365, 769)),
+      const ui.Size(682, 384),
+    );
+    expect(scaledResolutionDimension(1365, 0.5), 682);
+    expect(scaledResolutionDimension(769, 0.5), 384);
+    expect(scaledResolutionDimension(1365, 1.0), 1365);
+    expect(scaledResolutionDimension(1, 0.25), 1);
   });
 }
