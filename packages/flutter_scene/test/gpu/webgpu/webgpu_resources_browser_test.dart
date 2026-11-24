@@ -108,6 +108,22 @@ void main() {
         [5, 6, 7, 8],
       );
     });
+
+    test('host buffer reuses overflow blocks across reset cycles', () async {
+      final host = gpu.BumpHostBuffer(
+        gpu.gpuContext,
+        blockLengthInBytes: gpu.gpuContext.minimumUniformByteAlignment,
+      );
+      final payload = _bytes([1, 2, 3, 4]);
+      host.emplace(payload);
+      final firstOverflow = host.emplace(payload);
+      for (var i = 0; i < host.frameCount; i++) {
+        host.reset();
+      }
+      host.emplace(payload);
+      final reusedOverflow = host.emplace(payload);
+      expect(identical(reusedOverflow.buffer, firstOverflow.buffer), isTrue);
+    });
   });
 
   group('Texture', () {

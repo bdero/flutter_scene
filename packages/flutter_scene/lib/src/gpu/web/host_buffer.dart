@@ -60,9 +60,15 @@ final class BumpHostBuffer extends HostBuffer {
         (_offsetCursor % _gpuContext.minimumUniformByteAlignment);
     padding %= _gpuContext.minimumUniformByteAlignment;
     if (_offsetCursor + padding + bytes.lengthInBytes > blockLengthInBytes) {
-      final buffer = _allocateNewBlock(blockLengthInBytes);
-      _buffers[_frameCursor].add(buffer);
+      final frameBuffers = _buffers[_frameCursor];
       _bufferCursor++;
+      final DeviceBuffer buffer;
+      if (_bufferCursor < frameBuffers.length) {
+        buffer = frameBuffers[_bufferCursor];
+      } else {
+        buffer = _allocateNewBlock(blockLengthInBytes);
+        frameBuffers.add(buffer);
+      }
       _offsetCursor = bytes.lengthInBytes;
       return BufferView(
         buffer,
