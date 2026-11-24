@@ -977,6 +977,9 @@ base class SceneEncoder {
   int _boundMaterialLightOffset = -1;
   int _boundMaterialLightCount = -1;
   int _boundMaterialLightChannelMask = -1;
+  double _boundMaterialModelScaleX = double.nan;
+  double _boundMaterialModelScaleY = double.nan;
+  double _boundMaterialModelScaleZ = double.nan;
   gpu.WindingOrder? _boundWindingOrder;
   gpu.PrimitiveType? _boundPrimitiveType;
   int _encodedDraws = 0;
@@ -1361,6 +1364,9 @@ base class SceneEncoder {
     _boundMaterialLightOffset = -1;
     _boundMaterialLightCount = -1;
     _boundMaterialLightChannelMask = -1;
+    _boundMaterialModelScaleX = double.nan;
+    _boundMaterialModelScaleY = double.nan;
+    _boundMaterialModelScaleZ = double.nan;
     _boundWindingOrder = null;
     _boundPrimitiveType = null;
   }
@@ -1534,6 +1540,9 @@ base class SceneEncoder {
     final lightOffset = material.lightListOffset;
     final lightCount = material.lightListCount;
     final lightChannelMask = material.lightChannelMask;
+    final modelScaleX = material.modelScaleX;
+    final modelScaleY = material.modelScaleY;
+    final modelScaleZ = material.modelScaleZ;
     if (identical(_boundMaterial, material) &&
         identical(_boundMaterialVertex, materialVertex) &&
         _boundMaterialFallback == fallback &&
@@ -1541,7 +1550,10 @@ base class SceneEncoder {
         _boundMaterialFade == fade &&
         _boundMaterialLightOffset == lightOffset &&
         _boundMaterialLightCount == lightCount &&
-        _boundMaterialLightChannelMask == lightChannelMask) {
+        _boundMaterialLightChannelMask == lightChannelMask &&
+        _boundMaterialModelScaleX == modelScaleX &&
+        _boundMaterialModelScaleY == modelScaleY &&
+        _boundMaterialModelScaleZ == modelScaleZ) {
       return;
     }
     if (_coveragePass || fallback) {
@@ -1569,6 +1581,9 @@ base class SceneEncoder {
     _boundMaterialLightOffset = lightOffset;
     _boundMaterialLightCount = lightCount;
     _boundMaterialLightChannelMask = lightChannelMask;
+    _boundMaterialModelScaleX = modelScaleX;
+    _boundMaterialModelScaleY = modelScaleY;
+    _boundMaterialModelScaleZ = modelScaleZ;
   }
 
   // Binds the coverage pre-draw's fragment inputs: the cross-fade [fade] and
@@ -2734,6 +2749,9 @@ base class SceneEncoder {
       _boundMaterialLightOffset = -1;
       _boundMaterialLightCount = -1;
       _boundMaterialLightChannelMask = -1;
+      _boundMaterialModelScaleX = double.nan;
+      _boundMaterialModelScaleY = double.nan;
+      _boundMaterialModelScaleZ = double.nan;
       _boundWindingOrder = null;
       _boundPrimitiveType = null;
       EngineLightingUniforms.invalidateBindMemo();
@@ -2830,6 +2848,9 @@ base class SceneEncoder {
     _boundMaterialLightOffset = -1;
     _boundMaterialLightCount = -1;
     _boundMaterialLightChannelMask = -1;
+    _boundMaterialModelScaleX = double.nan;
+    _boundMaterialModelScaleY = double.nan;
+    _boundMaterialModelScaleZ = double.nan;
     _boundWindingOrder = null;
     _boundPrimitiveType = null;
     EngineLightingUniforms.invalidateBindMemo();
