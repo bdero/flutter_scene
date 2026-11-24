@@ -876,7 +876,15 @@ base class Scene implements SceneGraph {
   /// always encode. Only screen views pace; render-to-texture views always
   /// render.
   /// {@category Rendering}
-  int maxGpuFramesInFlight = defaultMaxGpuFramesInFlight;
+  int get maxGpuFramesInFlight => _maxGpuFramesInFlight;
+  int _maxGpuFramesInFlight = defaultMaxGpuFramesInFlight;
+  set maxGpuFramesInFlight(int value) {
+    _maxGpuFramesInFlight = value;
+    if (_paceHeld &&
+        (value <= 0 || rendererSubmissions.framesInFlight < value)) {
+      _releasePace(notify: !_disposed);
+    }
+  }
 
   // The frame's shared spot and point shadow tiles while render() runs.
   SharedShadowAtlas? _sharedShadowAtlas;
@@ -930,11 +938,25 @@ base class Scene implements SceneGraph {
     rendererSubmissions.addCompletionListener(_onPaceRelease);
   }
 
-  void _onPaceRelease() {
-    if (rendererSubmissions.framesInFlight >= maxGpuFramesInFlight) return;
+  void _releasePace({required bool notify}) {
+    if (!_paceHeld) return;
     rendererSubmissions.removeCompletionListener(_onPaceRelease);
     _paceHeld = false;
-    _repaintRequested.notify();
+    if (notify) {
+      _repaintRequested.notify();
+    }
+  }
+
+  void _onPaceRelease() {
+    if (_disposed) {
+      _releasePace(notify: false);
+      return;
+    }
+    if (_maxGpuFramesInFlight > 0 &&
+        rendererSubmissions.framesInFlight >= _maxGpuFramesInFlight) {
+      return;
+    }
+    _releasePace(notify: true);
   }
 
   /// How many overlap-safe scene color captures a frame may open for
@@ -1009,6 +1031,7 @@ base class Scene implements SceneGraph {
       return;
     }
     _disposed = true;
+    _releasePace(notify: false);
     // Not disposed, since the last pictures may still be on screen.
     _presentedImages.clear();
     surface.dispose();
