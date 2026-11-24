@@ -13,6 +13,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/scene.dart' show notifySceneRepaintForTesting;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/widgets/scene_view_pacing.dart'
+    show computePacedTickerSleep;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -563,10 +566,10 @@ void main() {
     expect(find.text('loading'), findsOneWidget);
   });
 
-  group('SceneView.computePacedTickerSleep', () {
+  group('computePacedTickerSleep', () {
     test('returns null on 60 Hz display when running at 60 fps', () {
       expect(
-        SceneView.computePacedTickerSleep(
+        computePacedTickerSleep(
           targetPeriod: const Duration(microseconds: 16667),
           measuredVsyncInterval: const Duration(microseconds: 16667),
           sawSkippedVsync: true,
@@ -577,7 +580,7 @@ void main() {
 
     test('returns null before any VSync skip is observed for 60 fps', () {
       expect(
-        SceneView.computePacedTickerSleep(
+        computePacedTickerSleep(
           targetPeriod: const Duration(microseconds: 16667),
           measuredVsyncInterval: const Duration(microseconds: 4167),
           sawSkippedVsync: false,
@@ -586,40 +589,37 @@ void main() {
       );
     });
 
-    test(
-      'returns null on 2:1 ratios where 1.25x wakeup margin cannot skip a VSync',
-      () {
-        // 120 Hz @ 60 fps: 16.67 - 1.25 * 8.33 = 6.25 ms < 8.33 ms (wakes
-        // before the very next VSync, so sleeping would save zero frames).
-        expect(
-          SceneView.computePacedTickerSleep(
-            targetPeriod: const Duration(microseconds: 16667),
-            measuredVsyncInterval: const Duration(microseconds: 8333),
-            sawSkippedVsync: true,
-          ),
-          isNull,
-        );
-        // 60 Hz @ 30 fps: 33.33 - 1.25 * 16.67 = 12.50 ms < 16.67 ms.
-        expect(
-          SceneView.computePacedTickerSleep(
-            targetPeriod: const Duration(microseconds: 33333),
-            measuredVsyncInterval: const Duration(microseconds: 16667),
-            sawSkippedVsync: true,
-          ),
-          isNull,
-        );
-      },
-    );
+    test('returns null on 2:1 ratios where 1.25x wakeup margin cannot skip a VSync', () {
+      // 120 Hz @ 60 fps: 16.67 - 1.25 * 8.33 = 6.25 ms < 8.33 ms (wakes
+      // before the very next VSync, so sleeping would save zero frames).
+      expect(
+        computePacedTickerSleep(
+          targetPeriod: const Duration(microseconds: 16667),
+          measuredVsyncInterval: const Duration(microseconds: 8333),
+          sawSkippedVsync: true,
+        ),
+        isNull,
+      );
+      // 60 Hz @ 30 fps: 33.33 - 1.25 * 16.67 = 12.50 ms < 16.67 ms.
+      expect(
+        computePacedTickerSleep(
+          targetPeriod: const Duration(microseconds: 33333),
+          measuredVsyncInterval: const Duration(microseconds: 16667),
+          sawSkippedVsync: true,
+        ),
+        isNull,
+      );
+    });
 
     test('computes bounded sleep for 60 fps on 144 and 240 Hz displays', () {
-      final sleep144 = SceneView.computePacedTickerSleep(
+      final sleep144 = computePacedTickerSleep(
         targetPeriod: const Duration(microseconds: 16667),
         measuredVsyncInterval: const Duration(microseconds: 6944),
         sawSkippedVsync: true,
       );
       expect(sleep144!.inMicroseconds, inInclusiveRange(7000, 10000));
 
-      final sleep240 = SceneView.computePacedTickerSleep(
+      final sleep240 = computePacedTickerSleep(
         targetPeriod: const Duration(microseconds: 16667),
         measuredVsyncInterval: const Duration(microseconds: 4167),
         sawSkippedVsync: true,
@@ -628,21 +628,21 @@ void main() {
     });
 
     test('computes long sleep for low-rate pacing on 60, 120, and 240 Hz', () {
-      final sleep240 = SceneView.computePacedTickerSleep(
+      final sleep240 = computePacedTickerSleep(
         targetPeriod: const Duration(milliseconds: 50),
         measuredVsyncInterval: const Duration(microseconds: 4167),
         sawSkippedVsync: false,
       );
       expect(sleep240!.inMilliseconds, inInclusiveRange(42, 46));
 
-      final sleep120 = SceneView.computePacedTickerSleep(
+      final sleep120 = computePacedTickerSleep(
         targetPeriod: const Duration(microseconds: 33333),
         measuredVsyncInterval: const Duration(microseconds: 8333),
         sawSkippedVsync: true,
       );
       expect(sleep120!.inMilliseconds, inInclusiveRange(21, 24));
 
-      final sleep60 = SceneView.computePacedTickerSleep(
+      final sleep60 = computePacedTickerSleep(
         targetPeriod: const Duration(milliseconds: 50),
         measuredVsyncInterval: const Duration(microseconds: 16667),
         sawSkippedVsync: true,
@@ -651,16 +651,17 @@ void main() {
     });
 
     test('respects remaining deadline budget and skips sleep when tight', () {
-      final sleep = SceneView.computePacedTickerSleep(
+      final sleep = computePacedTickerSleep(
         targetPeriod: const Duration(microseconds: 16667),
         measuredVsyncInterval: const Duration(microseconds: 4167),
         sawSkippedVsync: true,
         remaining: const Duration(microseconds: 11067),
       );
-      expect(sleep!.inMicroseconds, inInclusiveRange(5700, 6000));
+      // The 6 ms wake margin floor applies at 240 Hz (1.25 * 4.17 ms is less).
+      expect(sleep!.inMicroseconds, inInclusiveRange(5000, 5100));
 
       expect(
-        SceneView.computePacedTickerSleep(
+        computePacedTickerSleep(
           targetPeriod: const Duration(microseconds: 16667),
           measuredVsyncInterval: const Duration(microseconds: 4167),
           sawSkippedVsync: true,
@@ -672,7 +673,7 @@ void main() {
 
     test('rejects out-of-range VSync intervals cleanly', () {
       expect(
-        SceneView.computePacedTickerSleep(
+        computePacedTickerSleep(
           targetPeriod: const Duration(milliseconds: 50),
           measuredVsyncInterval: const Duration(microseconds: 500),
           sawSkippedVsync: true,
@@ -680,7 +681,7 @@ void main() {
         isNull,
       );
       expect(
-        SceneView.computePacedTickerSleep(
+        computePacedTickerSleep(
           targetPeriod: const Duration(milliseconds: 50),
           measuredVsyncInterval: const Duration(milliseconds: 40),
           sawSkippedVsync: true,
