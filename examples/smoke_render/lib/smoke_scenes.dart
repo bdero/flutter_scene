@@ -261,6 +261,16 @@ PreprocessedMaterial _fmatMaterial(String name) {
   );
 }
 
+/// The lit cutout card loaded by [_loadLitCutout].
+PreprocessedMaterial? _litCutoutMaterial;
+
+/// Loads the lit cutout through the public loader, which wires its own
+/// depth-pass fragments the way an app's material gets them.
+Future<void> _loadLitCutout() async {
+  await loadSmokeMaterials();
+  _litCutoutMaterial ??= await loadFmatMaterial('assets/lit_cutout.fmat');
+}
+
 /// The pre-baked environment preloaded by [loadPrebakedIbl].
 EnvironmentMap? _prebakedIblEnvironment;
 
@@ -2414,6 +2424,44 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _shadowCamera());
   }, preload: loadSmokeMaterials),
+  // A lit alpha_to_coverage card standing on a ground plane under a shadowing
+  // sun. The card's holes must read in its shadow and against the ground,
+  // which exercises the material's own depth and shadow fragments on every
+  // backend.
+  SmokeScene('lit_cutout', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(0.35, -1.0, 0.7),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.6, depth: 3.6),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.78, 0.76, 0.72, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      ),
+    );
+    // Stood upright facing +Z, toward the camera.
+    scene.add(
+      Node(
+          mesh: Mesh(
+            PlaneGeometry(width: 1.6, depth: 1.2),
+            _litCutoutMaterial!,
+          ),
+        )
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0, 0.65, -0.2)) *
+            vm.Matrix4.rotationX(math.pi / 2),
+    );
+    return (scene: scene, camera: _shadowCamera());
+  }, preload: _loadLitCutout),
   // Distance fog: a near and a far cuboid, the far one fading toward the fog
   // color, with height fog and sun in-scatter enabled so those branches of
   // ApplyFog run too. Geometry stays central so the corners keep the clear
