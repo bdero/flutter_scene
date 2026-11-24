@@ -28,10 +28,8 @@ typedef GltfResourceResolver = Future<Uint8List> Function(String uri);
 /// resolver. A resolver that decodes bytes itself can use
 /// [Texture2D.fromEncodedBytes].
 /// {@category Assets and loading}
-typedef GltfTextureResolver = Future<Texture2D?> Function(
-  String uri,
-  TextureContent content,
-);
+typedef GltfTextureResolver =
+    Future<Texture2D?> Function(String uri, TextureContent content);
 
 /// Decodes a `data:` URI into its raw bytes.
 ///
