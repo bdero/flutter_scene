@@ -1,3 +1,7 @@
+## 0.24.6
+
+* A `.fmat` whose own depth passes fail to build, or would drop draws on some backend, no longer fails the app build. The build warns and the material casts and writes depth through the engine's shaders.
+
 ## 0.24.5
 
 * A `.fmat` with `alpha_to_coverage` casts its shadow and writes depth on Vulkan and WebGPU, and a lit one builds for WebGPU. Its depth passes no longer declare a sample mask or lighting resources they never write or read.
