@@ -185,19 +185,25 @@ void main() {
   // 5. Neighborhood statistics, tone-mapped like the mix below so one
   // extreme HDR pixel cannot blow open the clip box, then variance clipping
   // in YCoCg.
-  vec3 tm_curr = ToneMap(textureLod(current_color, uv, 0.0).rgb);
+  vec4 current_sample = textureLod(current_color, uv, 0.0);
+  vec3 tm_curr = ToneMap(current_sample.rgb);
   vec3 m1 = vec3(0.0);
   vec3 m2 = vec3(0.0);
   vec3 neighbor_min = vec3(1e6);
   vec3 neighbor_max = vec3(-1e6);
   float luma_min = 1e6;
   float luma_max = 0.0;
+  float alpha_min = 1e6;
+  float alpha_max = -1e6;
 
   float cross_luma = 0.0;
   for (int dy = -1; dy <= 1; dy++) {
     for (int dx = -1; dx <= 1; dx++) {
       vec2 tap_uv = uv + vec2(float(dx), float(dy)) * texel_size;
-      vec3 col = ToneMap(textureLod(current_color, tap_uv, 0.0).rgb);
+      vec4 tap = textureLod(current_color, tap_uv, 0.0);
+      vec3 col = ToneMap(tap.rgb);
+      alpha_min = min(alpha_min, tap.a);
+      alpha_max = max(alpha_max, tap.a);
       float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
       if (abs(dx) + abs(dy) == 1) {
         cross_luma += luma;
@@ -220,7 +226,8 @@ void main() {
 
   // 6. History sampling and clipping. The Catmull-Rom lobes can undershoot
   // beside a bright edge, so the sample is kept non-negative first.
-  vec3 history_sample = max(vec3(0.0), SampleCatmullRom(history_color, history_uv, texel_size).rgb);
+  vec4 history_rgba = SampleCatmullRom(history_color, history_uv, texel_size);
+  vec3 history_sample = max(vec3(0.0), history_rgba.rgb);
   vec3 history_ycocg = RGB2YCoCg(ToneMap(history_sample));
   vec3 tm_hist = max(vec3(0.0), YCoCg2RGB(ClipTowardMean(history_ycocg, mu, box_min, box_max)));
 
@@ -250,5 +257,13 @@ void main() {
   }
   vec3 resolved = max(vec3(0.0), UnToneMap(resolved_tm));
 
-  frag_color = vec4(resolved, 1.0);
+  float clamped_history_alpha = clamp(
+      history_rgba.a,
+      clamp(alpha_min, 0.0, 1.0),
+      clamp(alpha_max, 0.0, 1.0));
+  float resolved_alpha = mix(
+      clamped_history_alpha,
+      clamp(current_sample.a, 0.0, 1.0),
+      weight);
+  frag_color = vec4(resolved, resolved_alpha);
 }
