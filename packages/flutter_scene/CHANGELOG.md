@@ -1,8 +1,8 @@
 ## 0.25.0
 
 * A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
-* `Color.toLinearRgba()` and `toLinearRgb()` (`ColorToLinear`) convert a Flutter color, Display P3 included, to the linear values engine color fields take. `setBaseColor`/`setEmissiveColor` on the materials and `setColor` on the lights and `Fog` set one directly.
-* A display-referred `UnlitMaterial` reads `baseColorFactor` and vertex colors as linear, like everywhere else, so a tint from `setBaseColor` shows its widget color. A non-white tint written as display values renders lighter than before.
+* `Color.toLinearRgba()`/`toLinearRgb()` (`ColorToLinear`) and the `setBaseColor`, `setEmissiveColor`, and `setColor` setters convert a Flutter color, Display P3 included, to the engine's linear values.
+* BREAKING: A display-referred `UnlitMaterial` reads `baseColorFactor` and vertex colors as linear like every other path, so a non-white tint written as display values renders lighter. Set it with `setBaseColor` to keep the widget color.
 * BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * BREAKING: `SpotShadowInfo` drops the deprecated `firstTile`, `totalTiles`, and `tileResolution`, and `rects` is required.
 * A GLB's images referenced by relative URI load through `resolveUri` on `Node.fromGlbBytes`, `Node.fromGlbAsset`, and `importGlb`, instead of falling back to the placeholder.

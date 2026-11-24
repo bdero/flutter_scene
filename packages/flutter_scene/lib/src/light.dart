@@ -161,8 +161,9 @@ class DirectionalLight {
   /// [setColor].
   Vector3 color;
 
-  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB.
-  void setColor(ui.Color value) => color.setFrom(value.toLinearRgb());
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color].
   double intensity;
@@ -622,8 +623,9 @@ class PointLight {
   /// [setColor].
   Vector3 color;
 
-  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB.
-  void setColor(ui.Color value) => color.setFrom(value.toLinearRgb());
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the radiance at unit distance.
   double intensity;
@@ -784,8 +786,9 @@ class RectAreaLight {
   /// [setColor].
   Vector3 color;
 
-  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB.
-  void setColor(ui.Color value) => color.setFrom(value.toLinearRgb());
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the emitted radiance of the
   /// panel's surface. The received light also grows with the panel's area.
@@ -860,8 +863,9 @@ class SpotLight {
   /// [setColor].
   Vector3 color;
 
-  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB.
-  void setColor(ui.Color value) => color.setFrom(value.toLinearRgb());
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the radiance at unit distance.
   double intensity;
