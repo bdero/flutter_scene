@@ -49,6 +49,7 @@ class SmokeScene {
     this.fullCoverage = false,
     this.colorPassCounters,
     this.maxDepthConflictPixels,
+    this.maxHueOutliers,
   });
 
   final String id;
@@ -87,6 +88,11 @@ class SmokeScene {
   /// When set, the scene is probed for depth conflicts (z-fighting) after the
   /// capture, and at most this many probe pixels may change hands.
   final int? maxDepthConflictPixels;
+
+  /// The most pixels allowed to be clearly bluer than red, for a scene lit
+  /// and colored only in warm and neutral tones, where such a pixel can only
+  /// be a resolve error.
+  final int? maxHueOutliers;
 }
 
 /// Runs [action] on the scene's second tick, once a frame has drawn what it
@@ -1290,6 +1296,10 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       scene.temporalAntiAliasing
         ..sharpness = 0.4
         ..jitterScale = 1.0;
+      // The near-neutral studio, not the default sky, so the sphere's rim
+      // reflects nothing blue and the hue check below holds on every
+      // backend.
+      scene.environment = EnvironmentMap.studio();
       scene.environmentIntensity = 0.4;
       final sphere = SphereGeometry(radius: 1.0);
       final shiny = PhysicallyBasedMaterial()
@@ -1297,6 +1307,34 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         ..metallicFactor = 0.9
         ..roughnessFactor = 0.1;
       scene.add(Node(mesh: Mesh(sphere, shiny)));
+      // Thin orange slats far brighter than the bright neutral wall behind
+      // them: sharpening and history clipping on linear HDR used to push the
+      // wall pixels between them off hue (bluer than red, which nothing
+      // here can be).
+      final wall = PhysicallyBasedMaterial()
+        ..baseColorFactor = vm.Vector4(0.6, 0.6, 0.6, 1.0)
+        ..roughnessFactor = 0.8
+        ..emissiveFactor = vm.Vector4(1.5, 1.5, 1.5, 1);
+      scene.add(
+        Node(
+          mesh: Mesh(CuboidGeometry(vm.Vector3(14, 12, 0.1)), wall),
+          localTransform: vm.Matrix4.translation(vm.Vector3(0, 0, -1.6)),
+        ),
+      );
+      final hot = PhysicallyBasedMaterial()
+        ..baseColorFactor = vm.Vector4(0.1, 0.1, 0.1, 1.0)
+        ..emissiveFactor = vm.Vector4(40, 16, 3, 1);
+      final slat = CuboidGeometry(vm.Vector3(0.022, 6, 0.022));
+      for (var i = -16; i <= 16; i++) {
+        scene.add(
+          Node(
+            mesh: Mesh(slat, hot),
+            localTransform: vm.Matrix4.translation(
+              vm.Vector3(i * 0.13, 0, -1.2),
+            ),
+          ),
+        );
+      }
       scene.add(
         _directionalLightNode(
           vm.Vector3(-0.4, -0.9, -0.3),
@@ -1313,6 +1351,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     },
     warmupFrames: 16,
     fullCoverage: true,
+    maxHueOutliers: 0,
   ),
   SmokeScene('area_light', () {
     final scene = Scene();

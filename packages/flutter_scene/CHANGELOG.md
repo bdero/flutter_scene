@@ -10,6 +10,7 @@
 * God rays no longer misread the sun's shadow past a cascade's depth range or bleed across shadow atlas tiles.
 * A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
 * Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
+* Temporal anti-aliasing no longer tints pixels beside very bright highlights blue or magenta. It clips history toward the neighborhood mean in tone-mapped color, and sharpens luminance only, within the neighborhood's range.
 
 ## 0.24.6
 
