@@ -73,6 +73,15 @@ class DofPass extends RenderGraphPass {
     heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
   );
 
+  // Linear depth is fp32: devices without float32 linear filtering cannot
+  // filter it, and depth must not be interpolated across silhouette edges.
+  static final gpu.SamplerOptions depthSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.nearest,
+    magFilter: gpu.MinMagFilter.nearest,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
   @override
   String get name => 'DofPass';
 
@@ -128,6 +137,7 @@ class DofPass extends RenderGraphPass {
       target: cocColor,
       uniforms: {'CocInfo': cocInfo},
       textures: {'scene_color': scene, 'linear_depth': depth},
+      samplers: {'linear_depth': depthSampler},
     );
 
     // 2. Near-field CoC dilation, so foreground blur crosses silhouettes: the
@@ -215,6 +225,7 @@ class DofPass extends RenderGraphPass {
     required gpu.Texture target,
     Map<String, Float32List> uniforms = const {},
     Map<String, gpu.Texture> textures = const {},
+    Map<String, gpu.SamplerOptions> samplers = const {},
   }) {
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
@@ -235,7 +246,7 @@ class DofPass extends RenderGraphPass {
       renderPass.bindTexture(
         fragment.cachedUniformSlot(entry.key),
         entry.value,
-        sampler: _linearClamp,
+        sampler: samplers[entry.key] ?? _linearClamp,
       );
     }
     drawCompat(renderPass, 6);
