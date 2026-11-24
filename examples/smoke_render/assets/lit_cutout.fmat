@@ -8,6 +8,8 @@ material {
   name: "LitCutout",
   shading_model: lit,
   alpha_to_coverage: true,
+  // Double-sided like foliage, so the sun-facing back side casts the shadow.
+  culling: none,
 }
 
 fragment {
