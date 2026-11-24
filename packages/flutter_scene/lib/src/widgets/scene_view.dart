@@ -22,6 +22,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_scene/src/resource_group.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/scene_pointer.dart';
+import 'package:flutter_scene/src/widgets/scene_view_pacing.dart';
 import 'package:flutter_scene/src/widgets/scene_view_semantics.dart';
 import 'package:flutter_scene/src/widgets/widget_component_host.dart';
 
@@ -51,21 +52,28 @@ typedef SceneViewsBuilder = List<RenderView> Function(Duration elapsed);
 /// accumulation carries no such noise), so the deltas can drift from it by
 /// a bounded frame's worth of skew.
 /// {@category Widgets}
-typedef SceneTickCallback =
-    void Function(Duration elapsed, double deltaSeconds);
+typedef SceneTickCallback = void Function(
+  Duration elapsed,
+  double deltaSeconds,
+);
 
 /// Builds the widget shown while a [SceneView] waits for its resources to load,
 /// given the current load [progress] (0 to 1). See [SceneView.loadingBuilder].
 /// {@category Widgets}
-typedef SceneLoadingBuilder =
-    Widget Function(BuildContext context, double progress);
+typedef SceneLoadingBuilder = Widget Function(
+  BuildContext context,
+  double progress,
+);
 
 /// Builds the widget shown when a [SceneView] cannot load the engine resources
 /// it needs to draw, given the [error]. Calling [retry] loads them again. See
 /// [SceneView.errorBuilder].
 /// {@category Widgets}
-typedef SceneErrorBuilder =
-    Widget Function(BuildContext context, Object error, VoidCallback retry);
+typedef SceneErrorBuilder = Widget Function(
+  BuildContext context,
+  Object error,
+  VoidCallback retry,
+);
 
 /// A widget that renders a [Scene] and drives its per-frame repaint.
 ///
@@ -340,98 +348,8 @@ class SceneView extends StatefulWidget {
     Camera? sceneCamera,
   }) => camera ?? cameraBuilder?.call(elapsed) ?? sceneCamera ?? _defaultCamera;
 
-  /// Duration [_SceneViewState] pauses its web [Ticker] after a frame ticks on
-  /// high-refresh displays, leaving a `1.25 * vsync` wakeup margin before the
-  /// next deadline ([remaining], defaulting to [targetPeriod]). Returns `null`
-  /// when waking that early would not skip a VSync, no skipped edge has
-  /// confirmed a mismatch yet, or too little time remains to sleep.
-  @visibleForTesting
-  static Duration? computePacedTickerSleep({
-    required Duration targetPeriod,
-    required Duration? measuredVsyncInterval,
-    required bool sawSkippedVsync,
-    Duration? remaining,
-  }) {
-    if (measuredVsyncInterval == null) return null;
-    final vsyncUs = measuredVsyncInterval.inMicroseconds;
-    final periodUs = targetPeriod.inMicroseconds;
-    if (vsyncUs < 1000 || vsyncUs > 25000) return null;
-    final marginUs = (vsyncUs * 1.25).round();
-    // Sleeping only skips a VSync when wakeup lands past the next edge.
-    if (periodUs <= vsyncUs + marginUs) return null;
-    // Low-rate pacing (<= 25 fps) sleeps immediately once VSync is measured;
-    // higher rates wait for at least one skipped VSync to confirm mismatch.
-    if (!sawSkippedVsync && periodUs < 40000) return null;
-    final sleepUs = (remaining ?? targetPeriod).inMicroseconds - marginUs;
-    return sleepUs < 2000 ? null : Duration(microseconds: sleepUs);
-  }
-
   @override
   State<SceneView> createState() => _SceneViewState();
-}
-
-// Tracks VSync cadence and timer-based sleep state for rate-limited web views.
-final class _PacedTickerSleep {
-  // Re-probe VSync cadence periodically in case the window moves across
-  // displays with different refresh rates.
-  static const int _kReprobeIntervalFrames = 120;
-
-  Timer? wakeTimer;
-  Duration? sleepStartTimeStamp;
-  Duration? lastVsyncElapsed;
-  Duration? vsyncInterval;
-  bool sawSkippedVsync = false;
-  bool skippedSinceLastFrame = false;
-  bool sleptBeforeFrame = false;
-  int sleptSinceReprobe = 0;
-
-  bool get isSleeping => wakeTimer != null;
-
-  void cancelTimer() {
-    wakeTimer?.cancel();
-    wakeTimer = null;
-  }
-
-  void reset() {
-    cancelTimer();
-    sleepStartTimeStamp = null;
-    lastVsyncElapsed = null;
-    sawSkippedVsync = false;
-    skippedSinceLastFrame = false;
-    sleptBeforeFrame = false;
-    sleptSinceReprobe = 0;
-  }
-
-  void recordVsync(Duration elapsed) {
-    final prevElapsed = lastVsyncElapsed;
-    lastVsyncElapsed = elapsed;
-    if (prevElapsed == null) return;
-    final deltaUs = (elapsed - prevElapsed).inMicroseconds;
-    if (deltaUs < 1000 || deltaUs > 25000) return;
-    final prev = vsyncInterval;
-    vsyncInterval = prev == null
-        ? Duration(microseconds: deltaUs)
-        : Duration(microseconds: (prev.inMicroseconds * 3 + deltaUs) ~/ 4);
-  }
-
-  void noteSkip() {
-    sawSkippedVsync = true;
-    skippedSinceLastFrame = true;
-  }
-
-  void noteFrameStarted() {
-    if (!sleptBeforeFrame && !skippedSinceLastFrame) {
-      sawSkippedVsync = false;
-    }
-    sleptBeforeFrame = false;
-    skippedSinceLastFrame = false;
-  }
-
-  bool consumeReprobeDue() {
-    if (sleptSinceReprobe < _kReprobeIntervalFrames) return false;
-    sleptSinceReprobe = 0;
-    return true;
-  }
 }
 
 // Used when a scene has no camera set up at all, so a bare SceneView(scene)
@@ -473,7 +391,7 @@ class _SceneViewState extends State<SceneView>
   // When the next frame is due under [SceneView.maxFrameRate], in scheduler
   // frame-timestamp time; null renders the next tick.
   Duration? _frameDue;
-  final _PacedTickerSleep _pace = _PacedTickerSleep();
+  final PacedTickerSleep _pace = PacedTickerSleep();
 
   Clock get _clock => widget.clock ?? clock;
 
@@ -586,7 +504,7 @@ class _SceneViewState extends State<SceneView>
     final tickElapsed = _clock.now().difference(frameStartNow);
     // Skip sleeping if the wall clock stepped backward mid-tick.
     if (tickElapsed.isNegative) return;
-    final sleep = SceneView.computePacedTickerSleep(
+    final sleep = computePacedTickerSleep(
       targetPeriod: period,
       measuredVsyncInterval: _pace.vsyncInterval,
       sawSkippedVsync: _pace.sawSkippedVsync,
