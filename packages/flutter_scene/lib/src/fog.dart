@@ -40,7 +40,7 @@ class Fog {
   Vector3 color = Vector3(0.6, 0.7, 0.8);
 
   /// Sets [color] from a Flutter [Color], decoding it from sRGB.
-  void setColor(Color value) => color.setFrom(value.toLinearRgb());
+  void setColor(Color value) => color = value.toLinearRgb();
 
   /// How much the fog color is taken from the sky instead of [color] (0 = flat
   /// [color], 1 = fully the environment sampled in the view direction). Above 0,
