@@ -220,6 +220,9 @@ class EnvironmentSettings {
   double colorGradingLutBlend;
 
   // Bloom.
+  // TODO(bloom-composite-mode): carry BloomSettings.compositeMode (and
+  // highlight) through the document format so an energy-conserving setup
+  // survives a save; today a realized scene keeps the additive default.
   bool bloomEnabled;
   double bloomThreshold;
   double bloomIntensity;

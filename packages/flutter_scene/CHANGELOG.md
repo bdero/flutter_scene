@@ -11,6 +11,8 @@
 * A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
 * Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
 * Temporal anti-aliasing no longer tints pixels beside very bright highlights blue or magenta. It clips history toward the neighborhood mean in tone-mapped color, and sharpens luminance only, within the neighborhood's range.
+* `BloomSettings.compositeMode` (`BloomCompositeMode.energyConserving`) moves `intensity` of the light into the glow instead of adding it. With `threshold` and `highlight` at 0 it behaves like a lens's veiling glare.
+* Temporal anti-aliasing passes HDR values up to half-float range instead of capping luminance near 1000, so a very bright source keeps its energy for bloom.
 
 ## 0.24.6
 

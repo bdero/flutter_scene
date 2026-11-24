@@ -194,6 +194,26 @@ void main() {
       expect(info[39], 0.0);
     });
 
+    test('energy-conserving bloom moves its share out of the scene', () {
+      final settings = PostProcessSettings();
+      settings.bloom
+        ..enabled = true
+        ..intensity = 0.03
+        ..compositeMode = BloomCompositeMode.energyConserving;
+      final info = packResolveInfo(
+        exposure: 1.0,
+        toneMappingMode: ToneMappingMode.pbrNeutral,
+        flipY: false,
+        time: 0.0,
+        settings: settings,
+      );
+
+      // The scene keeps 97% of its light and the glow, which carries
+      // kBloomMipCount times what it blurs, gives back exactly 3%.
+      expect(info[34], closeTo(0.03, 1e-6));
+      expect(info[37] * kBloomMipCount, closeTo(0.03, 1e-6));
+    });
+
     test('packs AgX curve parameters', () {
       final info = packResolveInfo(
         exposure: 1.0,

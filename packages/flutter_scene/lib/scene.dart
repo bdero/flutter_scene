@@ -351,6 +351,7 @@ export 'src/post_process/post_effect.dart' show PostEffect, PostInsertion;
 export 'src/post_process/color_lut.dart' show ColorLut;
 export 'src/post_process/post_process.dart'
     show
+        BloomCompositeMode,
         BloomSettings,
         ChromaticAberrationSettings,
         ColorGradingSettings,

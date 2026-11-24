@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
 import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/resolve_info.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -19,7 +20,7 @@ import 'package:flutter_scene/src/render/uniform_slots.dart';
 const String kBloomTextureBlackboardKey = 'bloom_texture';
 
 // Number of mip levels in the bloom chain, starting at the (capped) base.
-const int _kMipCount = 6;
+const int _kMipCount = kBloomMipCount;
 
 /// The luminance scale of bloom firefly suppression: a source texel is weighted
 /// by `1 / (1 + luminance / scale)` within its 2x2 group.

@@ -118,8 +118,24 @@ class FilmGrainSettings {
   double intensity = 0.3;
 }
 
+/// How [BloomSettings] puts the blurred light back into the scene.
+/// {@category Rendering}
+enum BloomCompositeMode {
+  /// Adds the glow on top of the scene, scaled by [BloomSettings.intensity].
+  /// Brightens the frame, so it suits a [BloomSettings.threshold] that picks
+  /// out only the highlights.
+  additive,
+
+  /// Moves [BloomSettings.intensity] of every pixel's light into the glow, as
+  /// a lens scatters a few percent of what passes through it. Light is
+  /// redistributed, never added. With a `threshold` and `highlight` of 0,
+  /// the glare follows the light physically: a source thousands of times
+  /// brighter than the scene floods the frame, while the sky barely softens.
+  energyConserving,
+}
+
 /// Makes bright areas bleed light into their surroundings. Computed in a
-/// chain of HDR passes and added back to the scene before tone mapping.
+/// chain of HDR passes and composited with the scene before tone mapping.
 /// {@category Rendering}
 class BloomSettings {
   /// Whether bloom runs. Off by default.
@@ -128,8 +144,13 @@ class BloomSettings {
   /// HDR brightness above which a pixel starts to bloom.
   double threshold = 1.0;
 
-  /// How strongly the bloom is added back to the scene. `0` is none.
+  /// How strongly the bloom is added back to the scene. `0` is none. In
+  /// [BloomCompositeMode.energyConserving], the fraction of the light that
+  /// scatters into the glow; real lenses scatter about 0.01 to 0.05.
   double intensity = 0.15;
+
+  /// How the glow is combined with the scene.
+  BloomCompositeMode compositeMode = BloomCompositeMode.additive;
 
   /// Spread of the blur, from `0` to `1`. Higher values bloom wider.
   double scatter = 0.7;

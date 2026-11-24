@@ -3,7 +3,9 @@
 // Performs 3x3 velocity dilation, camera reprojection from linear depth,
 // Catmull-Rom history sampling, then YCoCg variance clipping, the history
 // mix, and optional sharpening, all on tone-mapped color so extreme HDR
-// values stay stable.
+// values stay stable. Each tone-mapped color carries its headroom
+// 1 / (1 + luminance) alongside, so the mix returns to linear HDR exactly,
+// up to half-float range, without inverting a value near 1.
 
 uniform TaaInfo {
   mat4 current_to_previous_view_projection;
@@ -49,28 +51,31 @@ vec3 YCoCg2RGB(vec3 c) {
   );
 }
 
-vec3 ToneMap(vec3 c) {
-  c = max(vec3(0.0), c);
-  float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  return c / (1.0 + luma);
+const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);
+
+// Bounds [c] to [0, half-float max] first, so a NaN or infinite sample
+// cannot turn the statistics below into NaN.
+vec3 Bounded(vec3 c) {
+  return min(max(c, vec3(0.0)), vec3(65504.0));
 }
 
-vec3 UnToneMap(vec3 c) {
-  c = max(vec3(0.0), c);
-  float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  return c / max(1.0 - luma, 1e-4);
+// 1 / (1 + luminance): one minus the tone-mapped luminance, computed without
+// the cancellation that subtracting from 1 suffers for bright colors.
+float Headroom(vec3 c) {
+  return 1.0 / (1.0 + dot(c, kLuma));
 }
 
-// Moves [history] toward the neighborhood mean [mu] until it is inside
-// [box_min, box_max]. Unlike clamping each axis, the result lies between two
-// real colors, so no channel goes negative and gets zeroed into a new hue.
-vec3 ClipTowardMean(vec3 history, vec3 mu, vec3 box_min, vec3 box_max) {
+// How far from the neighborhood mean [mu] toward [history] stays inside
+// [box_min, box_max], from 0 (the mean) to 1 (the history unchanged).
+// Unlike clamping each axis, the clipped color lies between two real
+// colors, so no channel goes negative and gets zeroed into a new hue.
+float ClipTowardMean(vec3 history, vec3 mu, vec3 box_min, vec3 box_max) {
   vec3 offset = history - mu;
   // Nudge flat axes off zero so the division below stays finite.
   offset += step(abs(offset), vec3(1e-6)) * 1e-6;
   vec3 room = mix(box_min - mu, box_max - mu, step(vec3(0.0), offset));
   vec3 limit = max(room / offset, vec3(0.0));
-  return mu + offset * min(1.0, min(limit.x, min(limit.y, limit.z)));
+  return min(1.0, min(limit.x, min(limit.y, limit.z)));
 }
 
 // 5-tap Catmull-Rom history filter to prevent texture softening.
@@ -185,8 +190,11 @@ void main() {
   // 5. Neighborhood statistics, tone-mapped like the mix below so one
   // extreme HDR pixel cannot blow open the clip box, then variance clipping
   // in YCoCg.
-  vec3 tm_curr = ToneMap(textureLod(current_color, uv, 0.0).rgb);
+  vec3 curr = Bounded(textureLod(current_color, uv, 0.0).rgb);
+  float headroom_curr = Headroom(curr);
+  vec3 tm_curr = curr * headroom_curr;
   vec3 m1 = vec3(0.0);
+  float headroom_sum = 0.0;
   vec3 m2 = vec3(0.0);
   vec3 neighbor_min = vec3(1e6);
   vec3 neighbor_max = vec3(-1e6);
@@ -197,8 +205,11 @@ void main() {
   for (int dy = -1; dy <= 1; dy++) {
     for (int dx = -1; dx <= 1; dx++) {
       vec2 tap_uv = uv + vec2(float(dx), float(dy)) * texel_size;
-      vec3 col = ToneMap(textureLod(current_color, tap_uv, 0.0).rgb);
-      float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      vec3 tap = Bounded(textureLod(current_color, tap_uv, 0.0).rgb);
+      float headroom = Headroom(tap);
+      headroom_sum += headroom;
+      vec3 col = tap * headroom;
+      float luma = dot(col, kLuma);
       if (abs(dx) + abs(dy) == 1) {
         cross_luma += luma;
       }
@@ -220,9 +231,15 @@ void main() {
 
   // 6. History sampling and clipping. The Catmull-Rom lobes can undershoot
   // beside a bright edge, so the sample is kept non-negative first.
-  vec3 history_sample = max(vec3(0.0), SampleCatmullRom(history_color, history_uv, texel_size).rgb);
-  vec3 history_ycocg = RGB2YCoCg(ToneMap(history_sample));
-  vec3 tm_hist = max(vec3(0.0), YCoCg2RGB(ClipTowardMean(history_ycocg, mu, box_min, box_max)));
+  // Tone mapping and the color transform are linear past the per-color
+  // headroom scale, so the clipped color's headroom is the same blend of the
+  // mean's and the history's.
+  vec3 history_sample = Bounded(SampleCatmullRom(history_color, history_uv, texel_size).rgb);
+  float headroom_hist = Headroom(history_sample);
+  vec3 history_ycocg = RGB2YCoCg(history_sample * headroom_hist);
+  float clip = ClipTowardMean(history_ycocg, mu, box_min, box_max);
+  vec3 tm_hist = max(vec3(0.0), YCoCg2RGB(mix(mu, history_ycocg, clip)));
+  headroom_hist = mix(headroom_sum / 9.0, headroom_hist, clip);
 
   // 7. Tone-mapped mix.
   float vel_len = length(total_velocity_uv * info.screen_size.xy);
@@ -231,24 +248,27 @@ void main() {
     weight = 1.0;
   }
   vec3 resolved_tm = mix(tm_hist, tm_curr, weight);
+  float resolved_headroom = mix(headroom_hist, headroom_curr, weight);
 
   // 8. Optional sharpening of luminance only, tone-mapped and held inside
   // the neighborhood's luminance range, then applied as one scale on every
   // channel so the hue cannot change. Sharpening each channel in linear HDR
   // overshot negative beside a far brighter pixel, and the clamp turned it
   // blue or magenta in the history it feeds.
+  // Scaling the tone-mapped color by s scales its luminance by s too, which
+  // leaves a headroom of 1 - s * (1 - h).
   if (info.taa_settings.z > 0.0) {
-    float luma = dot(resolved_tm, vec3(0.2126, 0.7152, 0.0722));
+    float luma = dot(resolved_tm, kLuma);
     float sharpened = clamp(luma + (luma - cross_luma * 0.25) * info.taa_settings.z,
                             luma_min, luma_max);
-    resolved_tm *= sharpened / max(luma, 1e-6);
+    float s = sharpened / max(luma, 1e-6);
+    resolved_tm *= s;
+    resolved_headroom = 1.0 - s + s * resolved_headroom;
   }
 
-  float tm_luma = dot(resolved_tm, vec3(0.2126, 0.7152, 0.0722));
-  if (tm_luma > 0.999) {
-    resolved_tm *= 0.999 / tm_luma;
-  }
-  vec3 resolved = max(vec3(0.0), UnToneMap(resolved_tm));
+  // Back to linear HDR. The headroom is a blend of positive terms, so this
+  // divides by nothing near zero until half-float range, where it is capped.
+  vec3 resolved = Bounded(resolved_tm / max(resolved_headroom, 1.0 / 65505.0));
 
   frag_color = vec4(resolved, 1.0);
 }

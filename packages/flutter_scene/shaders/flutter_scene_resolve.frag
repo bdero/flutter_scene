@@ -44,7 +44,9 @@ uniform ResolveInfo {
 
   float grain_enabled;
   float grain_intensity;
-  float _pad4;
+  // The share of the light energy-conserving bloom moves into its glow, which
+  // the scene gives up; 0 for additive bloom.
+  float bloom_scattered;
   float _pad5;
 
   float bloom_enabled;
@@ -266,10 +268,12 @@ void main() {
     light = hdr.rgb;
   }
 
-  // Bloom is computed in HDR by BloomPass and added back here.
+  // Bloom is computed in HDR by BloomPass and composited here.
   vec3 bloom = vec3(0.0);
   if (resolve_info.bloom_enabled > 0.5) {
     bloom = SampleBloom(uv) * resolve_info.bloom_intensity;
+    color *= 1.0 - resolve_info.bloom_scattered;
+    light *= 1.0 - resolve_info.bloom_scattered;
   }
 
   float exposure =

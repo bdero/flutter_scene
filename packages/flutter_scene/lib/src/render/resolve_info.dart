@@ -4,6 +4,10 @@ import 'dart:math' as math;
 import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
+/// Levels in the bloom chain. The bloom texture sums them, each a blurred
+/// average, so it carries this many times the light it blurs.
+const int kBloomMipCount = 6;
+
 /// Number of floats in the `ResolveInfo` uniform block: eleven std140 rows
 /// of four floats each.
 const int kResolveInfoFloatCount = 48;
@@ -80,10 +84,18 @@ Float32List packResolveInfo({
   // Row 8: film grain, then padding.
   info[32] = grain.enabled ? 1.0 : 0.0;
   info[33] = grain.intensity;
+  // The share of the light bloom moves out of the scene into its glow.
+  final energyConserving =
+      bloom.compositeMode == BloomCompositeMode.energyConserving;
+  info[34] = energyConserving ? bloom.intensity.clamp(0.0, 1.0) : 0.0;
 
   // Row 9: bloom, then padding.
   info[36] = (bloomEnabled ?? bloom.enabled) ? 1.0 : 0.0;
-  info[37] = bloom.intensity;
+  // Energy-conserving bloom divides out the chain's gain, so the glow carries
+  // exactly the light the scene gives up.
+  info[37] = energyConserving
+      ? bloom.intensity.clamp(0.0, 1.0) / kBloomMipCount
+      : bloom.intensity;
   // A surface debug view wrote display-referred pixels that copy through.
   info[38] = debugViewActive ? 1.0 : 0.0;
   info[39] = debugViewActive ? debugViewSplit : 0.0;
