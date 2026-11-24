@@ -6,6 +6,7 @@
 * A GLB's images referenced by relative URI load through `resolveUri` on `Node.fromGlbBytes`, `Node.fromGlbAsset`, and `importGlb`, instead of falling back to the placeholder.
 * `GltfTextureResolver` (`resolveTexture` on the runtime importers) supplies the texture for a glTF's external image, so an app can share one texture across models.
 * God rays no longer misread the sun's shadow past a cascade's depth range or bleed across shadow atlas tiles.
+* A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
 
 ## 0.24.4
 
