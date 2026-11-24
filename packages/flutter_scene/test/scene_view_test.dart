@@ -589,27 +589,30 @@ void main() {
       );
     });
 
-    test('returns null on 2:1 ratios where 1.25x wakeup margin cannot skip a VSync', () {
-      // 120 Hz @ 60 fps: 16.67 - 1.25 * 8.33 = 6.25 ms < 8.33 ms (wakes
-      // before the very next VSync, so sleeping would save zero frames).
-      expect(
-        computePacedTickerSleep(
-          targetPeriod: const Duration(microseconds: 16667),
-          measuredVsyncInterval: const Duration(microseconds: 8333),
-          sawSkippedVsync: true,
-        ),
-        isNull,
-      );
-      // 60 Hz @ 30 fps: 33.33 - 1.25 * 16.67 = 12.50 ms < 16.67 ms.
-      expect(
-        computePacedTickerSleep(
-          targetPeriod: const Duration(microseconds: 33333),
-          measuredVsyncInterval: const Duration(microseconds: 16667),
-          sawSkippedVsync: true,
-        ),
-        isNull,
-      );
-    });
+    test(
+      'returns null on 2:1 ratios where 1.25x wakeup margin cannot skip a VSync',
+      () {
+        // 120 Hz @ 60 fps: 16.67 - 1.25 * 8.33 = 6.25 ms < 8.33 ms (wakes
+        // before the very next VSync, so sleeping would save zero frames).
+        expect(
+          computePacedTickerSleep(
+            targetPeriod: const Duration(microseconds: 16667),
+            measuredVsyncInterval: const Duration(microseconds: 8333),
+            sawSkippedVsync: true,
+          ),
+          isNull,
+        );
+        // 60 Hz @ 30 fps: 33.33 - 1.25 * 16.67 = 12.50 ms < 16.67 ms.
+        expect(
+          computePacedTickerSleep(
+            targetPeriod: const Duration(microseconds: 33333),
+            measuredVsyncInterval: const Duration(microseconds: 16667),
+            sawSkippedVsync: true,
+          ),
+          isNull,
+        );
+      },
+    );
 
     test('computes bounded sleep for 60 fps on 144 and 240 Hz displays', () {
       final sleep144 = computePacedTickerSleep(

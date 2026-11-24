@@ -52,28 +52,21 @@ typedef SceneViewsBuilder = List<RenderView> Function(Duration elapsed);
 /// accumulation carries no such noise), so the deltas can drift from it by
 /// a bounded frame's worth of skew.
 /// {@category Widgets}
-typedef SceneTickCallback = void Function(
-  Duration elapsed,
-  double deltaSeconds,
-);
+typedef SceneTickCallback =
+    void Function(Duration elapsed, double deltaSeconds);
 
 /// Builds the widget shown while a [SceneView] waits for its resources to load,
 /// given the current load [progress] (0 to 1). See [SceneView.loadingBuilder].
 /// {@category Widgets}
-typedef SceneLoadingBuilder = Widget Function(
-  BuildContext context,
-  double progress,
-);
+typedef SceneLoadingBuilder =
+    Widget Function(BuildContext context, double progress);
 
 /// Builds the widget shown when a [SceneView] cannot load the engine resources
 /// it needs to draw, given the [error]. Calling [retry] loads them again. See
 /// [SceneView.errorBuilder].
 /// {@category Widgets}
-typedef SceneErrorBuilder = Widget Function(
-  BuildContext context,
-  Object error,
-  VoidCallback retry,
-);
+typedef SceneErrorBuilder =
+    Widget Function(BuildContext context, Object error, VoidCallback retry);
 
 /// A widget that renders a [Scene] and drives its per-frame repaint.
 ///
