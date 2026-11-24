@@ -25,6 +25,39 @@ fragment {
 }
 ''';
 
+// A lit cutout with every lighting hook, whose depth surfaces must drop them.
+const _hookedCutout = '''
+material {
+  name: "HookedCutout",
+  shading_model: lit,
+  alpha_to_coverage: true,
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec2 cell = fract(GetUV0() * 4.0) - 0.5;
+    material.base_color = vec4(0.25, 0.6, 0.15, step(0.3, length(cell)));
+  }
+
+  // A brace in a comment must not end the body early }
+  LightTerms Light(MaterialInputs material, LightContext light) {
+    LightTerms terms;
+    terms.diffuse =
+        light.radiance * max(dot(light.normal, light.light_vector), 0.0);
+    terms.specular = vec3(0.0);
+    return terms;
+  }
+
+  void Ambient(MaterialInputs material, inout AmbientContext ambient) {
+    /* { */ ambient.irradiance *= 0.5;
+  }
+
+  highp vec4 Composite(MaterialInputs material, LightingResult r) {
+    return vec4(r.direct_diffuse + r.indirect_diffuse, 1.0) * r.alpha;
+  }
+}
+''';
+
 // Bundle builds define the target macro per entry; a direct compile must
 // pass it, or the GLES entry would see the sample mask.
 const _backends = {
@@ -59,6 +92,46 @@ void main() {
     }
   });
 
+  test('a lit cutout depth surface carries none of the lighting', () {
+    // Unread lighting resources reflect at binding 0, which drops the draw on
+    // Vulkan and breaks the WGSL sidecar's binding match.
+    for (final fmat in [_cutout, _hookedCutout]) {
+      final material = compileFmat(fmat, fileName: 'cutout.fmat').material;
+      expect(
+        emitFragmentGlsl(material),
+        contains('#include <material_lighting.glsl>'),
+      );
+      for (final kind in DepthSurfaceKind.values) {
+        final source = emitFragmentGlsl(material, depthSurface: kind);
+        expect(source, isNot(contains('material_lighting.glsl')));
+        expect(source, isNot(contains('material_engine_lighting.glsl')));
+        expect(source, contains('#include <material_scene_inputs.glsl>'));
+        expect(source, contains('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE'));
+        expect(source, isNot(contains('FLUTTER_SCENE_HOOK_')));
+      }
+    }
+  });
+
+  test('a depth surface blanks the lighting hooks and keeps the lines', () {
+    final material = compileFmat(
+      _hookedCutout,
+      fileName: 'hooked.fmat',
+    ).material;
+    final source = emitFragmentGlsl(
+      material,
+      depthSurface: DepthSurfaceKind.shadow,
+    );
+    expect(source, contains('void Surface(inout MaterialInputs material)'));
+    for (final hook in ['LightTerms Light(', 'void Ambient(', 'Composite(']) {
+      expect(source, isNot(contains(hook)), reason: hook);
+    }
+    final body = source.substring(
+      source.indexOf('#line ${material.fragmentSourceLine}'),
+    );
+    final lines = '\n'.allMatches(material.fragmentSource).length;
+    expect('\n'.allMatches(body).length, greaterThanOrEqualTo(lines));
+  });
+
   test('alpha_to_coverage needs an opaque material', () {
     expect(
       () => compileFmat(
@@ -77,10 +150,17 @@ void main() {
     final temp = Directory.systemTemp.createTempSync('alpha_to_coverage');
     try {
       final compiled = compileFmat(_cutout, fileName: 'cutout.fmat');
+      final hooked = compileFmat(_hookedCutout, fileName: 'hooked.fmat');
       final sources = {
         'color': emitFragmentGlsl(compiled.material),
         for (final kind in DepthSurfaceKind.values)
           kind.name: emitFragmentGlsl(compiled.material, depthSurface: kind),
+        'hooked_color': emitFragmentGlsl(hooked.material),
+        for (final kind in DepthSurfaceKind.values)
+          'hooked_${kind.name}': emitFragmentGlsl(
+            hooked.material,
+            depthSurface: kind,
+          ),
       };
       for (final MapEntry(key: variant, value: source) in sources.entries) {
         for (final MapEntry(key: backend, value: define) in _backends.entries) {

@@ -1,3 +1,7 @@
+## 0.24.5
+
+* A lit `.fmat` with `alpha_to_coverage` casts its shadow on Vulkan and builds for WebGPU. Its depth passes no longer declare the lighting resources they never read.
+
 ## 0.24.4
 
 * A refreshing `SkyEnvironment` no longer hitches on the cube radiance layout. Its prefilter splits the heaviest roughness bands across frames, one cube face each.
