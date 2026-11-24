@@ -96,8 +96,8 @@ class DofPass extends RenderGraphPass {
 
     final fullWidth = _dimensions.width.toInt();
     final fullHeight = _dimensions.height.toInt();
-    final halfWidth = math.max(1, fullWidth ~/ 2);
-    final halfHeight = math.max(1, fullHeight ~/ 2);
+    final halfWidth = halfResolutionDimension(fullWidth);
+    final halfHeight = halfResolutionDimension(fullHeight);
 
     gpu.Texture acquire(String debugName, {bool half = true}) {
       final descriptor = TransientTextureDescriptor.color(

@@ -82,10 +82,7 @@ ui.Size ambientOcclusionTargetSize(
   if (!settings.halfResolution) {
     return dimensions;
   }
-  return ui.Size(
-    math.max(1, (dimensions.width / 2).floor()).toDouble(),
-    math.max(1, (dimensions.height / 2).floor()).toDouble(),
-  );
+  return halfResolutionSize(dimensions);
 }
 
 // Two triangles of NDC positions covering the screen (6 vec2s), shared by
@@ -274,8 +271,8 @@ class SsaoPass extends RenderGraphPass {
       mip1 = _downsampleDepth(
         context,
         baseDepth,
-        math.max(1, aoWidth ~/ 2),
-        math.max(1, aoHeight ~/ 2),
+        halfResolutionDimension(aoWidth),
+        halfResolutionDimension(aoHeight),
         level: 1,
       );
       mip2 = _downsampleDepth(

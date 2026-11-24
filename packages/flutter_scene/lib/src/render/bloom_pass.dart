@@ -180,8 +180,8 @@ class BloomPass extends RenderGraphPass {
         ),
       );
       sizes.add(ui.Size(width.toDouble(), height.toDouble()));
-      width = (width / 2).floor();
-      height = (height / 2).floor();
+      width = halfResolutionDimension(width);
+      height = halfResolutionDimension(height);
     }
 
     _drawPrefilter(context, scene, down[0], sizes[0]);
