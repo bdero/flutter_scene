@@ -108,6 +108,9 @@ void main() {
         expect(source, contains('#include <material_scene_inputs.glsl>'));
         expect(source, contains('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE'));
         expect(source, isNot(contains('FLUTTER_SCENE_HOOK_')));
+        // A declared but unwritten sample mask is 0 on Vulkan and WebGPU,
+        // which drops every sample of the cutout's shadow and depth.
+        expect(source, isNot(contains('material_coverage.glsl')));
       }
     }
   });
@@ -184,8 +187,13 @@ void main() {
             0,
             reason: '$entry\n${result.stdout}\n${result.stderr}',
           );
-          if (backend == '--metal-desktop' && variant == 'color') {
-            expect(File(output).readAsStringSync(), contains('sample_mask'));
+          if (backend == '--metal-desktop') {
+            final msl = File(output).readAsStringSync();
+            if (variant.endsWith('color')) {
+              expect(msl, contains('sample_mask'), reason: entry);
+            } else {
+              expect(msl, isNot(contains('sample_mask')), reason: entry);
+            }
           }
         }
       }
