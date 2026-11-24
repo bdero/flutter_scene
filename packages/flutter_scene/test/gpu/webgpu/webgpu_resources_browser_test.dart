@@ -126,6 +126,50 @@ void main() {
       expect(texture.getMipLevelSizeInBytes(1), 4);
     });
 
+    test(
+      'writes non-4-byte-aligned R8 and RG8 textures and mip levels',
+      () async {
+        final r8Mip = gpu.gpuContext.createTexture(
+          gpu.StorageMode.hostVisible,
+          2,
+          2,
+          format: gpu.PixelFormat.r8UNormInt,
+          mipLevelCount: 2,
+        );
+        r8Mip.overwrite(_bytes([10, 20, 30, 40]));
+        r8Mip.overwrite(_bytes([215]), mipLevel: 1);
+        expect(await webGpuReadTexture(r8Mip), [10, 20, 30, 40]);
+        expect(await webGpuReadTexture(r8Mip, mipLevel: 1), [215]);
+
+        final rg8 = gpu.gpuContext.createTexture(
+          gpu.StorageMode.hostVisible,
+          1,
+          1,
+          format: gpu.PixelFormat.r8g8UNormInt,
+        );
+        rg8.overwrite(_bytes([42, 189]));
+        expect(await webGpuReadTexture(rg8), [42, 189]);
+
+        // Unaligned length and non-zero byte offset from a word-backed view.
+        final backing = Uint32List.fromList([
+          0x11223344,
+          0x55667788,
+          0x99AABBCC,
+          0xDDEEFF00,
+        ]);
+        final slice = ByteData.view(backing.buffer, 3, 9);
+        final expected = backing.buffer.asUint8List(3, 9);
+        final r8Odd = gpu.gpuContext.createTexture(
+          gpu.StorageMode.hostVisible,
+          3,
+          3,
+          format: gpu.PixelFormat.r8UNormInt,
+        );
+        r8Odd.overwrite(slice);
+        expect(await webGpuReadTexture(r8Odd), expected);
+      },
+    );
+
     test('float formats round-trip', () async {
       final r32 = gpu.gpuContext.createTexture(
         gpu.StorageMode.hostVisible,
