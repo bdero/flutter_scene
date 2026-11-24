@@ -368,7 +368,8 @@ export 'src/render/env_prefilter.dart'
         prefilterEquirectRadiance,
         prefilterEquirectRadianceToCube;
 export 'src/texture/ktx2/ktx2.dart' show Ktx2FormatException;
-export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
+export 'src/runtime_importer/gltf_resources.dart'
+    show GltfResourceResolver, GltfTextureResolver;
 export 'src/scene_path.dart'
     show BezierPath, CatmullRomPath, PolylinePath, ScenePath, ScenePathFrame;
 export 'src/raycast.dart' show SceneRaycastHit, raycastNode, raycastNodeAll;

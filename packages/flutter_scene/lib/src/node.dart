@@ -1211,6 +1211,9 @@ base class Node implements SceneGraph {
   /// larger image is scaled down as it decodes, keeping its aspect ratio, so
   /// its full-size pixels are never held.
   ///
+  /// A GLB that references images or buffers by relative URI resolves them
+  /// through [resolveTexture] and [resolveUri]; see [importGlb].
+  ///
   /// Example:
   /// ```dart
   /// final bytes = await rootBundle.load('assets/dash.glb');
@@ -1218,11 +1221,15 @@ base class Node implements SceneGraph {
   /// ```
   static Future<Node> fromGlbBytes(
     Uint8List bytes, {
+    GltfResourceResolver? resolveUri,
+    GltfTextureResolver? resolveTexture,
     GltfWarningCallback? onWarning,
     int? maxTextureSize,
   }) {
     return importGlb(
       bytes,
+      resolveUri: resolveUri,
+      resolveTexture: resolveTexture,
       onWarning: onWarning,
       maxTextureSize: maxTextureSize,
     );
@@ -1231,6 +1238,8 @@ base class Node implements SceneGraph {
   /// Convenience wrapper for [fromGlbBytes] that loads from the asset bundle.
   static Future<Node> fromGlbAsset(
     String assetPath, {
+    GltfResourceResolver? resolveUri,
+    GltfTextureResolver? resolveTexture,
     GltfWarningCallback? onWarning,
     int? maxTextureSize,
   }) async {
@@ -1240,6 +1249,8 @@ base class Node implements SceneGraph {
         byteData.offsetInBytes,
         byteData.lengthInBytes,
       ),
+      resolveUri: resolveUri,
+      resolveTexture: resolveTexture,
       onWarning: onWarning,
       maxTextureSize: maxTextureSize,
     );
@@ -1253,10 +1264,11 @@ base class Node implements SceneGraph {
   /// those resources by URI, percent-decoded — for example downloading
   /// them relative to the `.gltf`'s own URL, or reading sibling files
   /// from disk. `data:` URIs are decoded internally and never reach
-  /// [resolveUri]. A document with more than one buffer is supported;
-  /// its buffers are concatenated and rebased before use. [onWarning],
-  /// when given, receives non-fatal import issues; without it they
-  /// print instead.
+  /// [resolveUri]. [resolveTexture], when given, supplies each external
+  /// image's texture instead, so a caller can share textures across models.
+  /// A document with more than one buffer is supported; its buffers are
+  /// concatenated and rebased before use. [onWarning], when given, receives
+  /// non-fatal import issues; without it they print instead.
   ///
   /// For single-file `.glb` models use [fromGlbBytes] instead.
   ///
@@ -1270,12 +1282,14 @@ base class Node implements SceneGraph {
   static Future<Node> fromGltfBytes(
     Uint8List gltfJson, {
     required GltfResourceResolver resolveUri,
+    GltfTextureResolver? resolveTexture,
     GltfWarningCallback? onWarning,
     int? maxTextureSize,
   }) {
     return importGltf(
       gltfJson,
       resolveUri: resolveUri,
+      resolveTexture: resolveTexture,
       onWarning: onWarning,
       maxTextureSize: maxTextureSize,
     );
