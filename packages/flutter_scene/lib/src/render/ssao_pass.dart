@@ -193,6 +193,7 @@ class SsaoPass extends RenderGraphPass {
     gpu.Texture source,
     int width,
     int height, {
+    required int level,
     bool rotatedGrid = true,
   }) {
     final target = context.texturePool.acquire(
@@ -200,7 +201,7 @@ class SsaoPass extends RenderGraphPass {
         width: width,
         height: height,
         format: _depthFormat,
-        debugName: 'depth_mip',
+        debugName: 'depth_mip_$level',
       ),
     );
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
@@ -249,6 +250,7 @@ class SsaoPass extends RenderGraphPass {
             linearDepth,
             aoWidth,
             aoHeight,
+            level: 0,
             rotatedGrid: false,
           )
         : linearDepth;
@@ -274,18 +276,21 @@ class SsaoPass extends RenderGraphPass {
         baseDepth,
         math.max(1, aoWidth ~/ 2),
         math.max(1, aoHeight ~/ 2),
+        level: 1,
       );
       mip2 = _downsampleDepth(
         context,
         mip1,
         math.max(1, aoWidth ~/ 4),
         math.max(1, aoHeight ~/ 4),
+        level: 2,
       );
       mip3 = _downsampleDepth(
         context,
         mip2,
         math.max(1, aoWidth ~/ 8),
         math.max(1, aoHeight ~/ 8),
+        level: 3,
       );
       mipLevels = 4;
     }
