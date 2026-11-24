@@ -2,11 +2,12 @@
 """Compares two directories of smoke frames scene by scene.
 
     compare_frames.py <reference_dir> <candidate_dir> [--diff-dir DIR]
-        [--max-mean 1.0] [--max-outliers 0.5]
+        [--max-mean 1.0] [--max-outliers 0.5] [--allow NAME=OUTLIERS ...]
 
 A scene passes when its mean absolute channel difference is at most
 --max-mean (0-255 scale) and at most --max-outliers percent of its pixels
-differ by more than 16 in any channel. Exits nonzero when a scene fails or
+differ by more than 16 in any channel. --allow raises the outlier limit for
+one named scene, for a known difference that has its own TODO. Exits nonzero when a scene fails or
 is missing from either side. Needs Pillow and NumPy.
 """
 
@@ -25,7 +26,12 @@ def main():
     parser.add_argument('--diff-dir')
     parser.add_argument('--max-mean', type=float, default=1.0)
     parser.add_argument('--max-outliers', type=float, default=0.5)
+    parser.add_argument('--allow', action='append', default=[])
     args = parser.parse_args()
+    allowed = {}
+    for entry in args.allow:
+        scene, _, limit = entry.partition('=')
+        allowed[scene] = float(limit)
 
     def frames(path):
         return {f for f in os.listdir(path) if f.endswith('.png')}
@@ -50,7 +56,8 @@ def main():
         per_pixel = diff.max(axis=2)
         mean = float(diff.mean())
         outliers = 100.0 * float((per_pixel > 16).mean())
-        ok = mean <= args.max_mean and outliers <= args.max_outliers
+        ok = (mean <= args.max_mean and
+              outliers <= allowed.get(name, args.max_outliers))
         print(f'{"ok  " if ok else "FAIL"} {name}: max {int(diff.max())}, '
               f'mean {mean:.3f}, {outliers:.3f}% of pixels past 16')
         if not ok:
