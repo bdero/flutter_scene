@@ -1,6 +1,6 @@
 ## 0.24.5
 
-* A lit `.fmat` with `alpha_to_coverage` casts its shadow on Vulkan and builds for WebGPU. Its depth passes no longer declare the lighting resources they never read.
+* A `.fmat` with `alpha_to_coverage` casts its shadow and writes depth on Vulkan and WebGPU, and a lit one builds for WebGPU. Its depth passes no longer declare a sample mask or lighting resources they never write or read.
 
 ## 0.24.4
 

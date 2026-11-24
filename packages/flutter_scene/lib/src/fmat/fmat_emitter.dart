@@ -341,7 +341,10 @@ String emitFragmentGlsl(
   sb.writeln('#include <normals.glsl>');
   sb.writeln('#include <material_inputs.glsl>');
   sb.writeln('#include <material_debug.glsl>');
-  if (material.alphaToCoverage) {
+  // Only the color entry writes coverage. A depth surface cuts with discard
+  // instead, and must not even declare the sample mask: an output it never
+  // writes reaches Vulkan and WebGPU as a mask of 0, dropping every sample.
+  if (material.alphaToCoverage && depthSurface == null) {
     sb.writeln('#include <material_coverage.glsl>');
   }
   if (surfaceOnly) {
