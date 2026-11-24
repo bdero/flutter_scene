@@ -82,6 +82,20 @@ class ResolvePass extends RenderGraphPass {
     lengthInBytes: 6 * 2 * 4,
   );
 
+  static final gpu.SamplerOptions _linearClamp = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
+  static final gpu.SamplerOptions _nearestClamp = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.nearest,
+    magFilter: gpu.MinMagFilter.nearest,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
   @override
   String get name => 'ResolvePass';
 
@@ -124,12 +138,7 @@ class ResolvePass extends RenderGraphPass {
     renderPass.bindTexture(
       _fragmentShader.cachedUniformSlot('scene_color'),
       hdrColor,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _linearClamp,
     );
     // Bloom is present only when BloomPass ran this frame; otherwise a
     // placeholder fills the slot and the resolve skips it (flag off).
@@ -139,15 +148,7 @@ class ResolvePass extends RenderGraphPass {
     renderPass.bindTexture(
       _fragmentShader.cachedUniformSlot('bloom_color'),
       Material.whitePlaceholder(bloomTexture),
-      sampler: samplerOrPlaceholder(
-        bloomTexture,
-        gpu.SamplerOptions(
-          minFilter: gpu.MinMagFilter.linear,
-          magFilter: gpu.MinMagFilter.linear,
-          widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        ),
-      ),
+      sampler: samplerOrPlaceholder(bloomTexture, _linearClamp),
     );
     // The adapted auto exposure factor is present only when
     // AutoExposurePass ran this frame; otherwise the white placeholder
@@ -158,12 +159,7 @@ class ResolvePass extends RenderGraphPass {
     renderPass.bindTexture(
       _fragmentShader.cachedUniformSlot('exposure_factor'),
       exposureFactor,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.nearest,
-        magFilter: gpu.MinMagFilter.nearest,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _nearestClamp,
     );
     // The film-look grading LUT, or a neutral placeholder when no look is
     // set (lut_params.x stays 0 and the sample is skipped).
@@ -171,15 +167,7 @@ class ResolvePass extends RenderGraphPass {
     renderPass.bindTexture(
       _fragmentShader.cachedUniformSlot('grading_lut'),
       Material.whitePlaceholder(gradingLut),
-      sampler: samplerOrPlaceholder(
-        gradingLut,
-        gpu.SamplerOptions(
-          minFilter: gpu.MinMagFilter.linear,
-          magFilter: gpu.MinMagFilter.linear,
-          widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        ),
-      ),
+      sampler: samplerOrPlaceholder(gradingLut, _linearClamp),
     );
     drawCompat(renderPass, 6);
     rendererSubmissions.submit(commandBuffer);
