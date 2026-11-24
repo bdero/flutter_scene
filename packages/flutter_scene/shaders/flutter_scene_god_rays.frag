@@ -74,14 +74,14 @@ vec3 ViewPositionAt(vec2 uv) {
       vec3(cam.camera_right.w, cam.camera_up.w, cam.camera_forward.w));
 }
 
-// One cascade's shadow test for world point P: transform into the cascade's
-// clip space; if the point lies inside the tile, sample the atlas and return
-// 1 (lit) or 0 (shadowed) through [result]. Returns whether the point was
-// inside this cascade. Unrolled with literal indices at the call sites, since
-// dynamic indexing of the uniform matrix array is invalid on GLES 1.00.
-#define TRY_CASCADE(IDX, P, COUNT, RESULT)                                 \
+// One cascade's shadow test using the pre-transformed light-clip coordinate LC
+// (evaluated as lc0 + float(step) * dlc from hoisted matrix products outside
+// the raymarch loop). If the point lies inside the tile, sample the atlas and
+// return 1 (lit) or 0 (shadowed) through [result]. Unrolled with literal
+// indices at the call sites so no dynamic uniform array indexing is emitted.
+#define TRY_CASCADE(IDX, LC, RESULT)                                       \
   {                                                                        \
-    vec4 lc = shadow.light_space_matrix[IDX] * vec4(P, 1.0);               \
+    vec4 lc = (LC);                                                        \
     vec3 proj = lc.xyz / lc.w;                                             \
     if (abs(proj.x) < 1.0 && abs(proj.y) < 1.0 &&                          \
         proj.z >= 0.0 && proj.z <= 1.0) {                                  \
@@ -98,14 +98,20 @@ vec3 ViewPositionAt(vec2 uv) {
     }                                                                      \
   }
 
-// Sunlight visibility at world point P (1 lit, 0 shadowed). Points outside all
-// cascades are treated as lit.
-float ShadowVisibility(vec3 p, int count) {
+// Sunlight visibility at ray step [fi] using hoisted per-cascade start/delta
+// light-clip coordinates (1 lit, 0 shadowed). Points outside all cascades are
+// treated as lit.
+float ShadowVisibilityStep(
+    vec4 lc0_0, vec4 dlc_0,
+    vec4 lc0_1, vec4 dlc_1,
+    vec4 lc0_2, vec4 dlc_2,
+    vec4 lc0_3, vec4 dlc_3,
+    float fi, int count) {
   float result = 1.0;
-  TRY_CASCADE(0, p, count, result);
-  if (count > 1) TRY_CASCADE(1, p, count, result);
-  if (count > 2) TRY_CASCADE(2, p, count, result);
-  if (count > 3) TRY_CASCADE(3, p, count, result);
+  if (count > 0) TRY_CASCADE(0, lc0_0 + fi * dlc_0, result);
+  if (count > 1) TRY_CASCADE(1, lc0_1 + fi * dlc_1, result);
+  if (count > 2) TRY_CASCADE(2, lc0_2 + fi * dlc_2, result);
+  if (count > 3) TRY_CASCADE(3, lc0_3 + fi * dlc_3, result);
   return 1.0;
 }
 
@@ -137,8 +143,9 @@ void main() {
       ? world_end + cam.camera_forward.xyz * (cam.projection.z - view_pos.z)
       : cam.camera_position.xyz;
   vec3 to_end = world_end - ray_origin;
-  float ray_len = min(length(to_end), max_distance);
-  vec3 ray_dir = to_end / max(length(to_end), 1e-4);
+  float to_end_len = length(to_end);
+  float ray_len = min(to_end_len, max_distance);
+  vec3 ray_dir = to_end / max(to_end_len, 1e-4);
 
   float step_len = ray_len / float(steps);
   float offset = DitherNoise(gl_FragCoord.xy) * step_len * god.params1.y;
@@ -155,11 +162,40 @@ void main() {
   // the in-scatter into the first step near the camera; density scales the
   // overall thickness.
   int count = int(shadow.light_direction.w + 0.5);
+  // Hoist per-cascade light-space matrix multiplies outside the raymarch loop:
+  // M * vec4(start_pos + i * step_vec, 1) == lc0 + float(i) * dlc.
+  vec3 start_pos = ray_origin + ray_dir * offset;
+  vec3 step_vec = ray_dir * step_len;
+  vec4 lc0_0 = vec4(0.0);
+  vec4 dlc_0 = vec4(0.0);
+  vec4 lc0_1 = vec4(0.0);
+  vec4 dlc_1 = vec4(0.0);
+  vec4 lc0_2 = vec4(0.0);
+  vec4 dlc_2 = vec4(0.0);
+  vec4 lc0_3 = vec4(0.0);
+  vec4 dlc_3 = vec4(0.0);
+  if (count > 0) {
+    lc0_0 = shadow.light_space_matrix[0] * vec4(start_pos, 1.0);
+    dlc_0 = shadow.light_space_matrix[0] * vec4(step_vec, 0.0);
+  }
+  if (count > 1) {
+    lc0_1 = shadow.light_space_matrix[1] * vec4(start_pos, 1.0);
+    dlc_1 = shadow.light_space_matrix[1] * vec4(step_vec, 0.0);
+  }
+  if (count > 2) {
+    lc0_2 = shadow.light_space_matrix[2] * vec4(start_pos, 1.0);
+    dlc_2 = shadow.light_space_matrix[2] * vec4(step_vec, 0.0);
+  }
+  if (count > 3) {
+    lc0_3 = shadow.light_space_matrix[3] * vec4(start_pos, 1.0);
+    dlc_3 = shadow.light_space_matrix[3] * vec4(step_vec, 0.0);
+  }
   float lit_sum = 0.0;
   for (int i = 0; i < kMaxSteps; i++) {
     if (i >= steps) break;
-    vec3 p = ray_origin + ray_dir * (offset + float(i) * step_len);
-    lit_sum += ShadowVisibility(p, count);
+    lit_sum += ShadowVisibilityStep(
+        lc0_0, dlc_0, lc0_1, dlc_1, lc0_2, dlc_2, lc0_3, dlc_3,
+        float(i), count);
   }
   float avg_lit = lit_sum / float(steps);
 
