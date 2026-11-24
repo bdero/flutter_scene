@@ -14,7 +14,8 @@ import 'package:flutter_scene/src/shaders.dart';
 /// streaming through gaps in geometry is visible as shafts. Off by default; set
 /// [enabled]. It requires a shadow-casting [DirectionalLight] and a
 /// [PerspectiveCamera] (it reads the cascaded shadow map and the camera depth);
-/// it is skipped otherwise.
+/// it is skipped otherwise. The shafts fade with the light's
+/// `DirectionalLight.shadowStrength` and are gone at `0`.
 ///
 /// The march is per-pixel and samples the shadow map at every step, so it is a
 /// desktop-leaning effect on mobile/web: keep [stepCount] low and [maxDistance]

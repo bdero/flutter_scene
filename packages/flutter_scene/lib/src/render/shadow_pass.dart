@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/point_shadow.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -80,6 +81,16 @@ class SharedShadowAtlas {
   /// The spot layout published with [atlas].
   SpotShadowInfo? spotInfo;
 }
+
+/// The shadow map a pass shading lit materials binds: this frame's [atlas], or
+/// with [holdShadowVariant] (the sun's shadow paused) a placeholder, so the
+/// materials keep their shadowed variants rather than compiling the no-shadow
+/// ones. A frame with no atlas has no cascades or tiles to sample it with.
+gpu.Texture? shadowMapForShading(
+  gpu.Texture? atlas, {
+  required bool holdShadowVariant,
+}) =>
+    atlas ?? (holdShadowVariant ? Material.getWhitePlaceholderTexture() : null);
 
 /// Render-graph blackboard key under which [ShadowPass] publishes the packed
 /// shadow uniform (the `PostShadowInfo` std140 block: per-cascade world->light

@@ -275,12 +275,13 @@ class EngineLightingUniforms {
     fragInfo[201] = lighting.projectionOffsetY;
     fragInfo[202] = lighting.orthographic ? 1.0 : 0.0;
     fragInfo[203] = froxels?.depthOffset ?? 0.0;
-    // camera_position [204..207]: the eye, for projecting world positions.
+    // camera_position [204..207]: the eye, for projecting world positions,
+    // and in w the sun's shadow strength.
     final cameraPosition = lighting.cameraPosition;
     fragInfo[204] = cameraPosition?.x ?? 0.0;
     fragInfo[205] = cameraPosition?.y ?? 0.0;
     fragInfo[206] = cameraPosition?.z ?? 0.0;
-    fragInfo[207] = 0.0;
+    fragInfo[207] = light?.shadowStrength.clamp(0.0, 1.0) ?? 1.0;
     // shadow_atlas_params [12..15] (more of the unused SH region). x is the
     // spot plus point-shadow tile count, 0 disabling both; yz one cascade
     // tile's extent in atlas UV, and w the cascades per atlas row.

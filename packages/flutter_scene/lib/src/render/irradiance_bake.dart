@@ -2,9 +2,11 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart' show DirectionalShadowState;
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
@@ -78,6 +80,7 @@ class IrradianceFieldBakeStepper {
     required this.environmentMap,
     required this.transientsBuffer,
     required this.lightComponent,
+    required this.sunShadow,
     required this.punctualLighting,
     required this.spotShadowFrame,
     required this.pointShadowFrame,
@@ -89,6 +92,7 @@ class IrradianceFieldBakeStepper {
       required EnvironmentMap environmentMap,
       required TransientWriter transientsBuffer,
       required DirectionalLightComponent? lightComponent,
+      required DirectionalShadowState sunShadow,
       required PunctualLighting punctualLighting,
       required SpotShadowFrame? spotShadowFrame,
       required PointShadowFrame? pointShadowFrame,
@@ -109,6 +113,10 @@ class IrradianceFieldBakeStepper {
   final EnvironmentMap environmentMap;
   final TransientWriter transientsBuffer;
   final DirectionalLightComponent? lightComponent;
+
+  /// The sun's shadow state the bake planned its atlas with.
+  @internal
+  final DirectionalShadowState sunShadow;
   final PunctualLighting punctualLighting;
   final SpotShadowFrame? spotShadowFrame;
   final PointShadowFrame? pointShadowFrame;
@@ -120,6 +128,7 @@ class IrradianceFieldBakeStepper {
     required EnvironmentMap environmentMap,
     required TransientWriter transientsBuffer,
     required DirectionalLightComponent? lightComponent,
+    required DirectionalShadowState sunShadow,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
     required PointShadowFrame? pointShadowFrame,
@@ -186,6 +195,7 @@ class IrradianceFieldBakeStepper {
           environmentMap: environmentMap,
           transientsBuffer: transientsBuffer,
           lightComponent: lightComponent,
+          sunShadow: sunShadow,
           punctualLighting: punctualLighting,
           spotShadowFrame: spotShadowFrame,
           pointShadowFrame: pointShadowFrame,

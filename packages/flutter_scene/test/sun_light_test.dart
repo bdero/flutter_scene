@@ -59,10 +59,12 @@ void main() {
       shadowMaxDistance: 80.0,
       shadowCascadeCount: 2,
       shadowSoftness: 0.2,
+      shadowStrength: 0.4,
     );
 
     final light = binding.resolve();
     expect(light.priority, 5);
+    expect(light.shadowStrength, 0.4);
     expect(light.cacheStaticShadows, isFalse);
     expect(light.shadowFilter, DirectionalShadowFilter.fixedPcf);
     expect(light.shadowMaxDistance, 80.0);

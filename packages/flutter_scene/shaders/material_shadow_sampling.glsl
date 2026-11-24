@@ -288,6 +288,8 @@ float SampleShadow(highp vec3 world_pos, vec3 n) {
     highp float width = max(frag_info.shadow_fade, limit * 0.1);
     fade = smoothstep(limit - width, limit, GetFragmentViewDepth());
   }
+  // The light's shadowStrength (camera_position.w) fades toward lit too.
+  fade = 1.0 - (1.0 - fade) * clamp(frag_info.camera_position.w, 0.0, 1.0);
   float shadow_sum = 0.0;
   float weight = 0.0;
   // A fully faded fragment would discard its taps, so it skips them.

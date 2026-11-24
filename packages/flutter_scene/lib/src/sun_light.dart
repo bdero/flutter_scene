@@ -36,6 +36,7 @@ class SunLight {
   SunLight(
     this.source, {
     this.castsShadow = true,
+    this.shadowStrength = 1.0,
     this.intensityScale = 1.0,
     this.priority = 0,
     this.color,
@@ -62,6 +63,12 @@ class SunLight {
 
   /// Whether the derived light casts shadows.
   bool castsShadow;
+
+  // TODO(fscene): carry shadowStrength in SunLightSpec so an authored scene
+  // keeps it.
+  /// How strongly the cast shadow darkens receivers; see
+  /// [DirectionalLight.shadowStrength].
+  double shadowStrength;
 
   /// Multiplies the (sky-derived or overridden) intensity.
   double intensityScale;
@@ -142,6 +149,7 @@ class SunLight {
       ..negate();
     light.color.setFrom(color ?? source.sunLightColor);
     light.castsShadow = castsShadow;
+    light.shadowStrength = shadowStrength;
     light.intensity = (intensity ?? source.sunLightIntensity) * intensityScale;
     light.priority = priority;
     light.cacheStaticShadows = cacheStaticShadows;

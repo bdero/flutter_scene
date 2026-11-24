@@ -31,12 +31,14 @@ import 'package:flutter_scene/src/render/uniform_slots.dart';
 /// `mat4 light_space_matrix[4]` (world -> cascade clip), `vec4
 /// cascade_splits` (view-space split distance per cascade), `vec4
 /// light_direction` (xyz direction, w = cascade count), `vec4 light_color`,
-/// `vec4 cascade_atlas` (see [RenderPassContext.shadowInfo]).
+/// `vec4 cascade_atlas` (see [RenderPassContext.shadowInfo]), whose w is
+/// the light's [shadowStrength].
 ByteData packPostShadowInfo(
   List<ShadowCascade> cascades,
   Vector3 direction,
   Vector3 color, {
   ShadowAtlasLayout? atlas,
+  double shadowStrength = 1.0,
 }) {
   final f = Float32List(80); // 4 mat4 + 4 vec4
   final count = cascades.length < 4 ? cascades.length : 4;
@@ -57,6 +59,7 @@ ByteData packPostShadowInfo(
     f[77] = extent.y;
     f[78] = atlas.cascadeColumns.toDouble();
   }
+  f[79] = shadowStrength.clamp(0.0, 1.0);
   return ByteData.sublistView(f);
 }
 
@@ -295,6 +298,8 @@ class RenderPassContext {
   /// by intensity), and a `vec4` cascade atlas placement: xy one cascade
   /// tile's extent in atlas UV and z the cascades per row, so cascade `i` with
   /// tile UV `uv` samples `(vec2(i % z, i / z) + vec2(uv.x, 1.0 - uv.y)) * xy`.
+  /// Its w is the light's `DirectionalLight.shadowStrength`, which a pass
+  /// fades its shadowing by.
   /// Bind it under a `PostShadowInfo` block via
   /// [applyShader]'s `uniforms`. Null when [shadowMap] is null.
   ByteData? get shadowInfo =>

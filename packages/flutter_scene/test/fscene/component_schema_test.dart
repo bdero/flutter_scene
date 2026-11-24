@@ -215,6 +215,7 @@ void main() {
       names,
       containsAll({
         'priority',
+        'shadowStrength',
         'cacheStaticShadows',
         'shadowAmbientStrength',
         'shadowFilter',

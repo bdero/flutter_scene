@@ -321,11 +321,13 @@ Custom-shader GPU barrel (`package:flutter_scene/gpu.dart`): `Shader`, `ShaderLi
 Lights (all in `light.dart`, all fields mutable):
 
 - `DirectionalLight({direction /*(-0.3,-1,-0.2)*/, color, intensity = 3.0, priority = 0, castsShadow
-  = false, cacheStaticShadows = true, shadowFadeRange = 2.0, shadowSoftness = 0.08, shadowCascadeCount
-  = 4, shadowMaxDistance = 150.0, shadowCascadeSplitLambda = 0.6, shadowMapResolution = 1024,
-  shadowDepthBias = 0.02, shadowNormalBias = 0.02, shadowAmbientStrength = 0.0, shadowFilter =
-  rotatedPoisson, shadowCasterFaces = front, contactShadows = false, contactShadowDistance = 0.3,
-  angularRadius = 0.005})`.
+  = false, shadowStrength = 1.0, cacheStaticShadows = true, shadowFadeRange = 2.0, shadowSoftness =
+  0.08, shadowCascadeCount = 4, shadowMaxDistance = 150.0, shadowCascadeSplitLambda = 0.6,
+  shadowMapResolution = 1024, shadowDepthBias = 0.02, shadowNormalBias = 0.02, shadowAmbientStrength =
+  0.0, shadowFilter = rotatedPoisson, shadowCasterFaces = front, contactShadows = false,
+  contactShadowDistance = 0.3, angularRadius = 0.005})`. Fade shadows out (dusk) by easing
+  `shadowStrength` to 0, which pauses the cascades and keeps the static cache and shader variants;
+  a zero `intensity` still renders them, and toggling `castsShadow` pops and recompiles.
 - `PointLight({color, intensity = 1.0, range = 0.0, falloffExponent = 2.0, castsShadow = false,
   shadowMapResolution = 512, shadowNear = 0.1, shadowDepthBias = 0.0, shadowNormalBias = 0.1,
   shadowSoftness = 1.0, shadowCasterFaces = front})`. Shadows render six cube faces into the shared

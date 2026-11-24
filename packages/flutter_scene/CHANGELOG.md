@@ -9,6 +9,7 @@
 * `GltfTextureResolver` (`resolveTexture` on the runtime importers) supplies the texture for a glTF's external image, so an app can share one texture across models.
 * God rays no longer misread the sun's shadow past a cascade's depth range or bleed across shadow atlas tiles.
 * A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
+* `DirectionalLight.shadowStrength` fades the sun's shadow toward lit, catchers and god rays included. At `0` the cascades pause but keep their static cache and shader variants.
 
 ## 0.24.4
 

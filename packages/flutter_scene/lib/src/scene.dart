@@ -195,16 +195,19 @@ enum AntiAliasingMode {
 }
 
 /// Packs the frame's shadows into the shared atlas: the primary directional
-/// light's cascades, then each casting spot and point light at its own
-/// `shadowMapResolution`. Pure, so every view and capture of a frame plans
-/// the same layout the punctual light rows were stamped with.
-ShadowAtlasLayout? _planShadowAtlas(
+/// light's cascades when [sunShadow] is active, then each casting spot and
+/// point light at its own `shadowMapResolution`. Pure, and [sunShadow] is
+/// decided once per frame, so every view and capture of a frame plans the
+/// same layout the punctual light rows were stamped with.
+@visibleForTesting
+ShadowAtlasLayout? planShadowAtlas(
   DirectionalLightComponent? lightComponent,
+  DirectionalShadowState sunShadow,
   SpotShadowFrame? spotShadowFrame,
   PointShadowFrame? pointShadowFrame,
 ) {
   final light = lightComponent?.light;
-  final cascaded = light != null && light.castsShadow;
+  final cascaded = light != null && sunShadow == DirectionalShadowState.active;
   return ShadowAtlasLayout.plan(
     cascadeCount: cascaded ? light.shadowCascadeCount.clamp(1, 4) : 0,
     cascadeResolution: cascaded ? light.shadowMapResolution : 0,
@@ -253,6 +256,7 @@ ui.Rect resolveWarmUpRegion({
 // The frame's view-independent lighting inputs (see _prepareFrameLighting).
 typedef _FrameLighting = ({
   DirectionalLightComponent? lightComponent,
+  DirectionalShadowState sunShadow,
   PunctualLighting punctualLighting,
   SpotShadowFrame? spotShadowFrame,
   PointShadowFrame? pointShadowFrame,
@@ -1369,6 +1373,27 @@ base class Scene implements SceneGraph {
   @visibleForTesting
   List<PlanarReflectionCapturePass> debugLastPlanarCapturePasses = const [];
 
+  /// Called with every shadow atlas layout the scene plans: the frame's, each
+  /// view's, and each capture's.
+  @visibleForTesting
+  void Function(ShadowAtlasLayout? layout)? debugOnShadowAtlasPlanned;
+
+  ShadowAtlasLayout? _planShadowAtlas(
+    DirectionalLightComponent? lightComponent,
+    DirectionalShadowState sunShadow,
+    SpotShadowFrame? spotShadowFrame,
+    PointShadowFrame? pointShadowFrame,
+  ) {
+    final layout = planShadowAtlas(
+      lightComponent,
+      sunShadow,
+      spotShadowFrame,
+      pointShadowFrame,
+    );
+    debugOnShadowAtlasPlanned?.call(layout);
+    return layout;
+  }
+
   // Builds this frame's planar reflection capture passes for the primary
   // view: groups the visible reflectors, allocates or reuses each group's
   // capture target, routes the resulting frame to the mirror surfaces'
@@ -1381,6 +1406,7 @@ base class Scene implements SceneGraph {
     required ui.Size pixelSize,
     required EnvironmentMap environmentMap,
     required DirectionalLightComponent? lightComponent,
+    required DirectionalShadowState sunShadow,
     required PunctualLighting punctualLighting,
     required List<ShadowCascade> cascades,
     required double time,
@@ -1509,6 +1535,7 @@ base class Scene implements SceneGraph {
               ),
             ],
             suppressPlanarReflections: true,
+            holdShadowVariant: sunShadow == DirectionalShadowState.paused,
           ),
           output: texture,
           pool: resources.pool,
@@ -1577,8 +1604,10 @@ base class Scene implements SceneGraph {
       renderScene.pointLights,
       views: captureViews,
     );
+    final sunShadow = directionalShadowStateOf(lightComponent?.light);
     final shadowAtlas = _planShadowAtlas(
       lightComponent,
+      sunShadow,
       spotShadowFrame,
       pointShadowFrame,
     );
@@ -1603,6 +1632,7 @@ base class Scene implements SceneGraph {
       environmentMap: environment ?? Material.getDefaultEnvironmentMap(),
       transientsBuffer: uniformTransients,
       lightComponent: lightComponent,
+      sunShadow: sunShadow,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
       pointShadowFrame: pointShadowFrame,
@@ -1617,6 +1647,7 @@ base class Scene implements SceneGraph {
     required EnvironmentMap environmentMap,
     required TransientWriter transientsBuffer,
     required DirectionalLightComponent? lightComponent,
+    required DirectionalShadowState sunShadow,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
     required PointShadowFrame? pointShadowFrame,
@@ -1646,6 +1677,7 @@ base class Scene implements SceneGraph {
         environmentMap: environmentMap,
         transientsBuffer: transientsBuffer,
         lightComponent: lightComponent,
+        sunShadow: sunShadow,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
         pointShadowFrame: pointShadowFrame,
@@ -1699,8 +1731,10 @@ base class Scene implements SceneGraph {
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
     final pointShadowFrame = collectPointShadows(renderScene.pointLights);
+    final sunShadow = directionalShadowStateOf(lightComponent?.light);
     final shadowAtlas = _planShadowAtlas(
       lightComponent,
+      sunShadow,
       spotShadowFrame,
       pointShadowFrame,
     );
@@ -1745,6 +1779,7 @@ base class Scene implements SceneGraph {
       environmentMap: environment ?? Material.getDefaultEnvironmentMap(),
       transientsBuffer: uniformTransients,
       lightComponent: lightComponent,
+      sunShadow: sunShadow,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
       pointShadowFrame: pointShadowFrame,
@@ -2600,6 +2635,7 @@ base class Scene implements SceneGraph {
     );
     final (
       :lightComponent,
+      :sunShadow,
       :punctualLighting,
       :spotShadowFrame,
       :pointShadowFrame,
@@ -2641,6 +2677,7 @@ base class Scene implements SceneGraph {
         environmentMap: environmentMap,
         transientsBuffer: transientsBuffer,
         lightComponent: lightComponent,
+        sunShadow: sunShadow,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
         pointShadowFrame: pointShadowFrame,
@@ -2788,6 +2825,9 @@ base class Scene implements SceneGraph {
     // Cascaded shadows and other single-sun features use the selected primary.
     // All other directional lights remain in the additional-light buffer.
     final lightComponent = renderScene.primaryDirectionalLight;
+    // Whether the sun's cascades render, decided once here for every view,
+    // capture, and the punctual light rows, so their atlas layouts agree.
+    final sunShadow = directionalShadowStateOf(lightComponent?.light);
 
     // Select this frame's shadow-casting spots and point lights. Every view
     // shares the selection, so it favors lights any of them can see.
@@ -2809,6 +2849,7 @@ base class Scene implements SceneGraph {
     );
     final shadowAtlas = _planShadowAtlas(
       lightComponent,
+      sunShadow,
       spotShadowFrame,
       pointShadowFrame,
     );
@@ -2835,7 +2876,7 @@ base class Scene implements SceneGraph {
     _sharedShadowAtlas =
         !debugDisableSharedShadowTiles &&
             anchor != null &&
-            lightComponent?.light.castsShadow != true &&
+            sunShadow != DirectionalShadowState.active &&
             (spotShadowFrame != null || pointShadowFrame != null)
         ? SharedShadowAtlas(anchor.camera.position)
         : null;
@@ -2878,6 +2919,7 @@ base class Scene implements SceneGraph {
           environmentMap: environmentMap,
           transientsBuffer: transientsBuffer,
           lightComponent: lightComponent,
+          sunShadow: sunShadow,
           punctualLighting: punctualLighting,
           spotShadowFrame: spotShadowFrame,
           pointShadowFrame: pointShadowFrame,
@@ -2886,6 +2928,7 @@ base class Scene implements SceneGraph {
     }
     return (
       lightComponent: lightComponent,
+      sunShadow: sunShadow,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
       pointShadowFrame: pointShadowFrame,
@@ -2903,6 +2946,7 @@ base class Scene implements SceneGraph {
   }) {
     final (
       :lightComponent,
+      :sunShadow,
       :punctualLighting,
       :spotShadowFrame,
       :pointShadowFrame,
@@ -2949,6 +2993,7 @@ base class Scene implements SceneGraph {
         environmentMap: environmentMap,
         transientsBuffer: transientsBuffer,
         lightComponent: lightComponent,
+        sunShadow: sunShadow,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
         pointShadowFrame: pointShadowFrame,
@@ -3177,6 +3222,7 @@ base class Scene implements SceneGraph {
       environmentMap: environmentMap,
       transientsBuffer: transientsBuffer,
       lightComponent: lighting.lightComponent,
+      sunShadow: lighting.sunShadow,
       punctualLighting: lighting.punctualLighting,
       spotShadowFrame: lighting.spotShadowFrame,
       pointShadowFrame: lighting.pointShadowFrame,
@@ -3220,7 +3266,8 @@ base class Scene implements SceneGraph {
       List<ShadowCascade>? cascades;
       Camera? combined;
       final light = lighting.lightComponent?.light;
-      final castsDirectional = light != null && light.castsShadow;
+      final castsDirectional =
+          light != null && lighting.sunShadow == DirectionalShadowState.active;
       if (group.sharedShadows && castsDirectional) {
         combined = combinedViewCamera(cameras, sizes);
         if (combined != null) {
@@ -3597,6 +3644,7 @@ base class Scene implements SceneGraph {
     required EnvironmentMap environmentMap,
     required TransientWriter transientsBuffer,
     required DirectionalLightComponent? lightComponent,
+    required DirectionalShadowState sunShadow,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
     required PointShadowFrame? pointShadowFrame,
@@ -3674,6 +3722,7 @@ base class Scene implements SceneGraph {
       environmentMap: environmentMap,
       transientsBuffer: transientsBuffer,
       lightComponent: lightComponent,
+      sunShadow: sunShadow,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
       pointShadowFrame: pointShadowFrame,
@@ -3963,6 +4012,8 @@ base class Scene implements SceneGraph {
     required EnvironmentMap environmentMap,
     required TransientWriter transientsBuffer,
     required DirectionalLightComponent? lightComponent,
+    // The frame's decision on the sun's cascades (see _planShadowAtlas).
+    required DirectionalShadowState sunShadow,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
     required PointShadowFrame? pointShadowFrame,
@@ -4064,7 +4115,10 @@ base class Scene implements SceneGraph {
         projection.scaleX > 0.0 &&
         projection.scaleY > 0.0 &&
         projection.far > projection.near;
-    final cascades = light != null && light.castsShadow && projectionValid
+    final cascades =
+        light != null &&
+            sunShadow == DirectionalShadowState.active &&
+            projectionValid
         ? groupShared?.cascades ??
               light.computeCascades(
                 camera,
@@ -4206,9 +4260,13 @@ base class Scene implements SceneGraph {
               staticSignature: staticShadowSignature,
             );
         effectiveCascades = shadowCachePlan.cascades;
-      } else {
+      } else if (sunShadow != DirectionalShadowState.paused ||
+          !hasStaticShadowCasters ||
+          light == null ||
+          !light.cacheStaticShadows) {
         _directionalShadowCache = null;
       }
+      // Otherwise the sun is paused and keeps its static tiles to resume with.
       groupShadows
         ?..planned = true
         ..cachePlan = shadowCachePlan
@@ -4315,6 +4373,7 @@ base class Scene implements SceneGraph {
     // light at its own resolution.
     final shadowAtlas = _planShadowAtlas(
       lightComponent,
+      sunShadow,
       spotShadowFrame,
       pointShadowFrame,
     );
@@ -4355,6 +4414,7 @@ base class Scene implements SceneGraph {
                   lightDirection ?? light!.direction,
                   light!.color * light.intensity,
                   atlas: shadowAtlas,
+                  shadowStrength: light.shadowStrength,
                 )
               : null,
         ),
@@ -4369,6 +4429,7 @@ base class Scene implements SceneGraph {
           directionalLightDirection: lightDirection,
           punctualLighting: punctualLighting,
           cascades: effectiveCascades,
+          holdShadowVariant: sunShadow == DirectionalShadowState.paused,
         ),
       );
     }
@@ -4383,6 +4444,7 @@ base class Scene implements SceneGraph {
         pixelSize: pixelSize,
         environmentMap: environmentMap,
         lightComponent: lightComponent,
+        sunShadow: sunShadow,
         punctualLighting: punctualLighting,
         cascades: effectiveCascades,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
@@ -4680,6 +4742,7 @@ base class Scene implements SceneGraph {
         includeOffscreen: _warmUpIncludeOffscreen,
         cameraTransform: currentJitteredViewProjection,
         debugView: debugFrame,
+        holdShadowVariant: sunShadow == DirectionalShadowState.paused,
       ),
     );
     if (wantSceneColorHistory) {
