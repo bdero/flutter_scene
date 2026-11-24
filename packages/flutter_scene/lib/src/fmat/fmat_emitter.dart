@@ -195,6 +195,56 @@ Set<String> lightingHooksIn(String fragmentSource) {
   return hooks;
 }
 
+/// [fragmentSource] with its `Light()`, `Ambient()`, and `Composite()`
+/// definitions blanked to spaces, for a depth surface that never calls them
+/// and does not declare the types they take. Newlines stay, so `#line` still
+/// maps compiler errors to the `.fmat` source.
+String _withoutLightingHooks(String fragmentSource) {
+  final hooks = lightingHooksIn(fragmentSource);
+  if (hooks.isEmpty) return fragmentSource;
+  final chars = fragmentSource.split('');
+  for (final m in _lightingHookPattern.allMatches(fragmentSource)) {
+    if (!hooks.contains(m.group(2))) continue;
+    final start = fragmentSource.indexOf(m.group(1)!, m.start);
+    final end = _functionBodyEnd(fragmentSource, m.end);
+    if (end == null) continue;
+    for (var i = start; i < end; i++) {
+      if (chars[i] != '\n') chars[i] = ' ';
+    }
+  }
+  return chars.join();
+}
+
+/// The index just past the `}` closing the first body opened at or after
+/// [from], skipping comments, or null when the body never closes.
+int? _functionBodyEnd(String source, int from) {
+  var depth = 0;
+  var i = from;
+  while (i < source.length) {
+    if (source.startsWith('//', i)) {
+      final eol = source.indexOf('\n', i);
+      if (eol < 0) return null;
+      i = eol;
+      continue;
+    }
+    if (source.startsWith('/*', i)) {
+      final close = source.indexOf('*/', i + 2);
+      if (close < 0) return null;
+      i = close + 2;
+      continue;
+    }
+    final c = source[i];
+    if (c == '{') {
+      depth++;
+    } else if (c == '}') {
+      depth--;
+      if (depth == 0) return i + 1;
+    }
+    i++;
+  }
+  return null;
+}
+
 /// Whether [material] ships its own depth-pass fragments: an opaque cutout
 /// (`alpha_to_coverage`) whose shader reads no engine scene inputs.
 bool materialHasDepthSurface(FmatMaterial material) =>
@@ -239,7 +289,15 @@ String emitFragmentGlsl(
   if (!material.directionalLight) {
     sb.writeln('#define FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT');
   }
-  if (lit && material.shadingModel != FmatShadingModel.shadowCatcher) {
+  // A depth surface of a lit material runs only Surface(), so it carries none
+  // of the lighting framework. Every resource it declares and never reads is
+  // reflected at set 0, binding 0, where on Vulkan it collides with the vertex
+  // stage's FrameInfo and the draw is dropped, and where the WGSL sidecar
+  // cannot match it to Tint's bindings.
+  final surfaceOnly = depthSurface != null && lit;
+  if (lit &&
+      material.shadingModel != FmatShadingModel.shadowCatcher &&
+      !surfaceOnly) {
     for (final hook in lightingHooksIn(material.fragmentSource)) {
       sb.writeln('#define ${_lightingHookDefines[hook]}');
     }
@@ -270,6 +328,10 @@ String emitFragmentGlsl(
     // stages, so the duplicate binding makes every draw with the material
     // disappear.
     sb.writeln('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE');
+  } else if (surfaceOnly &&
+      material.shadingModel != FmatShadingModel.shadowCatcher) {
+    // The lit model reads the environment only through the lighting it skips.
+    sb.writeln('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE');
   }
   sb.writeln('#include <material_varyings.glsl>');
   sb.writeln('#include <pbr.glsl>');
@@ -282,7 +344,11 @@ String emitFragmentGlsl(
   if (material.alphaToCoverage) {
     sb.writeln('#include <material_coverage.glsl>');
   }
-  if (material.shadingModel == FmatShadingModel.shadowCatcher) {
+  if (surfaceOnly) {
+    // FragInfo and the scene-input accessors Surface() may read, without the
+    // lighting samplers, RadianceLayoutInfo, or FogInfo.
+    sb.writeln('#include <material_scene_inputs.glsl>');
+  } else if (material.shadingModel == FmatShadingModel.shadowCatcher) {
     // The catcher samples the shadow atlas and occlusion chain but never
     // evaluates the lighting, so it takes the engine bindings plus the
     // sampling utilities without the full framework (whose dead code would
@@ -374,8 +440,11 @@ String emitFragmentGlsl(
 
   // Map compiler errors in the author's code back to the .fmat source line.
   sb.writeln('#line ${material.fragmentSourceLine}');
-  sb.write(material.fragmentSource);
-  if (!material.fragmentSource.endsWith('\n')) sb.writeln();
+  final fragmentSource = surfaceOnly
+      ? _withoutLightingHooks(material.fragmentSource)
+      : material.fragmentSource;
+  sb.write(fragmentSource);
+  if (!fragmentSource.endsWith('\n')) sb.writeln();
   sb.writeln();
 
   if (depthSurface != null) {

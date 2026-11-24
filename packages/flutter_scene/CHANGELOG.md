@@ -10,6 +10,7 @@
 * God rays no longer misread the sun's shadow past a cascade's depth range or bleed across shadow atlas tiles.
 * A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
 * Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
+* A lit `.fmat` with `alpha_to_coverage` casts its shadow on Vulkan and builds for WebGPU. Its depth passes no longer declare the lighting resources they never read.
 
 ## 0.24.4
 
