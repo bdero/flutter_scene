@@ -1265,10 +1265,10 @@ base class Node implements SceneGraph {
   /// them relative to the `.gltf`'s own URL, or reading sibling files
   /// from disk. `data:` URIs are decoded internally and never reach
   /// [resolveUri]. [resolveTexture], when given, supplies each external
-  /// image's texture instead, so a caller can share textures across models. A document with more than one buffer is supported;
-  /// its buffers are concatenated and rebased before use. [onWarning],
-  /// when given, receives non-fatal import issues; without it they
-  /// print instead.
+  /// image's texture instead, so a caller can share textures across models.
+  /// A document with more than one buffer is supported; its buffers are
+  /// concatenated and rebased before use. [onWarning], when given, receives
+  /// non-fatal import issues; without it they print instead.
   ///
   /// For single-file `.glb` models use [fromGlbBytes] instead.
   ///

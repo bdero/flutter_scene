@@ -3,7 +3,8 @@
 * A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
 * BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * BREAKING: `SpotShadowInfo` drops the deprecated `firstTile`, `totalTiles`, and `tileResolution`, and `rects` is required.
-* A GLB's images referenced by relative URI load instead of falling back to the placeholder. `Node.fromGlbBytes`, `Node.fromGlbAsset`, and `importGlb` take `resolveUri`, as `Node.fromGltfBytes` does, and every runtime importer takes a `GltfTextureResolver` that supplies the finished texture for an external image, so an app can cache one texture across models. `decodeGltfTexture` decodes an image's bytes the way the importer does.
+* A GLB's images referenced by relative URI load through `resolveUri` on `Node.fromGlbBytes`, `Node.fromGlbAsset`, and `importGlb`, instead of falling back to the placeholder.
+* `GltfTextureResolver` (`resolveTexture` on the runtime importers) supplies the texture for a glTF's external image, so an app can share one texture across models.
 
 ## 0.24.4
 

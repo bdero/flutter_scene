@@ -154,6 +154,65 @@ void main() {
     },
   );
 
+  test('textures sharing an image and role ask the resolver once', () async {
+    final doc = GltfDocument(
+      materials: [
+        GltfMaterial(
+          pbrMetallicRoughness: GltfPbrMetallicRoughness(
+            baseColorTexture: GltfTextureInfo(index: 0),
+          ),
+          emissiveTexture: GltfTextureInfo(index: 1),
+        ),
+      ],
+      textures: [GltfTexture(source: 0), GltfTexture(source: 0, sampler: 0)],
+      samplers: [GltfSampler()],
+      images: [GltfImage(uri: '../Textures/shared.png')],
+    );
+    final calls = <String>[];
+
+    await _untilGpu(() async {
+      await buildTextures(
+        doc,
+        Uint8List(0),
+        resolveTexture: (uri, content) async {
+          calls.add(uri);
+          return null;
+        },
+        onWarning: (_) {},
+      );
+    });
+
+    expect(calls, ['../Textures/shared.png']);
+  });
+
+  test('a malformed percent-encoded URI warns instead of throwing', () async {
+    final doc = GltfDocument(
+      textures: [GltfTexture(source: 0)],
+      images: [GltfImage(uri: '100%_albedo.png')],
+    );
+
+    for (final withResolver in [false, true]) {
+      final warnings = <GltfImportWarning>[];
+      var resolverCalls = 0;
+      await _untilGpu(() async {
+        await buildTextures(
+          doc,
+          Uint8List(0),
+          resolveTexture: withResolver
+              ? (uri, content) async {
+                  resolverCalls++;
+                  return null;
+                }
+              : null,
+          onWarning: warnings.add,
+        );
+      });
+      expect(resolverCalls, 0, reason: 'resolver: $withResolver');
+      expect(warnings, hasLength(1), reason: 'resolver: $withResolver');
+      expect(warnings.single.message, contains('100%_albedo.png'));
+    }
+  });
+
   test('importGlb routes an external image to the texture resolver', () async {
     final glb = _glb({
       'asset': {'version': '2.0'},

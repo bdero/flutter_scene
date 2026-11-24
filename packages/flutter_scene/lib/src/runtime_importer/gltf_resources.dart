@@ -25,10 +25,13 @@ typedef GltfResourceResolver = Future<Uint8List> Function(String uri);
 /// same GPU texture and never mutates or disposes it. Returning null or
 /// throwing reports a warning and binds the 1x1 white placeholder.
 /// `data:` URIs and images embedded via `bufferView` never reach the
-/// resolver. [decodeGltfTexture] decodes bytes the way the importer does.
+/// resolver. A resolver that decodes bytes itself can use
+/// [Texture2D.fromEncodedBytes].
 /// {@category Assets and loading}
-typedef GltfTextureResolver =
-    Future<Texture2D?> Function(String uri, TextureContent content);
+typedef GltfTextureResolver = Future<Texture2D?> Function(
+  String uri,
+  TextureContent content,
+);
 
 /// Decodes a `data:` URI into its raw bytes.
 ///
