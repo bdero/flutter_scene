@@ -90,9 +90,24 @@ Future<String> resolveTintBinary(BuildInput input) async {
     );
   }
 
-  final dir = Directory.fromUri(
-    input.outputDirectoryShared.resolve('flutter_scene_tint/$kTintReleaseTag/'),
-  )..createSync(recursive: true);
+  return resolvePinnedTintBinary(
+    input.outputDirectoryShared.resolve('flutter_scene_tint/'),
+  );
+}
+
+/// The pinned release binary for this host, downloaded into [cacheDirectory]
+/// and checked against its sha256 on first use.
+Future<String> resolvePinnedTintBinary(Uri cacheDirectory) async {
+  final host = tintHostKey();
+  final entry = host == null ? null : kTintBinaries[host];
+  if (entry == null) {
+    throw TintBinaryException(
+      'no prebuilt flutter_scene_tint for ${host ?? Abi.current()} in '
+      '$kTintReleaseTag',
+    );
+  }
+  final dir = Directory.fromUri(cacheDirectory.resolve('$kTintReleaseTag/'))
+    ..createSync(recursive: true);
   final file = File('${dir.path}${entry.file}');
   if (file.existsSync() && _sha256(file.readAsBytesSync()) == entry.sha256) {
     return file.path;

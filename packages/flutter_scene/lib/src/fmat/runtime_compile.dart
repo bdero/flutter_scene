@@ -16,6 +16,8 @@ import 'package:flutter_gpu_shaders/build.dart'
         parseImpellerCDepfileDependencies,
         shaderBundleImpellercArguments;
 
+import 'package:flutter_scene/src/fmat/depth_surface_fallback.dart';
+import 'package:flutter_scene/src/fmat/shader_bundle_lint.dart';
 import 'package:flutter_scene/src/fmat/fmat.dart';
 import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
     show
@@ -26,6 +28,7 @@ import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
         materialHasDepthSurface,
         materialSamplesEnvironment,
         radianceCubeEntryName;
+import 'package:flutter_scene/src/gpu/web/shader_bundle_generated.dart' as fb;
 import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:flutter_scene/src/shader_reflection/shader_diagnostics.dart';
 
@@ -208,23 +211,56 @@ final class FmatRuntimeCompiler {
     if (depfile.existsSync()) depfile.deleteSync();
     final supportsDepfile = await _probeDepfileSupport();
 
-    final args = shaderBundleImpellercArguments(
-      outputBundleFilePath: bundleFile.uri,
-      manifestJson: jsonEncode(manifest),
-      manifestDirectory: genDir.uri,
-      shaderLibDirectory: shaderLibDirectory,
-      includeDirectories: includeDirectories,
-      depfilePath: supportsDepfile ? depfile.uri : null,
-      // Match the engine bundle's GLES dialect (GLSL ES 3.00); the framework
-      // radiance sampling uses textureLod, unavailable in 1.00.
-      glesLanguageVersion: 300,
-    );
-    final result = await Process.run(impellerc.toFilePath(), args);
-    if (result.exitCode != 0) {
-      throw FmatCompileException(
-        'impellerc failed for "$entryName":\n'
-                '${result.stderr}\n${result.stdout}'
-            .trim(),
+    // A material whose own depth passes are all that fails is rebuilt
+    // without them and draws through the engine's depth shaders instead.
+    final depthSurfaceOwners = {
+      if (materialHasDepthSurface(compiled.material))
+        for (final kind in DepthSurfaceKind.values)
+          depthSurfaceEntryName(compiled.material, kind): entryName,
+    };
+    var withoutDepthPasses = false;
+    while (true) {
+      final args = shaderBundleImpellercArguments(
+        outputBundleFilePath: bundleFile.uri,
+        manifestJson: jsonEncode(manifest),
+        manifestDirectory: genDir.uri,
+        shaderLibDirectory: shaderLibDirectory,
+        includeDirectories: includeDirectories,
+        depfilePath: supportsDepfile ? depfile.uri : null,
+        // Match the engine bundle's GLES dialect (GLSL ES 3.00); the
+        // framework radiance sampling uses textureLod, unavailable in 1.00.
+        glesLanguageVersion: 300,
+      );
+      final result = await Process.run(impellerc.toFilePath(), args);
+      var log = '${result.stderr}\n${result.stdout}'.trim();
+      if (result.exitCode == 0) {
+        final problems =
+            lintShaderBundle(fb.ShaderBundle(bundleFile.readAsBytesSync()), {
+              for (final MapEntry(:key, :value) in manifest.entries)
+                if (value case {'file': final String file})
+                  key: File(file).readAsStringSync(),
+            });
+        problems.removeWhere(
+          (entry, _) => !depthSurfaceOwners.containsKey(entry),
+        );
+        if (problems.isEmpty || withoutDepthPasses) break;
+        log = describeLintProblems(problems);
+      }
+      if (withoutDepthPasses ||
+          materialsFailingOnlyInDepthPasses(
+                log,
+                depthSurfaceOwners,
+                manifest.keys.toSet(),
+              ) ==
+              null) {
+        throw FmatCompileException('impellerc failed for "$entryName":\n$log');
+      }
+      depthSurfaceOwners.keys.forEach(manifest.remove);
+      withoutDepthPasses = true;
+      stderr.writeln(
+        'flutter_scene: material "$entryName" draws without its own depth '
+        'passes, so it casts shadows and writes depth as solid geometry. Its '
+        'depth fragments failed to build:\n$log',
       );
     }
 
@@ -245,7 +281,11 @@ final class FmatRuntimeCompiler {
     final bundleBytes = bundleFile.readAsBytesSync();
     // The combined sidecar shape: the fragment entry's metadata under its
     // entry name (vertex variants are referenced through its `vertex` map).
-    final sidecar = <String, Object?>{entryName: compiled.sidecar};
+    final sidecar = <String, Object?>{
+      entryName: withoutDepthPasses
+          ? withoutDepthSurfaces(compiled.sidecar)
+          : compiled.sidecar,
+    };
 
     File(
       '${entryDir.path}/sidecar.json',

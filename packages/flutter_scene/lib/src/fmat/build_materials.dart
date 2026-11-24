@@ -25,7 +25,10 @@ import 'fmat_emitter.dart'
         lightmapEntryName,
         materialSamplesEnvironment,
         radianceCubeEntryName;
+import '../gpu/web/shader_bundle_generated.dart' as fb;
+import 'depth_surface_fallback.dart';
 import 'framework_shaders.dart';
+import 'shader_bundle_lint.dart';
 import 'target_shader_bundle.dart';
 
 /// Controls where [buildMaterials] puts generated `.fmat` shader assets.
@@ -469,6 +472,8 @@ Future<void> _buildMaterials({
   // with no previous output still fails with the real error.
   try {
     final manifest = <String, Object?>{};
+    // Each material's own depth-pass entries, mapped to the material.
+    final depthSurfaceOwners = <String, String>{};
     for (final materialPath in materialPaths) {
       if (!materialPath.endsWith('.fmat')) {
         throw Exception('Material files must end with ".fmat": $materialPath');
@@ -497,6 +502,12 @@ Future<void> _buildMaterials({
         debugViews: debugViews,
         compiledOutLightingFeatures: compiledOutLightingFeatures,
       );
+      if (materialHasDepthSurface(compiled.material)) {
+        for (final kind in DepthSurfaceKind.values) {
+          depthSurfaceOwners[depthSurfaceEntryName(compiled.material, kind)] =
+              entryName;
+        }
+      }
       for (final variant in fragmentVariants.entries) {
         final variantEntryName = variant.key;
         final fragFileName = '$variantEntryName.frag';
@@ -536,22 +547,57 @@ Future<void> _buildMaterials({
 
     // Compile, with flutter_scene's shaders/ on the include path so the
     // generated shaders' framework `#include`s resolve directly (no copies).
-    // A failed compile leaves the last good bundle in place.
-    await buildTargetShaderBundle(
-      buildInput: buildInput,
-      buildOutput: buildOutput,
-      bundleName: bundleName,
-      manifest: manifest,
-      entryRoot: generatedDir.uri,
-      includeDirectories: [frameworkShaders],
-      // Match the engine bundle's GLES dialect (GLSL ES 3.00); the framework
-      // radiance sampling these materials can `#include` uses textureLod,
-      // which is not available in 1.00 without an extension.
-      glesLanguageVersion: 300,
-      // The material bundle ships under materials/ next to its sidecar and
-      // index, not as a standalone shader bundle.
-      copyToGeneratedTree: false,
-    );
+    // A failed compile leaves the last good bundle in place. A material whose
+    // own depth passes are all that fails is rebuilt without them, so a depth
+    // pass can never fail an app's build.
+    while (true) {
+      try {
+        await buildTargetShaderBundle(
+          buildInput: buildInput,
+          buildOutput: buildOutput,
+          bundleName: bundleName,
+          manifest: manifest,
+          entryRoot: generatedDir.uri,
+          includeDirectories: [frameworkShaders],
+          // Match the engine bundle's GLES dialect (GLSL ES 3.00); the
+          // framework radiance sampling these materials can `#include` uses
+          // textureLod, which is not available in 1.00 without an extension.
+          glesLanguageVersion: 300,
+          // The material bundle ships under materials/ next to its sidecar
+          // and index, not as a standalone shader bundle.
+          copyToGeneratedTree: false,
+        );
+        _lintMaterialBundle(
+          bundleFile,
+          manifest,
+          generatedDir,
+          depthSurfaceOwners,
+        );
+        break;
+      } catch (error) {
+        final failing = materialsFailingOnlyInDepthPasses(
+          error,
+          depthSurfaceOwners,
+          manifest.keys.toSet(),
+        );
+        if (failing == null) rethrow;
+        for (final material in failing) {
+          depthSurfaceOwners.removeWhere((entry, owner) {
+            if (owner != material) return false;
+            manifest.remove(entry);
+            return true;
+          });
+          sidecars[material] = withoutDepthSurfaces(
+            (sidecars[material]! as Map).cast<String, Object?>(),
+          );
+          stderr.writeln(
+            'flutter_scene: material "$material" ships without its own depth '
+            'passes, so it casts shadows and writes depth as solid geometry. '
+            'Its depth fragments failed to build:\n$error',
+          );
+        }
+      }
+    }
 
     // Publish the freshly compiled bundle into the tree that ships it.
     if (tree != null) {
@@ -644,6 +690,38 @@ Future<void> _buildMaterials({
     packageRoot: materialRoot,
     materialPaths: materialPaths,
     frameworkShaders: frameworkShaders,
+  );
+}
+
+/// Checks the compiled [bundleFile] for shapes that build but misbehave on
+/// some backends. A problem in a material's own depth passes throws, so the
+/// caller drops them like a failed compile; any other is reported.
+void _lintMaterialBundle(
+  File bundleFile,
+  Map<String, Object?> manifest,
+  Directory generatedDir,
+  Map<String, String> depthSurfaceOwners,
+) {
+  final glsl = <String, String>{
+    for (final MapEntry(:key, :value) in manifest.entries)
+      if (value case {'file': final String file})
+        key: File.fromUri(generatedDir.uri.resolve(file)).readAsStringSync(),
+  };
+  final problems = lintShaderBundle(
+    fb.ShaderBundle(bundleFile.readAsBytesSync()),
+    glsl,
+  );
+  if (problems.isEmpty) return;
+  final inDepthPasses = {
+    for (final entry in problems.entries)
+      if (depthSurfaceOwners.containsKey(entry.key)) entry.key: entry.value,
+  };
+  if (inDepthPasses.isNotEmpty) {
+    throw StateError(describeLintProblems(inDepthPasses));
+  }
+  stderr.writeln(
+    'flutter_scene: material shaders that may misbehave on some backends:\n'
+    '${describeLintProblems(problems)}',
   );
 }
 

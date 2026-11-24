@@ -6,6 +6,8 @@ import 'dart:io';
 import 'package:flutter_gpu_shaders/environment.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fmat/fmat.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/fmat/shader_bundle_lint.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _cutout = '''
@@ -187,13 +189,17 @@ void main() {
             0,
             reason: '$entry\n${result.stdout}\n${result.stderr}',
           );
-          if (backend == '--metal-desktop') {
-            final msl = File(output).readAsStringSync();
-            if (variant.endsWith('color')) {
-              expect(msl, contains('sample_mask'), reason: entry);
-            } else {
-              expect(msl, isNot(contains('sample_mask')), reason: entry);
-            }
+          if (backend == '--vulkan') {
+            // Read from the SPIR-V that Vulkan and WebGPU consume; the Metal
+            // output can drop an unwritten mask that the SPIR-V keeps.
+            final spirv = File.fromUri(
+              temp.uri.resolve('$entry.spirv'),
+            ).readAsBytesSync();
+            expect(
+              declaresSampleMask(spirv),
+              variant.endsWith('color'),
+              reason: entry,
+            );
           }
         }
       }
