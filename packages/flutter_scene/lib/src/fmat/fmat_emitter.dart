@@ -205,7 +205,12 @@ String _withoutLightingHooks(String fragmentSource) {
   final chars = fragmentSource.split('');
   for (final m in _lightingHookPattern.allMatches(fragmentSource)) {
     if (!hooks.contains(m.group(2))) continue;
-    final start = fragmentSource.indexOf(m.group(1)!, m.start);
+    // From the definition's first token, so a leading `highp` goes too. The
+    // match may open on the delimiter before it.
+    var start = m.start;
+    while (start < m.end && ' \t\r\n;}'.contains(fragmentSource[start])) {
+      start++;
+    }
     final end = _functionBodyEnd(fragmentSource, m.end);
     if (end == null) continue;
     for (var i = start; i < end; i++) {

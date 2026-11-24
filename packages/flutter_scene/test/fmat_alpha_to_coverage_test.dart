@@ -33,12 +33,16 @@ material {
   name: "HookedCutout",
   shading_model: lit,
   alpha_to_coverage: true,
+  parameters: [
+    { type: float, name: hole, default: 0.3 },
+  ],
 }
 
 fragment {
   void Surface(inout MaterialInputs material) {
     vec2 cell = fract(GetUV0() * 4.0) - 0.5;
-    material.base_color = vec4(0.25, 0.6, 0.15, step(0.3, length(cell)));
+    material.base_color =
+        vec4(0.25, 0.6, 0.15, step(material_params.hole, length(cell)));
   }
 
   // A brace in a comment must not end the body early }
@@ -130,6 +134,8 @@ void main() {
     for (final hook in ['LightTerms Light(', 'void Ambient(', 'Composite(']) {
       expect(source, isNot(contains(hook)), reason: hook);
     }
+    // A hook's precision qualifier goes with it, or it lands on main().
+    expect(source, isNot(contains(RegExp(r'^\s*highp\s*$', multiLine: true))));
     final body = source.substring(
       source.indexOf('#line ${material.fragmentSourceLine}'),
     );

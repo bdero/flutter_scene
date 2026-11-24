@@ -1,5 +1,6 @@
 ## 0.25.0
 
+* A lit `alpha_to_coverage` `.fmat` whose lighting hook is declared with a precision qualifier (`highp vec4 Composite`) builds its depth passes again.
 * A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
 * `Color.toLinearRgba()`/`toLinearRgb()` (`ColorToLinear`) and the `setBaseColor`, `setEmissiveColor`, and `setColor` setters convert a Flutter color, Display P3 included, to the engine's linear values.
 * BREAKING: A display-referred `UnlitMaterial` reads `baseColorFactor` and vertex colors as linear like every other path, so a non-white tint written as display values renders lighter. Set it with `setBaseColor` to keep the widget color.
