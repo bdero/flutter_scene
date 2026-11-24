@@ -158,8 +158,9 @@ class SsaoPass extends RenderGraphPass {
   static final gpu.Shader _downsampleShader =
       baseShaderLibrary['DepthDownsampleFragment']!;
 
-  // The depth mip chain matches the fp32 linear-depth prepass format.
-  static const gpu.PixelFormat _depthFormat = gpu.PixelFormat.r32g32b32a32Float;
+  // The depth mip chain stores single-channel fp32 linear depth, matching
+  // DepthPrepass's depth-only target and DepthDownsampleFragment's red output.
+  static const gpu.PixelFormat _depthFormat = gpu.PixelFormat.r32Float;
 
   @override
   String get name => 'SsaoPass';
