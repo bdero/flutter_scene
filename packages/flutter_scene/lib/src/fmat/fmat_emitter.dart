@@ -195,59 +195,165 @@ Set<String> lightingHooksIn(String fragmentSource) {
   return hooks;
 }
 
-/// [fragmentSource] with its `Light()`, `Ambient()`, and `Composite()`
-/// definitions blanked to spaces, for a depth surface that never calls them
-/// and does not declare the types they take. Newlines stay, so `#line` still
-/// maps compiler errors to the `.fmat` source.
-String _withoutLightingHooks(String fragmentSource) {
-  final hooks = lightingHooksIn(fragmentSource);
-  if (hooks.isEmpty) return fragmentSource;
-  final chars = fragmentSource.split('');
-  for (final m in _lightingHookPattern.allMatches(fragmentSource)) {
-    if (!hooks.contains(m.group(2))) continue;
-    // From the definition's first token, so a leading `highp` goes too. The
-    // match may open on the delimiter before it.
-    var start = m.start;
-    while (start < m.end && ' \t\r\n;}'.contains(fragmentSource[start])) {
-      start++;
+/// [fragmentSource] keeping only the function definitions `Surface()` can
+/// reach. Every other one (the lighting hooks, and anything only they call)
+/// is blanked to spaces from its first token through its body, since a depth
+/// surface never calls them and does not declare the lighting types and
+/// functions they may use. Newlines stay, so `#line` still maps compiler
+/// errors to the `.fmat` source.
+String _surfaceReachableSource(String fragmentSource) {
+  final code = _codeOnly(fragmentSource);
+  final definitions = _functionDefinitions(code);
+  final byName = <String, List<_FunctionDefinition>>{};
+  for (final definition in definitions) {
+    (byName[definition.name] ??= []).add(definition);
+  }
+  if (!byName.containsKey('Surface')) return fragmentSource;
+  final reachable = <String>{};
+  final pending = ['Surface'];
+  while (pending.isNotEmpty) {
+    final name = pending.removeLast();
+    if (!reachable.add(name)) continue;
+    for (final definition in byName[name]!) {
+      final body = code.substring(definition.bodyStart, definition.end);
+      for (final call in _callPattern.allMatches(body)) {
+        final callee = call.group(1)!;
+        if (byName.containsKey(callee)) pending.add(callee);
+      }
     }
-    final end = _functionBodyEnd(fragmentSource, m.end);
-    if (end == null) continue;
-    for (var i = start; i < end; i++) {
+  }
+  final chars = fragmentSource.split('');
+  for (final definition in definitions) {
+    if (reachable.contains(definition.name)) continue;
+    for (var i = definition.start; i < definition.end; i++) {
       if (chars[i] != '\n') chars[i] = ' ';
     }
   }
   return chars.join();
 }
 
-/// The index just past the `}` closing the first body opened at or after
-/// [from], skipping comments, or null when the body never closes.
-int? _functionBodyEnd(String source, int from) {
-  var depth = 0;
-  var i = from;
+final _callPattern = RegExp(r'\b([A-Za-z_]\w*)\s*\(');
+final _identifierStart = RegExp(r'[A-Za-z_]');
+final _identifierPart = RegExp(r'\w');
+
+/// One top-level function definition: from its first token ([start]) to just
+/// past its closing brace ([end]), with its body opening at [bodyStart].
+typedef _FunctionDefinition = ({
+  String name,
+  int start,
+  int bodyStart,
+  int end,
+});
+
+/// [source] with comments and preprocessor lines turned to spaces, newlines
+/// kept, so offsets match and only code is parsed.
+String _codeOnly(String source) {
+  final out = source.split('');
+  var i = 0;
+  var lineStart = true;
   while (i < source.length) {
-    if (source.startsWith('//', i)) {
-      final eol = source.indexOf('\n', i);
-      if (eol < 0) return null;
-      i = eol;
+    final c = source[i];
+    if (source.startsWith('//', i) || (lineStart && c == '#')) {
+      // A preprocessor line or line comment runs to the end of the line,
+      // including a backslash continuation.
+      while (i < source.length && source[i] != '\n') {
+        if (source[i] == '\\' && i + 1 < source.length) out[i++] = ' ';
+        out[i++] = ' ';
+      }
       continue;
     }
     if (source.startsWith('/*', i)) {
       final close = source.indexOf('*/', i + 2);
-      if (close < 0) return null;
-      i = close + 2;
+      final end = close < 0 ? source.length : close + 2;
+      for (; i < end; i++) {
+        if (source[i] != '\n') out[i] = ' ';
+      }
       continue;
     }
-    final c = source[i];
-    if (c == '{') {
-      depth++;
-    } else if (c == '}') {
-      depth--;
-      if (depth == 0) return i + 1;
+    if (c == '\n') {
+      lineStart = true;
+    } else if (c != ' ' && c != '\t' && c != '\r') {
+      lineStart = false;
     }
     i++;
   }
-  return null;
+  return out.join();
+}
+
+/// The top-level function definitions in [code] (see [_codeOnly]). A name
+/// followed by a parameter list and then a body at brace depth 0 is one;
+/// prototypes, global initializers, and layout qualifiers are not.
+List<_FunctionDefinition> _functionDefinitions(String code) {
+  final definitions = <_FunctionDefinition>[];
+  var depth = 0;
+  // Just past the last top-level `;` or `}`, where a definition's leading
+  // qualifiers and return type begin.
+  var boundary = 0;
+  var i = 0;
+  while (i < code.length) {
+    final c = code[i];
+    if (c == '{') {
+      depth++;
+      i++;
+      continue;
+    }
+    if (c == '}') {
+      depth--;
+      i++;
+      if (depth == 0) boundary = i;
+      continue;
+    }
+    if (depth == 0 && c == ';') {
+      boundary = ++i;
+      continue;
+    }
+    if (depth != 0 || !_identifierStart.hasMatch(c)) {
+      i++;
+      continue;
+    }
+    final nameStart = i;
+    while (i < code.length && _identifierPart.hasMatch(code[i])) {
+      i++;
+    }
+    final name = code.substring(nameStart, i);
+    var j = i;
+    while (j < code.length && code[j].trim().isEmpty) {
+      j++;
+    }
+    if (j >= code.length || code[j] != '(') continue;
+    var parens = 0;
+    for (; j < code.length; j++) {
+      if (code[j] == '(') parens++;
+      if (code[j] == ')' && --parens == 0) break;
+    }
+    j++;
+    while (j < code.length && code[j].trim().isEmpty) {
+      j++;
+    }
+    if (j >= code.length || code[j] != '{') {
+      i = j;
+      continue;
+    }
+    final bodyStart = j;
+    var braces = 0;
+    for (; j < code.length; j++) {
+      if (code[j] == '{') braces++;
+      if (code[j] == '}' && --braces == 0) break;
+    }
+    if (j >= code.length) break;
+    var start = boundary;
+    while (start < nameStart && code[start].trim().isEmpty) {
+      start++;
+    }
+    definitions.add((
+      name: name,
+      start: start,
+      bodyStart: bodyStart,
+      end: j + 1,
+    ));
+    i = boundary = j + 1;
+  }
+  return definitions;
 }
 
 /// Whether [material] ships its own depth-pass fragments: an opaque cutout
@@ -449,7 +555,7 @@ String emitFragmentGlsl(
   // Map compiler errors in the author's code back to the .fmat source line.
   sb.writeln('#line ${material.fragmentSourceLine}');
   final fragmentSource = surfaceOnly
-      ? _withoutLightingHooks(material.fragmentSource)
+      ? _surfaceReachableSource(material.fragmentSource)
       : material.fragmentSource;
   sb.write(fragmentSource);
   if (!fragmentSource.endsWith('\n')) sb.writeln();

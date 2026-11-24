@@ -64,6 +64,61 @@ fragment {
 }
 ''';
 
+// A lit cutout whose hooks lean on helpers, globals, and engine functions a
+// depth surface does not declare. Its depth surfaces keep only what Surface()
+// reaches.
+const _helperCutout = '''
+material {
+  name: "HelperCutout",
+  shading_model: lit,
+  alpha_to_coverage: true,
+  parameters: [
+    { type: float, name: hole, default: 0.3 },
+  ],
+}
+
+fragment {
+  #define HOLE_EDGE(x) (x * 0.5)
+
+  float g_wrap;
+
+  float Hole(vec2 uv);
+
+  // Surface() reaches both overloads by name. Composite( in a comment {
+  float Hole(float x) { return step(material_params.hole, x); }
+  float Hole(vec2 uv) { return Hole(length(fract(uv * 4.0) - HOLE_EDGE(1.0))); }
+
+  void Surface(inout MaterialInputs material) {
+    g_wrap = 0.3;
+    material.base_color = vec4(0.25, 0.6, 0.15, Hole(GetUV0()));
+  }
+
+  float WrapDiffuse(LightContext light) {
+    return max(dot(light.normal, light.light_vector) + g_wrap, 0.0) /
+        (1.0 + g_wrap);
+  }
+
+  vec3 Bounce(MaterialInputs material) {
+    return MultiBounceOcclusion(0.5, material.base_color.rgb);
+  }
+
+  LightTerms Light(MaterialInputs material, LightContext light) {
+    LightTerms terms;
+    terms.diffuse = light.radiance * WrapDiffuse(light);
+    terms.specular = vec3(0.0);
+    return terms;
+  }
+
+  void Ambient(MaterialInputs material, inout AmbientContext ambient) {
+    ambient.irradiance *= Bounce(material);
+  }
+
+  highp vec4 Composite(MaterialInputs material, LightingResult r) {
+    return vec4(r.direct_diffuse + r.indirect_diffuse, 1.0) * r.alpha;
+  }
+}
+''';
+
 // Bundle builds define the target macro per entry; a direct compile must
 // pass it, or the GLES entry would see the sample mask.
 const _backends = {
@@ -143,6 +198,39 @@ void main() {
     expect('\n'.allMatches(body).length, greaterThanOrEqualTo(lines));
   });
 
+  test('a depth surface keeps only what Surface() reaches', () {
+    final material = compileFmat(
+      _helperCutout,
+      fileName: 'helper.fmat',
+    ).material;
+    final source = emitFragmentGlsl(
+      material,
+      depthSurface: DepthSurfaceKind.shadow,
+    );
+    for (final kept in [
+      'float g_wrap;',
+      'float Hole(vec2 uv);',
+      'float Hole(float x) {',
+      'float Hole(vec2 uv) {',
+      'void Surface(inout MaterialInputs material)',
+      '#define HOLE_EDGE(x)',
+    ]) {
+      expect(source, contains(kept), reason: kept);
+    }
+    for (final dropped in [
+      'WrapDiffuse(',
+      'Bounce(',
+      'LightTerms Light(',
+      'void Ambient(',
+      'vec4 Composite(MaterialInputs',
+    ]) {
+      expect(source, isNot(contains(dropped)), reason: dropped);
+    }
+    expect(source, isNot(contains(RegExp(r'^\s*highp\s*$', multiLine: true))));
+    // The color entry keeps everything.
+    expect(emitFragmentGlsl(material), contains('WrapDiffuse('));
+  });
+
   test('alpha_to_coverage needs an opaque material', () {
     expect(
       () => compileFmat(
@@ -162,6 +250,7 @@ void main() {
     try {
       final compiled = compileFmat(_cutout, fileName: 'cutout.fmat');
       final hooked = compileFmat(_hookedCutout, fileName: 'hooked.fmat');
+      final helper = compileFmat(_helperCutout, fileName: 'helper.fmat');
       final sources = {
         'color': emitFragmentGlsl(compiled.material),
         for (final kind in DepthSurfaceKind.values)
@@ -170,6 +259,12 @@ void main() {
         for (final kind in DepthSurfaceKind.values)
           'hooked_${kind.name}': emitFragmentGlsl(
             hooked.material,
+            depthSurface: kind,
+          ),
+        'helper_color': emitFragmentGlsl(helper.material),
+        for (final kind in DepthSurfaceKind.values)
+          'helper_${kind.name}': emitFragmentGlsl(
+            helper.material,
             depthSurface: kind,
           ),
       };
