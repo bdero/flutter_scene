@@ -1253,7 +1253,12 @@ base class Scene implements SceneGraph {
   double exposure = 1.0;
 
   /// Tone mapping operator used when resolving the HDR scene color to the
-  /// display image. Defaults to [ToneMappingMode.pbrNeutral].
+  /// display image. Defaults to [ToneMappingMode.pbrNeutral], which rolls off
+  /// highlights, so even unlit white resolves below 255.
+  ///
+  /// To match Flutter widget colors exactly, use [ToneMappingMode.linear] at
+  /// an [exposure] of 1 with colors set through `setBaseColor`, or keep the
+  /// curve and mark just those surfaces `UnlitMaterial.displayReferred`.
   ToneMappingMode toneMapping = ToneMappingMode.pbrNeutral;
 
   /// AgX reference white. Only used by [ToneMappingMode.agx].

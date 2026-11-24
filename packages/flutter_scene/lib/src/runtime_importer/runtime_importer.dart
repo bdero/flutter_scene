@@ -29,7 +29,7 @@ import 'texture_builder.dart';
 
 export 'package:flutter_scene/src/importer/gltf.dart'
     show GltfImportWarning, GltfWarningCallback;
-export 'gltf_resources.dart' show GltfResourceResolver;
+export 'gltf_resources.dart' show GltfResourceResolver, GltfTextureResolver;
 
 /// Parse a GLB byte stream into a [Node] tree.
 ///
@@ -38,8 +38,16 @@ export 'gltf_resources.dart' show GltfResourceResolver;
 /// glTF node hierarchy. [onWarning], when given, receives non-fatal import
 /// issues (an unrecognized extension, an image that fell back to a
 /// placeholder); without it they print instead.
+///
+/// A GLB may still reference resources outside its BIN chunk by relative
+/// URI. [resolveTexture], when given, supplies the texture for each external
+/// image; [resolveUri] fetches the bytes of any other external resource (and
+/// of external images when [resolveTexture] is absent). Without either, an
+/// external image falls back to a placeholder and an external buffer throws.
 Future<Node> importGlb(
   Uint8List bytes, {
+  GltfResourceResolver? resolveUri,
+  GltfTextureResolver? resolveTexture,
   GltfWarningCallback? onWarning,
   int? maxTextureSize,
 }) async {
@@ -49,7 +57,7 @@ Future<Node> importGlb(
   final normalized = await _normalizeBuffers(
     doc,
     glbBinaryChunk: container.binaryChunk,
-    resolveUri: null,
+    resolveUri: resolveUri,
   );
   final gltf = decodeMeshoptBufferViews(normalized.doc, normalized.bufferData);
   final packed = await _packPrimitives(gltf.doc, gltf.bufferData);
@@ -57,7 +65,8 @@ Future<Node> importGlb(
     gltf.doc,
     gltf.bufferData,
     packed,
-    null,
+    resolveUri,
+    resolveTexture: resolveTexture,
     onWarning: onWarning,
     maxTextureSize: maxTextureSize,
   );
@@ -71,11 +80,13 @@ Future<Node> importGlb(
 /// decoded internally and never reach the resolver. A document with more
 /// than one buffer has every buffer concatenated and its bufferViews
 /// rebased, the same normalization the offline importer performs.
-/// [onWarning], when given, receives non-fatal import issues; without it
-/// they print instead.
+/// [resolveTexture], when given, supplies the texture for each external image
+/// in place of fetching its bytes through [resolveUri]. [onWarning], when
+/// given, receives non-fatal import issues; without it they print instead.
 Future<Node> importGltf(
   Uint8List gltfJson, {
   required GltfResourceResolver resolveUri,
+  GltfTextureResolver? resolveTexture,
   GltfWarningCallback? onWarning,
   int? maxTextureSize,
 }) async {
@@ -94,6 +105,7 @@ Future<Node> importGltf(
     gltf.bufferData,
     packed,
     resolveUri,
+    resolveTexture: resolveTexture,
     onWarning: onWarning,
     maxTextureSize: maxTextureSize,
   );
@@ -204,6 +216,7 @@ Future<Node> _buildScene(
   Uint8List bufferData,
   _PackedDocument packed,
   GltfResourceResolver? resolveUri, {
+  GltfTextureResolver? resolveTexture,
   GltfWarningCallback? onWarning,
   int? maxTextureSize,
 }) async {
@@ -213,6 +226,7 @@ Future<Node> _buildScene(
     doc,
     bufferData,
     resolveUri: resolveUri,
+    resolveTexture: resolveTexture,
     onWarning: onWarning,
     maxTextureSize: maxTextureSize,
   );

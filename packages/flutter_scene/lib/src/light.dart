@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/color_conversion.dart';
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/generated_assets/lighting_features.dart';
 import 'package:flutter_scene/src/material/environment.dart';
@@ -156,8 +157,13 @@ class DirectionalLight {
   /// +Z axis. Use [DirectionalLightComponent.aimed] for another local axis.
   Vector3 direction;
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color].
   double intensity;
@@ -613,8 +619,13 @@ class PointLight {
     this.shadowCasterChannelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the radiance at unit distance.
   double intensity;
@@ -771,8 +782,13 @@ class RectAreaLight {
     this.channelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the emitted radiance of the
   /// panel's surface. The received light also grows with the panel's area.
@@ -843,8 +859,13 @@ class SpotLight {
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the radiance at unit distance.
   double intensity;

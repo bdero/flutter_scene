@@ -40,6 +40,14 @@ vec3 SRGBToLinear(vec3 color) {
              step(0.04045, color));
 }
 
+// highp so an exact white tint encodes to exactly 1 on fp16 mediump.
+highp vec3 LinearToSRGB(highp vec3 color) {
+  color = max(color, vec3(0.0));
+  return mix(color * 12.92,
+             1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055,
+             step(0.0031308, color));
+}
+
 void main() {
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
   highp vec2 uv = MaterialTextureUv(texture_transform.uv_transform,
@@ -51,10 +59,11 @@ void main() {
   //
   // A display-referred surface skips that: it draws into the display-referred
   // layer, which is composited after the resolve has already encoded, so its
-  // texel has to arrive unchanged.
+  // texel has to arrive unchanged and the linear tint is encoded instead.
   bool display_referred = frag_info.display_referred > 0.5;
-  vec3 decoded = display_referred ? base.rgb : SRGBToLinear(base.rgb);
-  vec3 rgb = decoded * vertex_color.rgb * frag_info.color.rgb;
+  vec3 tint = vertex_color.rgb * frag_info.color.rgb;
+  vec3 rgb = display_referred ? base.rgb * LinearToSRGB(tint)
+                              : SRGBToLinear(base.rgb) * tint;
   float alpha = base.a * vertex_color.a * frag_info.color.a;
   // Unlit has no environment bound, so pass the flat fog color as the sky color;
   // the sky-color mix in ApplyFog is then inert (sky-colored fog is a lit-path

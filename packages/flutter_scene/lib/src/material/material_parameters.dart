@@ -5,6 +5,7 @@ import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart' show internal, visibleForTesting;
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/color_conversion.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/material.dart';
@@ -429,19 +430,18 @@ class MaterialParameters {
   }
 
   /// Sets a vec4 parameter from a [Color]. If the parameter has a
-  /// `source_color` hint, the rgb channels are sRGB-decoded to linear (matching
-  /// the shader's `SRGBToLinear`); alpha is written as-is.
+  /// `source_color` hint, it is converted with [ColorToLinear.toLinearRgba]
+  /// (sRGB-decoded, matching the shader's `SRGBToLinear`); alpha is written
+  /// as-is.
   void setColor(String name, Color color) {
     _overridden.add(name);
     _assigned[name] = color;
     final slot = _slot(name, FmatType.vec4);
-    var r = color.r, g = color.g, b = color.b;
     if (slot.sourceColor) {
-      r = _srgbToLinear(r);
-      g = _srgbToLinear(g);
-      b = _srgbToLinear(b);
+      _writeFloats(slot.offsetBytes, color.toLinearRgba().storage);
+      return;
     }
-    _writeFloats(slot.offsetBytes, [r, g, b, color.a]);
+    _writeFloats(slot.offsetBytes, [color.r, color.g, color.b, color.a]);
   }
 
   void setTexture(
@@ -793,11 +793,7 @@ class MaterialParameters {
   }
 }
 
-// sRGB -> linear matching pbr.glsl's SRGBToLinear on the GPU.
-double _srgbToLinear(double c) =>
-    c <= 0.04045 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
-
-// linear -> sRGB, the inverse of _srgbToLinear, for reading a source_color
+// linear -> sRGB, the inverse of ColorToLinear, for reading a source_color
 // parameter back out through getColor.
 double _linearToSrgb(double c) => c <= 0.0031308
     ? c * 12.92

@@ -126,6 +126,7 @@ export 'src/ambient_occlusion.dart'
         AmbientOcclusionSettings,
         SpecularAmbientOcclusionMode;
 export 'src/auto_exposure.dart' show AutoExposureSettings;
+export 'src/color_conversion.dart' show ColorToLinear;
 export 'src/coplanar_overlaps.dart' show CoplanarOverlap;
 export 'src/depth_conflicts.dart' show DepthConflict, DepthConflictReport;
 export 'src/depth_of_field.dart' show DepthOfField, DepthOfFieldQuality;
@@ -368,7 +369,8 @@ export 'src/render/env_prefilter.dart'
         prefilterEquirectRadiance,
         prefilterEquirectRadianceToCube;
 export 'src/texture/ktx2/ktx2.dart' show Ktx2FormatException;
-export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
+export 'src/runtime_importer/gltf_resources.dart'
+    show GltfResourceResolver, GltfTextureResolver;
 export 'src/scene_path.dart'
     show BezierPath, CatmullRomPath, PolylinePath, ScenePath, ScenePathFrame;
 export 'src/raycast.dart' show SceneRaycastHit, raycastNode, raycastNodeAll;

@@ -1,6 +1,8 @@
 import 'dart:math' as math;
+import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/color_conversion.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/physical_material_variant.dart';
@@ -180,12 +182,17 @@ class PhysicallyBasedMaterial extends Material {
   /// Linear RGBA tint multiplied with [baseColorTexture]. Alpha controls
   /// translucency: values below `1` push the material into the depth-
   /// sorted translucent pass.
+  ///
+  /// Flutter colors are sRGB; set one with [setBaseColor].
   Vector4 get baseColorFactor => _baseColorFactor;
   Vector4 _baseColorFactor = Colors.white;
   set baseColorFactor(Vector4 value) {
     _baseColorFactor = value;
     _markMaterialDataDirty();
   }
+
+  /// Sets [baseColorFactor] from a Flutter [Color], decoding it from sRGB.
+  void setBaseColor(Color color) => baseColorFactor = color.toLinearRgba();
 
   /// How strongly per-vertex colors influence the final albedo. `0`
   /// disables vertex color contribution; `1` (the default) fully
@@ -289,13 +296,18 @@ class PhysicallyBasedMaterial extends Material {
   }
 
   /// Linear RGBA emissive tint. Alpha is unused; the default
-  /// `Vector4.zero()` disables emission.
+  /// `Vector4.zero()` disables emission. Flutter colors are sRGB; set one
+  /// with [setEmissiveColor].
   Vector4 get emissiveFactor => _emissiveFactor;
   Vector4 _emissiveFactor = Vector4.zero();
   set emissiveFactor(Vector4 value) {
     _emissiveFactor = value;
     _markMaterialDataDirty();
   }
+
+  /// Sets [emissiveFactor] from a Flutter [Color], decoding it from sRGB.
+  /// Scale it past `1` with [emissiveStrength].
+  void setEmissiveColor(Color color) => emissiveFactor = color.toLinearRgba();
 
   /// Multiplier for emissive radiance. Values above `1` produce HDR emission.
   double get emissiveStrength => _emissiveStrength;

@@ -1,4 +1,7 @@
 import 'dart:math' as math;
+import 'dart:ui' show Color;
+
+import 'package:flutter_scene/src/color_conversion.dart';
 
 import 'package:vector_math/vector_math.dart';
 
@@ -35,6 +38,9 @@ class Fog {
   /// Fog color, linear (not sRGB). Distant opaque geometry converges to this, so
   /// matching it to the horizon color makes geometry dissolve into the sky.
   Vector3 color = Vector3(0.6, 0.7, 0.8);
+
+  /// Sets [color] from a Flutter [Color], decoding it from sRGB.
+  void setColor(Color value) => color = value.toLinearRgb();
 
   /// How much the fog color is taken from the sky instead of [color] (0 = flat
   /// [color], 1 = fully the environment sampled in the view direction). Above 0,

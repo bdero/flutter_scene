@@ -8,10 +8,14 @@
 // (matching the rest of the suite) and run on a GPU-enabled harness.
 
 import 'package:clock/clock.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/scene.dart' show notifySceneRepaintForTesting;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/widgets/scene_view_pacing.dart'
+    show computePacedTickerSleep;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -561,6 +565,462 @@ void main() {
     expect(tester.takeException(), isA<StateError>());
     expect(find.text('loading'), findsOneWidget);
   });
+
+  group('computePacedTickerSleep', () {
+    test('returns null on 60 Hz display when running at 60 fps', () {
+      expect(
+        computePacedTickerSleep(
+          targetPeriod: const Duration(microseconds: 16667),
+          measuredVsyncInterval: const Duration(microseconds: 16667),
+          sawSkippedVsync: true,
+        ),
+        isNull,
+      );
+    });
+
+    test('returns null before any VSync skip is observed for 60 fps', () {
+      expect(
+        computePacedTickerSleep(
+          targetPeriod: const Duration(microseconds: 16667),
+          measuredVsyncInterval: const Duration(microseconds: 4167),
+          sawSkippedVsync: false,
+        ),
+        isNull,
+      );
+    });
+
+    test(
+      'returns null on 2:1 ratios where 1.25x wakeup margin cannot skip a VSync',
+      () {
+        // 120 Hz @ 60 fps: 16.67 - 1.25 * 8.33 = 6.25 ms < 8.33 ms (wakes
+        // before the very next VSync, so sleeping would save zero frames).
+        expect(
+          computePacedTickerSleep(
+            targetPeriod: const Duration(microseconds: 16667),
+            measuredVsyncInterval: const Duration(microseconds: 8333),
+            sawSkippedVsync: true,
+          ),
+          isNull,
+        );
+        // 60 Hz @ 30 fps: 33.33 - 1.25 * 16.67 = 12.50 ms < 16.67 ms.
+        expect(
+          computePacedTickerSleep(
+            targetPeriod: const Duration(microseconds: 33333),
+            measuredVsyncInterval: const Duration(microseconds: 16667),
+            sawSkippedVsync: true,
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test('computes bounded sleep for 60 fps on 144 and 240 Hz displays', () {
+      final sleep144 = computePacedTickerSleep(
+        targetPeriod: const Duration(microseconds: 16667),
+        measuredVsyncInterval: const Duration(microseconds: 6944),
+        sawSkippedVsync: true,
+      );
+      expect(sleep144!.inMicroseconds, inInclusiveRange(7000, 10000));
+
+      final sleep240 = computePacedTickerSleep(
+        targetPeriod: const Duration(microseconds: 16667),
+        measuredVsyncInterval: const Duration(microseconds: 4167),
+        sawSkippedVsync: true,
+      );
+      expect(sleep240!.inMicroseconds, inInclusiveRange(10000, 13000));
+    });
+
+    test('computes long sleep for low-rate pacing on 60, 120, and 240 Hz', () {
+      final sleep240 = computePacedTickerSleep(
+        targetPeriod: const Duration(milliseconds: 50),
+        measuredVsyncInterval: const Duration(microseconds: 4167),
+        sawSkippedVsync: false,
+      );
+      expect(sleep240!.inMilliseconds, inInclusiveRange(42, 46));
+
+      final sleep120 = computePacedTickerSleep(
+        targetPeriod: const Duration(microseconds: 33333),
+        measuredVsyncInterval: const Duration(microseconds: 8333),
+        sawSkippedVsync: true,
+      );
+      expect(sleep120!.inMilliseconds, inInclusiveRange(21, 24));
+
+      final sleep60 = computePacedTickerSleep(
+        targetPeriod: const Duration(milliseconds: 50),
+        measuredVsyncInterval: const Duration(microseconds: 16667),
+        sawSkippedVsync: true,
+      );
+      expect(sleep60!.inMilliseconds, inInclusiveRange(26, 32));
+    });
+
+    test('respects remaining deadline budget and skips sleep when tight', () {
+      final sleep = computePacedTickerSleep(
+        targetPeriod: const Duration(microseconds: 16667),
+        measuredVsyncInterval: const Duration(microseconds: 4167),
+        sawSkippedVsync: true,
+        remaining: const Duration(microseconds: 11067),
+      );
+      // The 6 ms wake margin floor applies at 240 Hz (1.25 * 4.17 ms is less).
+      expect(sleep!.inMicroseconds, inInclusiveRange(5000, 5100));
+
+      expect(
+        computePacedTickerSleep(
+          targetPeriod: const Duration(microseconds: 16667),
+          measuredVsyncInterval: const Duration(microseconds: 4167),
+          sawSkippedVsync: true,
+          remaining: const Duration(microseconds: 5667),
+        ),
+        isNull,
+      );
+    });
+
+    test('rejects out-of-range VSync intervals cleanly', () {
+      expect(
+        computePacedTickerSleep(
+          targetPeriod: const Duration(milliseconds: 50),
+          measuredVsyncInterval: const Duration(microseconds: 500),
+          sawSkippedVsync: true,
+        ),
+        isNull,
+      );
+      expect(
+        computePacedTickerSleep(
+          targetPeriod: const Duration(milliseconds: 50),
+          measuredVsyncInterval: const Duration(milliseconds: 40),
+          sawSkippedVsync: true,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  testWidgets(
+    'low maxFrameRate on 240 Hz preserves continuous elapsed and wall-clock deltas across paced sleeps',
+    (tester) async {
+      final scene = _tryScene();
+      if (scene == null) {
+        markTestSkipped('No Impeller GPU context');
+        return;
+      }
+      final elapsedSamples = <Duration>[];
+      final deltas = <double>[];
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene,
+            cameraBuilder: (elapsed) {
+              elapsedSamples.add(elapsed);
+              return PerspectiveCamera();
+            },
+            maxFrameRate: 20, // 50 ms period on a 240 Hz display.
+            onTick: (_, delta) => deltas.add(delta),
+          ),
+        ),
+      );
+      // Half a second at 240 Hz (~4.167 ms per VSync).
+      var sleepingPumps = 0;
+      for (var i = 0; i < 120; i++) {
+        await tester.pump(const Duration(microseconds: 4167));
+        if (!tester.binding.hasScheduledFrame) sleepingPumps++;
+      }
+      if (kIsWeb) {
+        expect(sleepingPumps, greaterThan(50));
+      }
+      expect(deltas.length, inInclusiveRange(9, 12));
+      for (var i = 1; i < elapsedSamples.length; i++) {
+        expect(elapsedSamples[i], greaterThanOrEqualTo(elapsedSamples[i - 1]));
+      }
+      expect(elapsedSamples.last.inMilliseconds, greaterThanOrEqualTo(400));
+      for (var i = 2; i < deltas.length; i++) {
+        expect(deltas[i], inInclusiveRange(0.035, 0.065));
+      }
+    },
+  );
+
+  testWidgets(
+    'repaintRequested, scene swap, maxFrameRate, and re-gating wake a sleeping paced ticker without leaking timers',
+    (tester) async {
+      final scene = _tryScene();
+      if (scene == null) {
+        markTestSkipped('No Impeller GPU context');
+        return;
+      }
+      var ticks = 0;
+      Future<void> pumpUntilSleeping() async {
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(microseconds: 4167));
+          if (kIsWeb && !tester.binding.hasScheduledFrame) return;
+        }
+      }
+
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene,
+            camera: PerspectiveCamera(),
+            maxFrameRate: 20,
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      // Measure 240 Hz VSync and let paced sleep engage.
+      await pumpUntilSleeping();
+      if (kIsWeb) {
+        expect(tester.binding.hasScheduledFrame, isFalse);
+      }
+      final ticksBeforeRepaint = ticks;
+
+      // repaintRequested wakes a sleeping ticker for the next VSync.
+      notifySceneRepaintForTesting(scene);
+      if (kIsWeb) {
+        expect(tester.binding.hasScheduledFrame, isTrue);
+      }
+      await tester.pump(const Duration(microseconds: 4167));
+      expect(ticks, greaterThan(ticksBeforeRepaint));
+
+      // Switching to a new scene while sleeping (with maxFrameRate unchanged)
+      // wakes the ticker promptly.
+      if (kIsWeb) {
+        expect(tester.binding.hasScheduledFrame, isFalse);
+      }
+      final scene2 = _tryScene()!;
+      addTearDown(scene2.dispose);
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene2,
+            camera: PerspectiveCamera(),
+            maxFrameRate: 20,
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      if (kIsWeb) {
+        expect(tester.binding.hasScheduledFrame, isTrue);
+      }
+      final ticksBeforeSwitch = ticks;
+      await tester.pump(const Duration(microseconds: 4167));
+      expect(ticks, greaterThan(ticksBeforeSwitch));
+
+      // Raising maxFrameRate while sleeping resumes ticking promptly.
+      if (kIsWeb) {
+        expect(tester.binding.hasScheduledFrame, isFalse);
+      }
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene2,
+            camera: PerspectiveCamera(),
+            maxFrameRate: 60,
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      final ticksBeforeBoost = ticks;
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(microseconds: 4167));
+      }
+      expect(ticks, greaterThanOrEqualTo(ticksBeforeBoost + 2));
+
+      // Re-entering a gated loading phase while sleeping restarts the ticker
+      // so the reveal-origin watch keeps tracking frames, and unhiding resumes.
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene2,
+            camera: PerspectiveCamera(),
+            maxFrameRate: 20,
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      await pumpUntilSleeping();
+      if (kIsWeb) {
+        expect(tester.binding.hasScheduledFrame, isFalse);
+      }
+      final group = ResourceGroup();
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene2,
+            camera: PerspectiveCamera(),
+            maxFrameRate: 20,
+            loading: group,
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      if (kIsWeb) {
+        expect(tester.binding.hasScheduledFrame, isTrue);
+      }
+      await tester.pump(const Duration(microseconds: 4167));
+      // Returning to ungated resumes ticking cleanly and lets sleep re-engage.
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene2,
+            camera: PerspectiveCamera(),
+            maxFrameRate: 20,
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      final ticksAfterUngate = ticks;
+      await pumpUntilSleeping();
+      expect(ticks, greaterThan(ticksAfterUngate));
+
+      // Disposing while sleeping cancels any pending wakeup timer.
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'custom SceneView.clock with maxFrameRate does not stall under paced sleep',
+    (tester) async {
+      final scene = _tryScene();
+      if (scene == null) {
+        markTestSkipped('No Impeller GPU context');
+        return;
+      }
+      // A driver-owned clock that stays paused between externally driven steps.
+      final driverClock = Clock.fixed(DateTime(2026));
+      var ticks = 0;
+      await tester.pumpWidget(
+        _sized(
+          SceneView(
+            scene,
+            camera: PerspectiveCamera(),
+            maxFrameRate: 20,
+            clock: driverClock,
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      for (var i = 0; i < 120; i++) {
+        await tester.pump(const Duration(microseconds: 4167));
+      }
+      expect(ticks, inInclusiveRange(9, 12));
+    },
+  );
+
+  testWidgets(
+    'system clock jumps during paced sleep keep ticking and monotonic elapsed',
+    (tester) async {
+      final scene = _tryScene();
+      if (scene == null) {
+        markTestSkipped('No Impeller GPU context');
+        return;
+      }
+      var wallNow = DateTime(2026, 11, 24, 12, 0, 0);
+      final elapsedSamples = <Duration>[];
+      Future<void> pumpUntilSleeping() async {
+        for (var i = 0; i < 20; i++) {
+          wallNow = wallNow.add(const Duration(microseconds: 4167));
+          await tester.pump(const Duration(microseconds: 4167));
+          if (kIsWeb && !tester.binding.hasScheduledFrame) break;
+        }
+        if (kIsWeb) {
+          expect(tester.binding.hasScheduledFrame, isFalse);
+        }
+      }
+
+      await withClock(Clock(() => wallNow), () async {
+        await tester.pumpWidget(
+          _sized(
+            SceneView(
+              scene,
+              cameraBuilder: (elapsed) {
+                elapsedSamples.add(elapsed);
+                return PerspectiveCamera();
+              },
+              maxFrameRate: 20,
+            ),
+          ),
+        );
+        // Simulate a 60-second backward NTP step while sleeping.
+        await pumpUntilSleeping();
+        var samplesBefore = elapsedSamples.length;
+        var elapsedBefore = elapsedSamples.last;
+        wallNow = wallNow.subtract(const Duration(seconds: 60));
+        for (var i = 0; i < 60; i++) {
+          wallNow = wallNow.add(const Duration(microseconds: 4167));
+          await tester.pump(const Duration(microseconds: 4167));
+        }
+        expect(elapsedSamples.length, greaterThanOrEqualTo(samplesBefore + 3));
+        expect(
+          (elapsedSamples.last - elapsedBefore).inMilliseconds,
+          inInclusiveRange(150, 320),
+        );
+
+        // Simulate a 60-second forward NTP step while sleeping.
+        await pumpUntilSleeping();
+        samplesBefore = elapsedSamples.length;
+        elapsedBefore = elapsedSamples.last;
+        wallNow = wallNow.add(const Duration(seconds: 60));
+        for (var i = 0; i < 24; i++) {
+          wallNow = wallNow.add(const Duration(microseconds: 4167));
+          await tester.pump(const Duration(microseconds: 4167));
+        }
+        expect(elapsedSamples.length, greaterThan(samplesBefore));
+        expect(
+          (elapsedSamples.last - elapsedBefore).inMilliseconds,
+          inInclusiveRange(30, 200),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+    },
+  );
+
+  testWidgets(
+    'repaintRequested while sleeping under TickerMode(enabled: false) still repaints and resumes on unmute',
+    (tester) async {
+      final scene = _tryScene();
+      if (scene == null) {
+        markTestSkipped('No Impeller GPU context');
+        return;
+      }
+      var ticks = 0;
+      var paints = 0;
+      Widget buildView({required bool tickerEnabled}) => TickerMode(
+        enabled: tickerEnabled,
+        child: _sized(
+          SceneView(
+            scene,
+            maxFrameRate: 20,
+            cameraBuilder: (_) {
+              paints++;
+              return PerspectiveCamera();
+            },
+            onTick: (_, _) => ticks++,
+          ),
+        ),
+      );
+      await tester.pumpWidget(buildView(tickerEnabled: true));
+      for (var i = 0; i < 16; i++) {
+        await tester.pump(const Duration(microseconds: 4167));
+        if (kIsWeb && !tester.binding.hasScheduledFrame) break;
+      }
+      // Mute the ticker while paced sleep is active.
+      await tester.pumpWidget(buildView(tickerEnabled: false));
+      final paintsBefore = paints;
+      final paintBox = tester.renderObject(find.bySubtype<CustomPaint>());
+      expect(paintBox.debugNeedsPaint, isFalse);
+
+      notifySceneRepaintForTesting(scene);
+      expect(paintBox.debugNeedsPaint, isTrue);
+      await tester.pump();
+      expect(paints, paintsBefore + 1);
+
+      // Re-enabling TickerMode resumes ticking without staying stuck stopped.
+      final ticksBeforeUnmute = ticks;
+      await tester.pumpWidget(buildView(tickerEnabled: true));
+      for (var i = 0; i < 16; i++) {
+        await tester.pump(const Duration(microseconds: 4167));
+      }
+      expect(ticks, greaterThan(ticksBeforeUnmute));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }
 
 // Whether the view has swapped its loading or error widget for the scene.
