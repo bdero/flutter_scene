@@ -1,5 +1,6 @@
 ## 0.24.6
 
+* A cutout `.fmat` whose lighting hook is declared `highp` (`highp vec4 Composite`), or calls helpers of its own, builds again. 0.24.5 broke both; its depth passes now keep only what `Surface()` reaches.
 * A `.fmat` whose own depth passes fail to build, or would drop draws on some backend, no longer fails the app build. The build warns and the material casts and writes depth through the engine's shaders.
 
 ## 0.24.5
