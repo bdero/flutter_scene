@@ -10,6 +10,7 @@
 * God rays no longer misread the sun's shadow past a cascade's depth range or bleed across shadow atlas tiles.
 * A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
 * Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
+* An R8 or RG8 texture whose size is not a multiple of 4 bytes uploads on WebGPU under dart2wasm instead of throwing a `RangeError`.
 
 ## 0.24.6
 
