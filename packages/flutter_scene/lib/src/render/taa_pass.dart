@@ -70,11 +70,6 @@ class TaaHistoryState {
   gpu.Texture? get previousLinearDepth => _previousLinearDepth;
   bool get hasHistory => _hasHistory;
 
-  // Single-channel fp32 linear depth, matching DepthPrepass's depth-only target
-  // (4 bytes/texel vs 8 for r16g16b16a16Float, with full fp32 precision).
-  static const gpu.PixelFormat previousLinearDepthFormat =
-      gpu.PixelFormat.r32Float;
-
   void ensureSize(int width, int height) {
     if (_width == width && _height == height && _historyA != null) return;
     _width = width;
@@ -99,7 +94,7 @@ class TaaHistoryState {
       gpu.StorageMode.devicePrivate,
       width,
       height,
-      format: previousLinearDepthFormat,
+      format: gpu.PixelFormat.r32Float,
       enableRenderTargetUsage: true,
       enableShaderReadUsage: true,
     );

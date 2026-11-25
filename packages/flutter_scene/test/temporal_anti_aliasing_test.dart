@@ -2,7 +2,6 @@
 
 import 'dart:ui' as ui;
 
-import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/render/taa_pass.dart';
 import 'package:flutter_scene/src/render/temporal_anti_aliasing.dart';
@@ -119,13 +118,6 @@ void main() {
 
       state.invalidate();
       expect(state.hasHistory, isFalse);
-    });
-
-    test('uses single-channel r32Float for previous linear depth', () {
-      expect(
-        TaaHistoryState.previousLinearDepthFormat,
-        gpu.PixelFormat.r32Float,
-      );
     });
   });
 }
