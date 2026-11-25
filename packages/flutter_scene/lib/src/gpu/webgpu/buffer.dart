@@ -217,26 +217,16 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
     _ => _copyTypedDataToJs(source),
   };
 
-  /// Copies [source] into a list JS can take as is: a word-copied [Uint32List]
-  /// for 4-byte multiples, or an exact-length [Uint8List] for unaligned
-  /// lengths such as small R8/RG8 textures.
+  /// Copies [source] into a word list JS can take as is. An unaligned tail is
+  /// zero-padded to a whole word, which `writeTexture`'s layout never reads.
   static JSObject _copyTypedDataToJs(TypedData source) {
     final length = source.lengthInBytes;
     if (!kIsWasm) {
       return source.buffer.asUint8List(source.offsetInBytes, length).toJS;
     }
-    if ((length & 3) == 0) {
-      final words = Uint32List(length >> 2);
-      _copyWords(words, ByteData.sublistView(words), 0, source, length);
-      return words.toJS;
-    }
-    final bytes = Uint8List(length)
-      ..setRange(
-        0,
-        length,
-        source.buffer.asUint8List(source.offsetInBytes, length),
-      );
-    return bytes.toJS;
+    final words = Uint32List((length + 3) >> 2);
+    _copyWords(words, ByteData.sublistView(words), 0, source, length);
+    return words.toJS;
   }
 
   /// Host writes reach the GPU through the queue; there is nothing to flush.
