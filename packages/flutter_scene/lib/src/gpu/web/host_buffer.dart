@@ -1,16 +1,20 @@
 part of '_gpu.dart';
 
+// TODO(host-buffer-upstream): send the overflow reuse to flutter_gpu.
+
 /// Bump allocator that hands out [BufferView] slices from a chain of
 /// [DeviceBuffer] blocks. Re-cycles blocks every [frameCount] frames when
 /// [reset] is called.
 ///
 /// A faithful port of flutter_gpu's HostBuffer (block bump allocation,
 /// [frameCount]-frame rotation, per-emplacement uniform alignment) so the
-/// shim stays a drop-in flutter_gpu replacement. The one deliberate
-/// difference: block rollover accounts for the write's own length, and an
+/// shim stays a drop-in flutter_gpu replacement, with two deliberate
+/// differences. Block rollover accounts for the write's own length, and an
 /// emplacement into a fresh block gets a view of the data's length; the
 /// upstream check hands out views that overrun the block when an aligned
-/// offset fits but the write's end does not (fix submitted upstream).
+/// offset fits but the write's end does not (fix submitted upstream). And a
+/// frame reuses the overflow blocks it allocated in earlier cycles, where
+/// upstream appends a new block on every overflow and the chain grows forever.
 ///
 /// Backend neutral: it only allocates [DeviceBuffer]s from its context. The
 /// renderer does not use it (its transients ride the completion-aware arenas
