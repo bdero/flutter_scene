@@ -4,7 +4,7 @@ XR sessions for Flutter Scene. One scene graph renders on a flat screen and insi
 
 An `XrRuntime` starts an `XrSession`, which delivers an `XrFrame` of `XrView`s per display frame. An `XrRig` turns those into camera nodes and `RenderView`s, an `XrSceneLoop` renders a `Scene` through the rig into the frame's target for every frame, and an `XrInputSource` publishes the session's controllers and hands into `flutter_scene_input` so games bind them like any gamepad. Hit testing, anchors, planes, depth and light estimation sit on the session as features the runtime may grant.
 
-Today the only runtime is WebXR, reached on the web through `dart:js_interop` with no native code. On every other platform the package compiles and `XrRuntime.instance.isSupported` is false; native OpenXR and handheld AR runtimes implement the same contract later.
+Today the only runtime is WebXR, reached on the web through `dart:js_interop` with no native code. On every other platform the package compiles and `XrRuntime.instance.isSupported` is false; native OpenXR and handheld AR runtimes will implement the same contract. WebXR needs flutter_scene's default WebGL2 backend; under the WebGPU backend `isSupported` is false.
 
 ```dart
 final scene = Scene();

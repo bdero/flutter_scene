@@ -41,7 +41,8 @@ class WebXrSessionInit {
 
 /// `navigator.xr`.
 abstract interface class WebXrBackend {
-  /// Whether `navigator.xr` exists.
+  /// Whether `navigator.xr` exists and the GPU backend can render into a
+  /// session's targets.
   bool get isSupported;
 
   /// `XRSystem.isSessionSupported`.
