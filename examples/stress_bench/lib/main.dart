@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +8,7 @@ import 'package:flutter_scene/scene.dart';
 
 import 'micro.dart';
 import 'scenarios.dart';
+import 'src/bench_exit.dart';
 
 const int kWarmupFrames = 20;
 const int kMeasuredFrames = 100;
@@ -206,7 +206,7 @@ class _BenchRunnerState extends State<BenchRunner>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final micro = runMicroBenchmarks();
       _printReport(micro);
-      exit(0);
+      benchExit();
     });
     setState(() {});
   }
