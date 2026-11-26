@@ -8,6 +8,13 @@ Run in profile mode for representative numbers:
 flutter run -d macos --profile --enable-flutter-gpu --enable-impeller
 ```
 
+On web, build in profile and open it in Chrome; the report goes to the browser console and ends with a `BENCH_DONE` line, since a tab cannot exit:
+
+```sh
+flutter build web --profile
+python3 -m http.server -d build/web 8000
+```
+
 The app runs every scenario (20 warmup + 100 measured frames each), prints a table and a machine-readable `BENCH_JSON` line, then exits. Debug-mode runs print a warning; JIT timings do not predict AOT.
 
 ## Phases

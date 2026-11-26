@@ -16,6 +16,8 @@
 * An R8 or RG8 texture whose size is not a multiple of 4 bytes uploads on WebGPU under dart2wasm instead of throwing a `RangeError`.
 * SMAA's edge pass skips writing pixels with no edge.
 * Half-resolution ground-truth ambient occlusion no longer stipples grazing walls and floors. Its blur follows sloped surfaces, and lit materials upsample it against their own depth.
+* On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.
+* WebGL2 reuses its present framebuffer and skips redundant vertex array and uniform buffer calls per draw.
 
 ## 0.24.6
 
