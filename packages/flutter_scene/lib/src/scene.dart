@@ -107,7 +107,6 @@ import 'render/shadow_caster_selection.dart';
 import 'render/contact_shadow_channels.dart';
 import 'render/contact_shadow_pass.dart';
 import 'render/contact_shadow_wavefront.dart';
-import 'render/engine_compute_shaders.dart';
 import 'render/punctual_lights.dart';
 import 'render/point_shadow.dart';
 import 'render/spot_shadow.dart';
