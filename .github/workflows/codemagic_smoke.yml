@@ -302,7 +302,9 @@ jobs:
           if [ -z "$ARGOS_PR_NUMBER" ]; then unset ARGOS_PR_NUMBER; fi
           if [ -z "$ARGOS_PR_BASE_BRANCH" ]; then unset ARGOS_PR_BASE_BRANCH; fi
           status=0
+          # TODO(ssgi-golden): ssgi drifts between runs; see smoke_render_jobs.yml.
           npx --yes @argos-ci/cli upload smoke \
+            --ignore "**/ssgi.png" \
             --project "$ARGOS_PROJECT" \
             --build-name "${{ inputs.argos_prefix || (inputs.flutter_channel && inputs.flutter_channel != 'master' && format('{0}-', inputs.flutter_channel)) || (inputs.flutter_revision && 'pinned-') || '' }}${{ matrix.build_name }}" > argos.log 2>&1 || status=$?
           cat argos.log

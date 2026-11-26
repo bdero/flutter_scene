@@ -82,6 +82,10 @@ jobs:
           --driver=test_driver/integration_test.dart
           --target=integration_test/smoke_test.dart
           -d linux --enable-impeller --enable-flutter-gpu
+      # TODO(ssgi-golden): ssgi gathers last frame's radiance, so its
+      # capture depends on how many frames ran first and drifts between runs.
+      # It stays out of every Argos upload until its capture is
+      # deterministic; parity still compares it.
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
@@ -105,7 +109,7 @@ jobs:
             fi
           fi
           status=0
-          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}linux" "${reference_args[@]}" 2>&1) || status=$?
+          out=$(npx --yes @argos-ci/cli upload build/smoke --ignore "**/ssgi.png" --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}linux" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
           # The grep misses when the upload printed no URL; that miss must not
           # fail the step, which runs with pipefail on windows.
@@ -267,7 +271,7 @@ jobs:
             fi
           fi
           status=0
-          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || status=$?
+          out=$(npx --yes @argos-ci/cli upload build/smoke --ignore "**/ssgi.png" --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
           # The grep misses when the upload printed no URL; that miss must not
           # fail the step, which runs with pipefail on windows.
@@ -346,7 +350,7 @@ jobs:
             fi
           fi
           status=0
-          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}web" "${reference_args[@]}" 2>&1) || status=$?
+          out=$(npx --yes @argos-ci/cli upload build/smoke --ignore "**/ssgi.png" --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}web" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
           # The grep misses when the upload printed no URL; that miss must not
           # fail the step, which runs with pipefail on windows.
@@ -434,7 +438,7 @@ jobs:
             fi
           fi
           status=0
-          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}web-webgpu" "${reference_args[@]}" 2>&1) || status=$?
+          out=$(npx --yes @argos-ci/cli upload build/smoke --ignore "**/ssgi.png" --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}web-webgpu" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
           # The grep misses when the upload printed no URL; that miss must not
           # fail the step, which runs with pipefail on windows.
@@ -590,7 +594,7 @@ jobs:
             fi
           fi
           status=0
-          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}windows" "${reference_args[@]}" 2>&1) || status=$?
+          out=$(npx --yes @argos-ci/cli upload build/smoke --ignore "**/ssgi.png" --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}windows" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
           # The grep misses when the upload printed no URL; that miss must not
           # fail the step, which runs with pipefail on windows.
