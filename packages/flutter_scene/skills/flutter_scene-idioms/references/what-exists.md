@@ -259,6 +259,13 @@ Advanced KHR_materials_* (setting any flips onto an internal physical-variant sh
 `iridescenceIor` (1.3), `iridescenceThicknessMinimum` (100.0), `iridescenceThicknessMaximum` (400.0),
 `anisotropy` (0.0), `anisotropyRotation` (0.0).
 
+Parallax occlusion: `parallaxScale` (0.0, off; depth in UV units, `0.02` to `0.08` typical) marches a
+height field packed in `normalTexture`'s alpha (1 surface, 0 deepest; an opaque alpha is flat, pack
+one with `buildTextures(parallaxHeights:)`). `parallaxMaxSteps` (32, 4 to 64), `parallaxShadowStrength`
+(0.0, sun self-shadowing), `parallaxSilhouette` (null; `ParallaxSilhouette.unit`, `.bounds(min, max)`,
+`.tiles(size)` cut the outline and shadows). Its shaders load on first use, so a one-shot render awaits
+`Scene.preload(parallaxOcclusion: true)`.
+
 `isOpaque()` is false when `transmission > 0`, `alphaMode == blend`, or `baseColorFactor.a < 1.0`.
 
 `AlphaMode` = `opaque` | `mask` | `blend`. `TextureTransform({offset, scale, rotation})` (glTF

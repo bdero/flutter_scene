@@ -122,6 +122,9 @@ void buildTextures({
   Map<String, TextureEncoding> encodings = const {},
   TextureAssetMode assetMode = TextureAssetMode.generatedTree,
   bool alignForCompression = false,
+  // TODO(parallax-gltf-height): glTF has no height slot, so imported models
+  // need a sidecar height packed at import (buildScenes and .fscene options
+  // that reuse this packing).
   Map<String, String> parallaxHeights = const {},
 }) {
   // A typo here would silently cook a normal map with the sRGB color

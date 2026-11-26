@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart' show internal;
 import 'package:vector_math/vector_math.dart';
 
+// TODO(parallax-curved-silhouette): curved silhouettes need per-vertex
+// curvature or extruded shell geometry.
+
 /// Where a parallax-mapped surface's relief ends, so its outline follows the
 /// relief instead of the flat geometry.
 ///
@@ -12,8 +15,6 @@ import 'package:vector_math/vector_math.dart';
 /// Exact where a UV boundary is the visible edge: quads, decals, box faces,
 /// and atlas tiles. On curved meshes the cut follows the UV layout, not the
 /// silhouette.
-/// TODO(parallax-curved-silhouette): curved silhouettes need per-vertex
-/// curvature or extruded shell geometry.
 /// {@category Materials}
 class ParallaxSilhouette {
   /// Cuts outside the UV box from [min] to [max].
