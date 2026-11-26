@@ -4586,11 +4586,17 @@ base class Scene implements SceneGraph {
     final wantIndirectLight =
         !captureLinearColor &&
         ambientOcclusionCarriesIndirectLight(ambientOcclusion);
-    // The irradiance field scatters from the depth prepass' normals and from
-    // the previous frame's lit color, so it forces both on.
     final wantIrradianceField =
         !captureLinearColor && projectionValid && globalIllumination.enabled;
-    final wantSceneColorHistory = wantIndirectLight || wantIrradianceField;
+    // The screen-space feed scatters from the depth prepass' normals and from
+    // the previous frame's lit color, so it forces both on. The traced feed
+    // reads neither.
+    final tracedIrradiance =
+        wantIrradianceField &&
+        _irradianceTrace.availableFor(globalIllumination);
+    final wantScreenSpaceIrradiance = wantIrradianceField && !tracedIrradiance;
+    final wantSceneColorHistory =
+        wantIndirectLight || wantScreenSpaceIrradiance;
     // The occlusion texture's channels carry radiance while indirect light
     // is on, so the contact-shadow term has nowhere to ride.
     // TODO(sampler-budget): lift this exclusivity with a dedicated sampler
@@ -4604,7 +4610,7 @@ base class Scene implements SceneGraph {
         bindSceneDepth ||
         wantCustomNormals ||
         wantSsr ||
-        wantIrradianceField ||
+        wantScreenSpaceIrradiance ||
         enableTaa ||
         ambientOcclusion.enabled ||
         wantContactShadows ||
@@ -4636,7 +4642,7 @@ base class Scene implements SceneGraph {
                 !enableTaa &&
                 !wantSsr &&
                 !wantCustomNormals &&
-                !wantIrradianceField &&
+                !wantScreenSpaceIrradiance &&
                 !bindSceneDepth)
             ? ambientOcclusionTargetSize(pixelSize, ambientOcclusion)
             : pixelSize;
@@ -4651,7 +4657,8 @@ base class Scene implements SceneGraph {
             cameraForward: cameraForward,
             farDepth: projection.far,
             layerMask: view.layerMask,
-            writeNormals: wantSsr || wantCustomNormals || wantIrradianceField,
+            writeNormals:
+                wantSsr || wantCustomNormals || wantScreenSpaceIrradiance,
             // The translucent depth patch depth-tests against this
             // attachment. Storing it (a non-transient attachment plus store
             // bandwidth) is paid whenever the patch is wanted, whether or
@@ -4762,6 +4769,7 @@ base class Scene implements SceneGraph {
           cameraUp: cameraUp,
           projection: projection,
           environmentMap: environmentMap,
+          traced: tracedIrradiance,
         );
       }
     }
@@ -5249,6 +5257,7 @@ base class Scene implements SceneGraph {
     required Vector3 cameraUp,
     required ProjectionParams projection,
     required EnvironmentMap environmentMap,
+    required bool traced,
   }) {
     final settings = globalIllumination;
     final (center, extents, resolution) = _planIrradianceVolume(
@@ -5280,10 +5289,10 @@ base class Scene implements SceneGraph {
       final shStrip = _crossfadeEnvironment == null || _crossfadeBlend <= 0.0
           ? environmentMap.diffuseShTexture
           : null;
-      // Traced where the device has compute (and the feed is on), which sees
-      // the whole static scene rather than only what is on screen.
+      // Traced where the device has compute and the feed asks for it, which
+      // sees the whole scene rather than only what is on screen.
       graph.addPass(
-        _irradianceTrace.availableFor(settings)
+        traced
             ? IrradianceTracePass(
                 field: _irradianceField,
                 trace: _irradianceTrace,

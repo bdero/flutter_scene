@@ -4,9 +4,10 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// A world-space grid of irradiance probes caches bounce light, so indirect
 /// light persists for surfaces the camera is not currently looking at and
-/// colored bleed reads correctly. Probes are filled by scattering the
-/// previous frame's shaded scene color into the grid, so lighting changes
-/// converge over a few frames rather than snapping.
+/// colored bleed reads correctly. Probes are filled by [feed], either by
+/// scattering the previous frame's shaded scene color into the grid or by
+/// tracing rays from each probe, so lighting changes converge over a few
+/// frames rather than snapping.
 ///
 /// Disabled by default. A fresh scene adds no probe passes.
 ///
@@ -23,9 +24,10 @@ class GlobalIlluminationSettings {
   /// Whether the irradiance field runs. Off by default; a fresh scene adds
   /// no probe passes.
   ///
-  /// Enabling it forces the depth prepass with normals on, the same way
-  /// [AmbientOcclusionSettings.enabled] forces the prepass, because the
-  /// injection scatter reads both.
+  /// Under the screen-space [feed], enabling it forces the depth prepass with
+  /// normals on, the same way [AmbientOcclusionSettings.enabled] forces the
+  /// prepass, because the injection scatter reads both. The traced feed
+  /// needs neither.
   bool enabled = false;
 
   /// How the field's world-space volume is placed. See
@@ -91,19 +93,22 @@ class GlobalIlluminationSettings {
 
   /// Resolution of the downsampled buffer the screen-space injection
   /// scatters from. Each texel becomes one scattered sample per frame.
+  /// Unused by the traced feed.
   IrradianceInjectionResolution injectionResolution =
       IrradianceInjectionResolution.eighth;
 
-  /// Clamps injected radiance by luminance, preserving hue, so a single very
-  /// bright pixel cannot burn a probe. `0` disables the clamp.
+  /// Clamps radiance entering the field by luminance, preserving hue, so a
+  /// single very bright pixel or ray cannot burn a probe. `0` disables the
+  /// clamp.
   double fireflyClamp = 8.0;
 
   /// Scales emissive surfaces' contribution to the injected radiance, so a
   /// small bright emitter can light a room without blowing out the direct
   /// image. `1.0` injects emission at the same strength it is shaded.
   ///
-  /// Emitters the camera cannot see contribute nothing under injection
-  /// alone. Bake the field ([Scene.bakeIrradianceField]) for those.
+  /// Emitters the camera cannot see contribute nothing under the
+  /// screen-space feed. Trace ([IrradianceFeed.rayTraced]) or bake
+  /// ([Scene.bakeIrradianceField]) the field for those.
   double emissiveGiBoost = 1.0;
 
   /// Holds the field static while the camera moves and resumes updating once
