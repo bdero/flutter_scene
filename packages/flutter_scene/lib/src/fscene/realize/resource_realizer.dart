@@ -24,6 +24,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/material/parallax_silhouette.dart';
 import 'package:flutter_scene/src/material/physical_material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
@@ -1039,6 +1040,14 @@ class ResourceRealizer {
     );
     m.emissiveTextureTexCoord = _textureTexCoord(p, 'emissiveTextureTransform');
     m.normalScale = readDouble(p, 'normalScale', m.normalScale);
+    m.parallaxScale = readDouble(p, 'parallaxScale', m.parallaxScale);
+    m.parallaxMaxSteps = readInt(p, 'parallaxMaxSteps', m.parallaxMaxSteps);
+    m.parallaxShadowStrength = readDouble(
+      p,
+      'parallaxShadowStrength',
+      m.parallaxShadowStrength,
+    );
+    m.parallaxSilhouette = _parallaxSilhouette(p);
     m.doubleSided = readBool(p, 'doubleSided', m.doubleSided);
     m.alphaMode = _alphaMode(readString(p, 'alphaMode', 'opaque'));
     m.alphaCutoff = readDouble(p, 'alphaCutoff', m.alphaCutoff);
@@ -1123,10 +1132,26 @@ class ResourceRealizer {
       anisotropyTexture: _physicalTexture(p, 'anisotropyTexture'),
       anisotropy: readDouble(p, 'anisotropy', 0.0),
       anisotropyRotation: readDouble(p, 'anisotropyRotation', 0.0),
+      parallaxScale: readDouble(p, 'parallaxScale', 0.0),
+      parallaxMaxSteps: readInt(p, 'parallaxMaxSteps', 32),
+      parallaxShadowStrength: readDouble(p, 'parallaxShadowStrength', 0.0),
+      parallaxSilhouette: _parallaxSilhouette(p),
       alphaMode: _alphaMode(readString(p, 'alphaMode', 'opaque')),
       alphaCutoff: readDouble(p, 'alphaCutoff', 0.5),
       doubleSided: readBool(p, 'doubleSided', false),
     );
+  }
+
+  ParallaxSilhouette? _parallaxSilhouette(Map<String, PropertyValue> p) {
+    final max = readVec2(p, 'parallaxSilhouetteMax', Vector2.all(1.0));
+    return switch (readString(p, 'parallaxSilhouette', '')) {
+      'tiles' => ParallaxSilhouette.tiles(max),
+      'bounds' => ParallaxSilhouette.bounds(
+        readVec2(p, 'parallaxSilhouetteMin', Vector2.zero()),
+        max,
+      ),
+      _ => null,
+    };
   }
 
   PhysicalTexture _physicalTexture(

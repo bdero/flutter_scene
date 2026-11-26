@@ -171,6 +171,7 @@ void main() {
           _compile(name),
           generateShadowVariant: true,
           generateLightmapVariant: name == 'physical_opaque',
+          generateParallaxVariant: name == 'physical_opaque',
         );
         for (final variant in variants.entries) {
           final reflection =

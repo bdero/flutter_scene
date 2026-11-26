@@ -2,6 +2,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter/foundation.dart' show internal;
 
 import '../texture/texture2d.dart';
+import 'parallax_silhouette.dart';
 import 'physically_based_material.dart';
 
 /// One texture input on a [PhysicalMaterialDescriptor].
@@ -76,6 +77,10 @@ class PhysicalMaterialDescriptor {
     PhysicalTexture? anisotropyTexture,
     this.anisotropy = 0.0,
     this.anisotropyRotation = 0.0,
+    this.parallaxScale = 0.0,
+    this.parallaxMaxSteps = 32,
+    this.parallaxShadowStrength = 0.0,
+    this.parallaxSilhouette,
     this.alphaMode = AlphaMode.opaque,
     this.alphaCutoff = 0.5,
     this.doubleSided = false,
@@ -253,6 +258,18 @@ class PhysicalMaterialDescriptor {
 
   /// Anisotropy direction rotation in radians.
   final double anisotropyRotation;
+
+  /// Parallax occlusion depth in UV units of the normal texture, 0 for none.
+  final double parallaxScale;
+
+  /// Most layers one parallax march takes.
+  final int parallaxMaxSteps;
+
+  /// Parallax self-shadowing strength, 0 for none.
+  final double parallaxShadowStrength;
+
+  /// Where the parallax relief's outline is cut, or null for none.
+  final ParallaxSilhouette? parallaxSilhouette;
 
   /// Alpha interpretation.
   final AlphaMode alphaMode;

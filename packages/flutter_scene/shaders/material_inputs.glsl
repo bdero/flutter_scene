@@ -54,6 +54,11 @@ struct MaterialInputs {
   // A value the material wants to inspect. Never shaded; shown raw by the
   // `custom` surface debug channel (see material_debug.glsl).
   vec3 debug;
+#ifdef FLUTTER_SCENE_PARALLAX_OCCLUSION
+  // Sun visibility from parallax self-shadowing, 1 lit. Only the parallax
+  // entries carry it.
+  float parallax_sun_visibility;
+#endif
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   // Advanced physical fields. These exist only in physical shader variants,
   // so standard/unlit materials keep their original interface and cost.
@@ -92,6 +97,9 @@ MaterialInputs InitMaterialInputs() {
   material.specular = 1.0;
   material.occlusion = 1.0;
   material.debug = vec3(0.0);
+#ifdef FLUTTER_SCENE_PARALLAX_OCCLUSION
+  material.parallax_sun_visibility = 1.0;
+#endif
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   material.specular_color = vec3(1.0);
   material.specular_weight = 1.0;

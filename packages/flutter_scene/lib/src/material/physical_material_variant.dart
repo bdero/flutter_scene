@@ -13,13 +13,16 @@ import 'package:flutter/services.dart' show AssetBundle;
 import 'package:vector_math/vector_math.dart';
 
 import '../fmat/fmat_emitter.dart'
-    show lightmapEntryName, radianceCubeEntryName;
+    show lightmapEntryName, parallaxEntryName, radianceCubeEntryName;
 import '../generated_assets/generated_asset_fetch.dart';
 import '../generated_assets/generated_asset_lookup.dart';
 import '../generated_assets/generated_assets.dart';
 import '../gpu/gpu.dart' as gpu;
+import '../light.dart' show Lighting;
 import '../render/frame_transients.dart';
 import 'engine_lighting.dart';
+import 'parallax_shaders.dart' show bindParallaxInfo;
+import 'parallax_silhouette.dart';
 import 'physical_material.dart';
 import 'physically_based_material.dart' show AlphaMode, TextureTransform;
 import 'preprocessed_material.dart';
@@ -263,6 +266,7 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
     required super.metadata,
     required this.transmissive,
     required this.lightmapped,
+    required this.parallax,
   });
 
   /// Whether this variant samples the captured scene color.
@@ -271,6 +275,9 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
   /// Whether this variant reads its diffuse ambient from a baked lightmap.
   final bool lightmapped;
 
+  /// Whether this variant marches parallax occlusion.
+  final bool parallax;
+
   @override
   bool get usesLightmapVariant => lightmapped;
 
@@ -278,13 +285,21 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
   ///
   /// [lightmapped] selects the entries that swap the SH diffuse ambient for a
   /// baked lightmap; only the opaque material ships them.
+  ///
+  /// [parallax] selects the parallax occlusion entries; only the opaque
+  /// material ships them, and without a lightmap axis.
   static PhysicalMaterialVariant fromDescriptor(
     PhysicalMaterialDescriptor descriptor, {
     bool lightmapped = false,
+    bool parallax = false,
   }) {
     final transmissive = descriptor.transmission > 0.0;
     final name = transmissive ? 'PhysicalTransmission' : 'PhysicalOpaque';
-    final entry = lightmapped ? lightmapEntryName(name) : name;
+    final entry = parallax
+        ? parallaxEntryName(name)
+        : lightmapped
+        ? lightmapEntryName(name)
+        : name;
     final assets = _physicalAssets;
     if (assets == null) {
       throw StateError(
@@ -308,6 +323,7 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
             metadata: metadata,
             transmissive: transmissive,
             lightmapped: lightmapped,
+            parallax: parallax,
           )
           ..setShadowFragmentShader(require('${entry}Shadow'))
           ..setRadianceCubeFragmentShaders(
@@ -327,6 +343,10 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
     }
     name = descriptor.name;
     doubleSided = descriptor.doubleSided;
+    _parallaxScale = descriptor.parallaxScale;
+    _parallaxMaxSteps = descriptor.parallaxMaxSteps;
+    _parallaxShadowStrength = descriptor.parallaxShadowStrength;
+    _parallaxSilhouette = descriptor.parallaxSilhouette;
     _reflectionRoughnessTexture = descriptor.metallicRoughnessTexture;
     _reflectionRoughnessFactor = descriptor.roughness;
     _isOpaque =
@@ -347,6 +367,10 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
   }
 
   bool _isOpaque = true;
+  double _parallaxScale = 0.0;
+  int _parallaxMaxSteps = 32;
+  double _parallaxShadowStrength = 0.0;
+  ParallaxSilhouette? _parallaxSilhouette;
   PhysicalTexture _reflectionRoughnessTexture = PhysicalTexture();
   double _reflectionRoughnessFactor = 1.0;
 
@@ -383,6 +407,25 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
       intensity: _lightmapIntensity,
       rgbm: _lightmapRgbm,
       sampler: source?.sampledSampler,
+    );
+  }
+
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    Lighting lighting,
+  ) {
+    super.bind(pass, transientsBuffer, lighting);
+    if (!parallax) return;
+    bindParallaxInfo(
+      pass,
+      fragmentShaderForLighting(lighting),
+      transientsBuffer,
+      scale: _parallaxScale,
+      maxSteps: _parallaxMaxSteps,
+      shadowStrength: _parallaxShadowStrength,
+      silhouette: _parallaxSilhouette,
     );
   }
 

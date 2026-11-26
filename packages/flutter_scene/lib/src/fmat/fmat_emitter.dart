@@ -161,6 +161,13 @@ const String kDebugViewsDefine = 'FLUTTER_SCENE_DEBUG_VIEWS';
 /// The bundle entry name of [entryName]'s baked-lightmap twin.
 String lightmapEntryName(String entryName) => '${entryName}Lightmap';
 
+/// Compiles parallax occlusion into a material's shaded entries (see
+/// `shaders/parallax.glsl`), declaring the engine's `ParallaxInfo` block.
+const String kParallaxOcclusionDefine = 'FLUTTER_SCENE_PARALLAX_OCCLUSION';
+
+/// The bundle entry name of [entryName]'s parallax occlusion twin.
+String parallaxEntryName(String entryName) => '${entryName}Parallax';
+
 /// Whether the material described by sidecar [metadata] samples the
 /// environment, and so ships a [radianceCubeEntryName] twin.
 bool sidecarSamplesEnvironment(Map<String, Object?> metadata) =>
@@ -450,6 +457,11 @@ String emitFragmentGlsl(
     sb.writeln('#include <texture.glsl>');
   }
   sb.writeln('#include <normals.glsl>');
+  // The parallax helpers, for the entries built with parallax occlusion. A
+  // material that calls them itself includes parallax.glsl in its source.
+  sb.writeln('#ifdef $kParallaxOcclusionDefine');
+  sb.writeln('#include <parallax.glsl>');
+  sb.writeln('#endif');
   sb.writeln('#include <material_inputs.glsl>');
   sb.writeln('#include <material_debug.glsl>');
   // Only the color entry writes coverage. A depth surface cuts with discard

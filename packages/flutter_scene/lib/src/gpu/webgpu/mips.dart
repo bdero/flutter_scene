@@ -52,7 +52,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let len = length(n);
     n = select(vec3f(0.0, 0.0, 1.0), n / len, len > 1e-6);
     rgb = n * 0.5 + 0.5;
-    alpha = 1.0;
+    // Alpha averages as data: a parallax height field rides it.
   } else {
     rgb = (a.rgb + b.rgb + c.rgb + d.rgb) * 0.25;
   }

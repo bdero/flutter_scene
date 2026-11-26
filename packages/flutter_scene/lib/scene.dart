@@ -94,6 +94,7 @@ export 'src/material/hdr_decoder.dart'
 export 'src/material/material.dart' show Material;
 export 'src/material/material_group.dart' show MaterialGroup;
 export 'src/material/material_parameters.dart' show MaterialParameters;
+export 'src/material/parallax_silhouette.dart' show ParallaxSilhouette;
 export 'src/material/physically_based_material.dart'
     show AlphaMode, PhysicallyBasedMaterial, TextureTransform;
 export 'src/material/preprocessed_material.dart' show PreprocessedMaterial;

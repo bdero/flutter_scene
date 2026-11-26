@@ -429,6 +429,61 @@ MeshGeometry _lightmapQuad() => MeshGeometry.fromArrays(
   indices: <int>[0, 1, 2, 0, 2, 3],
 );
 
+/// A brick wall for the parallax scenes, an sRGB color texture and a normal
+/// texture whose alpha carries the height field (1 on the brick faces, 0 in
+/// the mortar, a short bevel between). The normals follow the height so the
+/// two agree wherever the march lands.
+({Texture2D color, Texture2D normalHeight}) _brickTextures() {
+  const size = 256;
+  const columns = 4, rows = 8;
+  const pitchX = size / columns, pitchY = size / rows;
+  const mortar = 6.0, bevel = 4.0;
+  final height = Float64List(size * size);
+  for (var y = 0; y < size; y++) {
+    final row = (y / pitchY).floor();
+    final shift = row.isOdd ? pitchX / 2 : 0.0;
+    for (var x = 0; x < size; x++) {
+      // Distance to the nearest mortar line on each axis, each brick beveled
+      // down into the mortar over `bevel` texels.
+      final fx = (x + shift) % pitchX;
+      final fy = y % pitchY;
+      final dx = math.min(fx, pitchX - fx) - mortar / 2;
+      final dy = math.min(fy, pitchY - fy) - mortar / 2;
+      height[y * size + x] = (math.min(dx, dy) / bevel).clamp(0.0, 1.0);
+    }
+  }
+  double h(int x, int y) => height[(y & (size - 1)) * size + (x & (size - 1))];
+  final color = Uint8List(size * size * 4);
+  final normal = Uint8List(size * size * 4);
+  for (var y = 0; y < size; y++) {
+    for (var x = 0; x < size; x++) {
+      final i = (y * size + x) * 4;
+      final t = h(x, y);
+      color[i] = (200 + (185 - 200) * t).round();
+      color[i + 1] = (195 + (72 - 195) * t).round();
+      color[i + 2] = (185 + (52 - 185) * t).round();
+      color[i + 3] = 255;
+      // Tangent-space normal with +Y up the image (v grows down).
+      final gx = (h(x + 1, y) - h(x - 1, y)) * 1.5;
+      final gy = (h(x, y - 1) - h(x, y + 1)) * 1.5;
+      final n = vm.Vector3(-gx, -gy, 1.0)..normalize();
+      normal[i] = (n.x * 127.5 + 127.5).round();
+      normal[i + 1] = (n.y * 127.5 + 127.5).round();
+      normal[i + 2] = (n.z * 127.5 + 127.5).round();
+      normal[i + 3] = (t * 255).round();
+    }
+  }
+  return (
+    color: Texture2D.fromPixels(color, size, size),
+    normalHeight: Texture2D.fromPixels(
+      normal,
+      size,
+      size,
+      content: TextureContent.normal,
+    ),
+  );
+}
+
 /// Lightmaps sample raw linear radiance, so no mip chain (which would average
 /// an RGBM alpha into nonsense) and no wrap at the edges.
 const TextureSampling _lightmapSampling = TextureSampling(
@@ -3343,6 +3398,96 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadSmokeMaterials),
+  // Parallax occlusion on three brick planes at a grazing angle. Left, the
+  // standard shader with self-shadowing: the mortar lines shift with the view,
+  // the bricks hide the mortar behind their near edges, and the low sun
+  // darkens the mortar on the bricks' far side. Middle, the same textures with
+  // parallax off, a flat print. Right, the physical shader (a clearcoat puts it
+  // there) with the same relief. The planes carry no tangents, so every march
+  // runs on the derivative frame.
+  SmokeScene('parallax_occlusion', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.55, -0.45, -0.7),
+        DirectionalLight(intensity: 2.5),
+      ),
+    );
+    final bricks = _brickTextures();
+    PhysicallyBasedMaterial material(double parallaxScale) =>
+        PhysicallyBasedMaterial(
+            baseColorTexture: bricks.color,
+            normalTexture: bricks.normalHeight,
+          )
+          ..metallicFactor = 0.0
+          ..roughnessFactor = 0.75
+          ..vertexColorWeight = 0.0
+          ..parallaxScale = parallaxScale;
+    void plane(double x, PhysicallyBasedMaterial material) {
+      scene.add(
+        Node(mesh: Mesh(PlaneGeometry(width: 1.0, depth: 1.4), material))
+          ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0, 0)),
+      );
+    }
+
+    // World x runs right on screen from a camera on +z.
+    plane(-1.1, material(0.04)..parallaxShadowStrength = 1.0);
+    plane(0.0, material(0.0));
+    plane(1.1, material(0.04)..clearcoat = 0.5);
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 1.1, 2.9),
+        target: vm.Vector3(0, -0.1, 0),
+      ),
+    );
+  }, preload: () => Scene.preload(parallaxOcclusion: true)),
+  // Silhouette parallax on a brick box over a ground plane. Every face maps
+  // the unit UV square, so the bound is the unit box: the box's outline
+  // follows the mortar where a ray would leave a face before reaching the
+  // recessed field, and its shadow on the ground is cut the same way.
+  SmokeScene('parallax_silhouette', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.7, -1.0, 0.45),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.0, depth: 3.0),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.75, 0.75, 0.75, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      ),
+    );
+    final bricks = _brickTextures();
+    scene.add(
+      Node(
+          mesh: Mesh(
+            CuboidGeometry(vm.Vector3(1, 1, 1)),
+            PhysicallyBasedMaterial(
+                baseColorTexture: bricks.color,
+                normalTexture: bricks.normalHeight,
+              )
+              ..metallicFactor = 0.0
+              ..roughnessFactor = 0.75
+              ..vertexColorWeight = 0.0
+              ..parallaxScale = 0.08
+              ..parallaxSilhouette = ParallaxSilhouette.unit,
+          ),
+        )
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0, 0.55, 0)) *
+            vm.Matrix4.rotationY(0.6),
+    );
+    return (scene: scene, camera: _shadowCamera());
+  }, preload: () => Scene.preload(parallaxOcclusion: true)),
 ];
 
 /// A near red square in front of a far green wall, for the anti-aliasing

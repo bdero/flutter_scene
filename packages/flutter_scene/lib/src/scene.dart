@@ -52,6 +52,11 @@ import 'material/physical_material_variant.dart'
         initializePhysicalMaterialResources,
         physicalMaterialResourcesLoad,
         physicalMaterialResourcesPending;
+import 'material/parallax_shaders.dart'
+    show
+        initializeParallaxShaderLibrary,
+        parallaxShaderLibraryLoad,
+        parallaxShaderLibraryPending;
 import 'material/shader_interface.dart'
     show stageInterfacesLoad, stageInterfacesPending;
 import 'memory_pressure.dart';
@@ -355,8 +360,10 @@ base class Scene implements SceneGraph {
   ///
   /// [physicalMaterials] loads the shaders behind [PhysicallyBasedMaterial]'s
   /// extensions (clearcoat, sheen, transmission, and the rest) and
-  /// [ShadowCatcherMaterial]. [smaa] loads the tables [AntiAliasingMode.smaa]
-  /// needs. Without this, a scene holds its last frame while one of its
+  /// [ShadowCatcherMaterial]. [parallaxOcclusion] loads the shaders behind
+  /// [PhysicallyBasedMaterial.parallaxScale], which load only when asked for
+  /// since few scenes use them. [smaa] loads the tables
+  /// [AntiAliasingMode.smaa] needs. Without this, a scene holds its last frame while one of its
   /// materials waits for those shaders, and renders without SMAA until the
   /// tables arrive. Await it before a one-shot render or capture that uses
   /// either. It also waits for the shader reflection a [ShaderMaterial]
@@ -368,11 +375,13 @@ base class Scene implements SceneGraph {
   /// {@category Assets and loading}
   static Future<void> preload({
     bool physicalMaterials = true,
+    bool parallaxOcclusion = false,
     bool smaa = false,
   }) async {
     await Future.wait([
       initializeStaticResources(),
       if (physicalMaterials) initializePhysicalMaterialResources(),
+      if (parallaxOcclusion) initializeParallaxShaderLibrary(),
       if (smaa) SmaaPass.initializeStaticResources(),
       ?stageInterfacesLoad,
     ]);
@@ -395,10 +404,10 @@ base class Scene implements SceneGraph {
   static bool _awaitsDeferredResources(Material material) =>
       material.awaitsDeferredResources;
 
-  // Whether one of this scene's materials is waiting on the physical bundle.
-  // Only walks the materials while a load is in flight.
+  // Whether one of this scene's materials is waiting on the physical or
+  // parallax bundle. Only walks the materials while a load is in flight.
   bool get _awaitingPhysicalResources =>
-      physicalMaterialResourcesPending &&
+      (physicalMaterialResourcesPending || parallaxShaderLibraryPending) &&
       renderScene.anyMaterial(_awaitsDeferredResources);
 
   // Whether one of this scene's materials is waiting on the shader reflection
@@ -417,6 +426,9 @@ base class Scene implements SceneGraph {
     final physical = _awaitingPhysicalResources
         ? physicalMaterialResourcesLoad
         : null;
+    final parallax = _awaitingPhysicalResources
+        ? parallaxShaderLibraryLoad
+        : null;
     final interfaces = _awaitingStageInterfaces ? stageInterfacesLoad : null;
     final wantsSmaa =
         effectiveAntiAliasingMode == AntiAliasingMode.smaa ||
@@ -428,7 +440,7 @@ base class Scene implements SceneGraph {
               AntiAliasingMode.smaa,
         );
     final smaa = wantsSmaa ? SmaaPass.request() : null;
-    await Future.wait([?physical, ?interfaces, ?smaa]);
+    await Future.wait([?physical, ?parallax, ?interfaces, ?smaa]);
   }
 
   /// Computes the linear exposure multiplier for a physical pinhole
@@ -2628,6 +2640,7 @@ base class Scene implements SceneGraph {
     // which can give a material a feature that needs them.
     if (_awaitingPhysicalResources || _awaitingStageInterfaces) {
       _repaintWhenLoaded(physicalMaterialResourcesLoad);
+      _repaintWhenLoaded(parallaxShaderLibraryLoad);
       _repaintWhenLoaded(stageInterfacesLoad);
       if (canvas != null) {
         _presentHeldFrame(views, canvas, drawArea);
@@ -3134,6 +3147,7 @@ base class Scene implements SceneGraph {
 
     if (_awaitingPhysicalResources || _awaitingStageInterfaces) {
       _repaintWhenLoaded(physicalMaterialResourcesLoad);
+      _repaintWhenLoaded(parallaxShaderLibraryLoad);
       _repaintWhenLoaded(stageInterfacesLoad);
       renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
       rendererSubmissions.endFrame();

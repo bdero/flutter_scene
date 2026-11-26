@@ -599,6 +599,10 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     shadow = min(shadow, ssao_sample.g);
   }
 #endif
+#ifdef FLUTTER_SCENE_PARALLAX_OCCLUSION
+  // Parallax self-shadowing, the relief's own occlusion of the sun.
+  shadow = min(shadow, material.parallax_sun_visibility);
+#endif
   float sun_visibility = facing * shadow;
 
   vec3 camera_normal = GetViewDirection();

@@ -5,6 +5,8 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/material/material.dart' as material_internal;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/material/parallax_shaders.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -34,6 +36,77 @@ void main() {
     expect(material.anisotropy, 0.5);
     expect(material.iridescence, 0.4);
     expect(material.isOpaque(), isTrue);
+  });
+
+  test('parallax occlusion is off by default and clamps its controls', () {
+    final material = PhysicallyBasedMaterial();
+    expect(material.parallaxScale, 0.0);
+    expect(material.parallaxMaxSteps, 32);
+    expect(material.parallaxShadowStrength, 0.0);
+    expect(material.parallaxSilhouette, isNull);
+
+    material
+      ..parallaxScale = -1.0
+      ..parallaxMaxSteps = 1
+      ..parallaxShadowStrength = 3.0;
+    expect(material.parallaxScale, 0.0);
+    expect(material.parallaxMaxSteps, 4);
+    expect(material.parallaxShadowStrength, 1.0);
+    material.parallaxMaxSteps = 200;
+    expect(material.parallaxMaxSteps, 64);
+  });
+
+  test('only the 0 and nonzero edge of parallaxScale switches variants', () {
+    final material = PhysicallyBasedMaterial(
+      normalTexture: _FakeTextureSource(),
+    );
+    final bit = PhysicallyBasedMaterial.parallaxVariantBit;
+    expect(material.variantKey & bit, 0);
+    material.parallaxScale = 0.05;
+    expect(material.variantKey & bit, bit);
+    material.parallaxScale = 0.08;
+    expect(material.variantKey & bit, bit);
+    material.parallaxScale = 0.0;
+    expect(material.variantKey & bit, 0);
+
+    // The height rides the normal texture, so without one there is none.
+    final flat = PhysicallyBasedMaterial()..parallaxScale = 0.05;
+    expect(flat.variantKey & bit, 0);
+
+    // Parallax picks its own entries without the physical path.
+    material.parallaxScale = 0.05;
+    expect(material.hasPhysicalConfiguration, isFalse);
+    expect(material.isOpaque(), isTrue);
+  });
+
+  test('a silhouette takes over the alpha mask once parallax draws', () {
+    addTearDown(resetParallaxShaderLibraryForTesting);
+    final material = PhysicallyBasedMaterial(
+      normalTexture: _FakeTextureSource(),
+    )..alphaMode = AlphaMode.mask;
+    expect(material.depthAlphaMasked, isTrue);
+    material
+      ..parallaxScale = 0.05
+      ..parallaxSilhouette = ParallaxSilhouette.unit;
+    // Still loading: the material waits and keeps the plain mask.
+    debugParallaxShaderLibraryReadyOverride = false;
+    expect(material.awaitsDeferredResources, isTrue);
+    expect(material.depthAlphaMasked, isTrue);
+    // Loaded: its silhouette depth shaders apply the mask too.
+    debugParallaxShaderLibraryReadyOverride = true;
+    expect(material.awaitsDeferredResources, isFalse);
+    expect(material.depthAlphaMasked, isFalse);
+  });
+
+  test('ParallaxSilhouette compares by value', () {
+    expect(
+      ParallaxSilhouette.bounds(Vector2.zero(), Vector2.all(1)),
+      ParallaxSilhouette.unit,
+    );
+    final tiles = ParallaxSilhouette.tiles(Vector2.all(1 / 16));
+    expect(tiles.isTiled, isTrue);
+    expect(tiles.max, Vector2.all(1 / 16));
+    expect(tiles, isNot(ParallaxSilhouette.unit));
   });
 
   test('transmission updates opacity and cached render requirements', () {

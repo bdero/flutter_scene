@@ -2193,6 +2193,10 @@ class EditorController extends ChangeNotifier {
         ..roughnessFactor = from.roughnessFactor
         ..occlusionStrength = from.occlusionStrength
         ..normalScale = from.normalScale
+        ..parallaxScale = from.parallaxScale
+        ..parallaxMaxSteps = from.parallaxMaxSteps
+        ..parallaxShadowStrength = from.parallaxShadowStrength
+        ..parallaxSilhouette = from.parallaxSilhouette
         ..doubleSided = from.doubleSided
         ..alphaMode = from.alphaMode
         ..alphaCutoff = from.alphaCutoff
