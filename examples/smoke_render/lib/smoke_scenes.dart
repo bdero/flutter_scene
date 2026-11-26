@@ -1333,12 +1333,14 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         ..baseColorFactor = vm.Vector4(0.1, 0.1, 0.1, 1.0)
         ..emissiveFactor = vm.Vector4(40, 16, 3, 1);
       final slat = CuboidGeometry(vm.Vector3(0.022, 6, 0.022));
-      for (var i = -16; i <= 16; i++) {
+      // Few enough that their sub-pixel edges, which rasterize differently
+      // across GPU stacks, stay inside the parity tolerance.
+      for (var i = -8; i <= 8; i++) {
         scene.add(
           Node(
             mesh: Mesh(slat, hot),
             localTransform: vm.Matrix4.translation(
-              vm.Vector3(i * 0.13, 0, -1.2),
+              vm.Vector3(i * 0.26, 0, -1.2),
             ),
           ),
         );
