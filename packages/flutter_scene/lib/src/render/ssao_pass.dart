@@ -36,6 +36,13 @@ const String _kSsaoDepthBlackboardKey = 'ssao_depth';
 // TODO(ssao-format): use R8 once it is renderable on Impeller GLES.
 const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8g8b8a8UNormInt;
 
+// Whether the final occlusion texture packs each texel's view depth into
+// its ba channels, which the lit material uses to upsample it against its
+// own depth. The bent normal and indirect-light layouts use those channels.
+bool _ambientOcclusionPacksDepth(AmbientOcclusionSettings settings) =>
+    !ambientOcclusionCarriesBentNormals(settings) &&
+    !ambientOcclusionCarriesIndirectLight(settings);
+
 /// The render size of the ambient-occlusion chain for a full-resolution
 /// target of [dimensions], halved (floored, minimum 1) when
 /// [AmbientOcclusionSettings.halfResolution] is set.
@@ -473,6 +480,7 @@ class SsaoBlurPass extends RenderGraphPass {
         ..[4] = axisX
         ..[5] = axisY
         ..[6] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0
+        ..[7] = _ambientOcclusionPacksDepth(_settings) ? 1.0 : 0.0
         ..[8] = _orthographic ? 1.0 : 0.0;
       renderPass.bindUniform(
         _fragmentShader.cachedUniformSlot('BlurInfo'),

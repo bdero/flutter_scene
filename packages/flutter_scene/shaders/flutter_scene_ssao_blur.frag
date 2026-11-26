@@ -11,6 +11,8 @@
 // relative to depth, so the filter behaves the same at any distance and
 // resolution.
 
+#include <ssao_depth_pack.glsl>
+
 uniform sampler2D ao_texture;
 uniform sampler2D linear_depth;
 
@@ -19,7 +21,8 @@ uniform BlurInfo {
   // depth tolerance (world units). w: 1 on the final pass, otherwise 0.
   vec4 texel;
   // xy: filter axis. z: 1 when ba carries an octahedrally packed bent normal
-  // that must be renormalized after filtering. w: unused.
+  // that must be renormalized after filtering. w: 1 when the final pass packs
+  // the depth into ba for the material's upsample.
   vec4 axis;
   // x: 1 for an orthographic camera. yzw: unused.
   vec4 params;
@@ -96,6 +99,9 @@ void main() {
       // Filtering octahedral coordinates off-lattice skews the direction
       // slightly; a decode/encode round trip snaps it back to unit length.
       result.ba = OctEncode(OctDecode(result.ba));
+    }
+    if (blur.axis.w > 0.5) {
+      result.ba = PackOcclusionDepth(center_depth);
     }
   }
   result.r = clamp(result.r, 0.0, 1.0);
