@@ -1,12 +1,22 @@
 part of '_gpu.dart';
 
-// The web shim's API as backend-neutral interfaces. The members are exactly
-// what flutter_scene calls (the stub's surface), so a backend is complete when
-// these are.
+// The web shim's API as backend-neutral interfaces, and the switch that picks
+// which backend implements them. The members are exactly what flutter_scene
+// calls (the stub's surface), so a backend is complete when these are.
+
+/// Builds against the WebGPU backend instead of WebGL2.
+///
+/// Const, so the backend left out is tree-shaken. A conditional import cannot
+/// make this choice: the web compilers ignore environment tests in import
+/// conditions.
+// TODO(webgpu-runtime-selection): add the `auto` probe that picks WebGPU at
+// startup when the device supports it, falling back to WebGL2.
+const bool useWebGpuBackend = bool.fromEnvironment('flutter_scene.webgpu');
 
 /// Everything a web backend provides beyond its resource classes.
 abstract base class WebBackend {
-  /// Readies the backend. Must complete before [context] is read.
+  /// Readies the backend; WebGPU acquires its device here. Must complete
+  /// before [context] is read.
   Future<void> initialize();
 
   GpuContext get context;
@@ -47,9 +57,17 @@ abstract base class WebBackend {
   });
 
   Surface createSurface({required int width, required int height});
+
+  /// See the top-level [isPipelineReady]. True by default, for a backend that
+  /// cannot tell.
+  // TODO(webgpu-async-pipelines): report createRenderPipelineAsync's
+  // completion once the WebGPU backend builds pipelines with it.
+  bool isPipelineReady(RenderPipeline pipeline) => true;
 }
 
-final WebBackend _backend = createWebGlBackend();
+final WebBackend _backend = useWebGpuBackend
+    ? createWebGpuBackend()
+    : createWebGlBackend();
 
 /// Readies the selected backend. `Scene.initializeStaticResources` awaits it
 /// before anything touches [gpuContext].
@@ -61,6 +79,33 @@ GpuContext get gpuContext => _backend.context;
 /// The active backend's host integration.
 GpuHost get gpuHost => _backend.host;
 
+/// Whether the active context creates 2D-array textures.
+bool get supportsTextureArrays => gpuContext.doesSupportTextureArrays;
+
+/// A [width] x [height] 2D-array texture of [layerCount] layers.
+Texture createTexture2DArray(
+  StorageMode storageMode,
+  int width,
+  int height,
+  int layerCount, {
+  PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+}) => gpuContext.createTexture(
+  storageMode,
+  width,
+  height,
+  format: format,
+  textureType: TextureType.texture2DArray,
+  enableRenderTargetUsage: false,
+  layerCount: layerCount,
+);
+
+/// Whether [texture] is a 2D-array texture.
+bool isTexture2DArray(Texture texture) =>
+    texture.textureType == TextureType.texture2DArray;
+
+/// The layers of a 2D-array [texture], or 1 for every other kind.
+int textureLayerCount(Texture texture) => texture.layerCount;
+
 abstract base class GpuContext {
   PixelFormat get defaultColorFormat;
   PixelFormat get defaultStencilFormat;
@@ -69,6 +114,7 @@ abstract base class GpuContext {
   bool get doesSupportOffscreenMSAA;
   bool get doesSupportFramebufferRenderMipmap;
   bool get doesSupportManuallyMippedTextures;
+  bool get doesSupportTextureArrays;
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes);
   DeviceBuffer createDeviceBufferWithCopy(ByteData data);
   HostBuffer createHostBuffer({
@@ -85,8 +131,16 @@ abstract base class GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   });
   bool supportsTextureCompression(TextureCompressionFamily family);
+
+  /// Creates a surface whose presented frames Flutter draws as a `ui.Image`.
+  GpuImageSurface createImageSurface(
+    int width,
+    int height, {
+    PixelFormat? format,
+  }) => GpuImageSurface._(this, width, height, format ?? defaultColorFormat);
   CommandBuffer createCommandBuffer();
   RenderPipeline createRenderPipeline(
     Shader vertexShader,
@@ -135,7 +189,13 @@ abstract base class Texture {
   bool get enableShaderReadUsage;
   bool get enableShaderWriteUsage;
   int get mipLevelCount;
+
+  /// The layers of a [TextureType.texture2DArray]; 1 for every other type.
+  int get layerCount;
   bool get isValid;
+
+  /// The slices [overwrite] addresses: 6 cube faces or the layers of an
+  /// array.
   int get sliceCount;
   int get bytesPerTexel;
   int getMipLevelSizeInBytes(int mipLevel);
@@ -250,6 +310,39 @@ abstract base class GpuHost {
 
   /// Presents [texture] through the backend's own offscreen canvas path.
   Future<ui.Image> present(Texture texture, {bool transferOwnership = false});
+
+  /// Frees [texture]'s GPU memory now instead of when it is collected.
+  ///
+  /// [texture] must not be used again. Work already submitted is unaffected.
+  void releaseTexture(Texture texture);
+
+  /// Frees [buffer]'s GPU memory now instead of when it is collected.
+  ///
+  /// [buffer] must not be used again. Work already submitted is unaffected.
+  void releaseBuffer(DeviceBuffer buffer);
+
+  /// The platform graphics context behind this backend (the
+  /// `WebGL2RenderingContext` on WebGL2), for a runtime that must bind it.
+  Object? get nativeGraphicsContext;
+
+  /// A snapshot of [texture] as a platform image another graphics context can
+  /// consume (an `ImageBitmap` on the web), or null where the backend has no
+  /// such object.
+  Object? textureToPlatformImage(Texture texture);
+
+  /// Shows [texture] on [canvas], an `HTMLCanvasElement` outside Flutter's
+  /// own canvas, upright and at the texture's size.
+  void presentToCanvas(Texture texture, Object canvas);
+
+  /// Wraps a platform color target this backend can draw into but did not
+  /// allocate. See [GpuCapabilities.externalColorTargets].
+  Texture wrapExternalColorTarget(
+    Object handle, {
+    required int width,
+    required int height,
+    required ExternalTargetHandleKind kind,
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  });
 }
 
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) =>
@@ -308,3 +401,9 @@ bool writeGeometryData(
   source,
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
+
+/// Whether [pipeline] is built, so its first draw will not wait on a shader
+/// compile. On WebGL2 with `KHR_parallel_shader_compile` this polls the
+/// program's link; elsewhere it is always true.
+bool isPipelineReady(RenderPipeline pipeline) =>
+    _backend.isPipelineReady(pipeline);

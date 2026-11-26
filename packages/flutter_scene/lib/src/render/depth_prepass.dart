@@ -18,7 +18,8 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart'
     show Geometry, bindUnskinnedFrameInfo;
-import 'package:flutter_scene/src/material/material.dart' show Material;
+import 'package:flutter_scene/src/material/material.dart'
+    show Material, samplerOrPlaceholder;
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
@@ -67,9 +68,11 @@ class DepthPrepass extends RenderGraphPass {
     Vector3? cameraRight,
     Vector3? cameraUp,
     List<Plane> cullingPlanes = const [],
+    Frustum? cullingFrustum,
     Matrix4? cameraTransform,
     bool primaryView = false,
   }) : _primaryView = primaryView,
+       _cullingFrustum = cullingFrustum,
        _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -85,6 +88,7 @@ class DepthPrepass extends RenderGraphPass {
 
   final Matrix4? _cameraTransform;
   final bool _primaryView;
+  final Frustum? _cullingFrustum;
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -120,14 +124,14 @@ class DepthPrepass extends RenderGraphPass {
     // fp32 (not fp16): the occlusion pass reconstructs view-space positions
     // and normals from this depth, and fp16's ~11-bit mantissa quantizes it
     // into visibly banded steps (the same reason the shadow map is fp32).
-    // Only the red channel is used.
-    // TODO(flutter_scene): use a single-channel r32Float once Flutter GPU
-    // exposes it, to drop the three unused channels' bandwidth.
+    // Depth alone fills the red channel; the normals take the other three.
     final linearDepth = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: width,
         height: height,
-        format: gpu.PixelFormat.r32g32b32a32Float,
+        format: _writeNormals
+            ? gpu.PixelFormat.r32g32b32a32Float
+            : gpu.PixelFormat.r32Float,
         debugName: 'linear_depth',
         // The kept and transient depth attachments below are different
         // textures, so the color target gets a ring per setup.
@@ -175,7 +179,7 @@ class DepthPrepass extends RenderGraphPass {
       renderPass,
       context.transientsBuffer,
       _cameraTransform ?? rasterViewTransformOf(_camera, _dimensions),
-      cullingFrustumOf(_camera, _dimensions),
+      _cullingFrustum ?? cullingFrustumOf(_camera, _dimensions),
       depthRasterOf(_camera),
       _camera.position,
       _cameraForward,
@@ -234,12 +238,14 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
     required Vector3 cameraForward,
     int layerMask = kRenderLayerAll,
     List<Plane> cullingPlanes = const [],
+    Frustum? cullingFrustum,
     bool primaryView = false,
   }) : _camera = camera,
        _renderScene = renderScene,
        _cameraForward = cameraForward,
        _layerMask = layerMask,
        _cullingPlanes = cullingPlanes,
+       _cullingFrustum = cullingFrustum,
        _primaryView = primaryView;
 
   final Camera _camera;
@@ -247,6 +253,7 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
   final Vector3 _cameraForward;
   final int _layerMask;
   final List<Plane> _cullingPlanes;
+  final Frustum? _cullingFrustum;
   // Whether this is a screen view, for mesh draw selectors, so the patch
   // draws what the color pass drew.
   final bool _primaryView;
@@ -273,7 +280,7 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
       linearDepth.width.toDouble(),
       linearDepth.height.toDouble(),
     );
-    final frustum = cullingFrustumOf(_camera, dimensions);
+    final frustum = _cullingFrustum ?? cullingFrustumOf(_camera, dimensions);
     final records = <RenderItem>[];
     _renderScene.cull(frustum, (item) {
       if (!item.drawsColor) return;
@@ -539,8 +546,9 @@ class _DepthPrepassEncoder {
     // its FrameInfo and MaterialParams against it below. This pass binds the
     // real camera transform and position, so a camera-relative displacement is
     // correct here.
-    final materialVertex = item.material.materialVertexShader(
-      depthVertex != null ? 'depth' : geometry.materialVertexVariant,
+    final materialVertex = item.material.vertexShaderForGeometry(
+      geometry,
+      depth: depthVertex != null,
     );
     final activeVertex =
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
@@ -603,12 +611,15 @@ class _DepthPrepassEncoder {
             .toDouble();
       // A surface fragment takes its roughness from Surface() instead.
       if (surfaceShader == null) {
+        final roughness = item.material.reflectionRoughnessTexture;
         _renderPass.bindTexture(
           fragmentShader.cachedUniformSlot('metallic_roughness_texture'),
-          Material.whitePlaceholder(item.material.reflectionRoughnessTexture),
-          sampler:
-              item.material.reflectionRoughnessTextureSampler ??
-              _roughnessSampler,
+          Material.whitePlaceholder(roughness),
+          sampler: samplerOrPlaceholder(
+            roughness,
+            item.material.reflectionRoughnessTextureSampler ??
+                _roughnessSampler,
+          ),
         );
       }
     }

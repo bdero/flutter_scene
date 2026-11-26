@@ -341,7 +341,7 @@ void main() {
         final doc = parseGltfJson(container.json);
         final document = importGlbToSceneDocument(bytes);
 
-        final unions = bakeSkinnedPoseUnionAabbs(doc, container.binaryChunk);
+        final unions = bakeSkinnedNodeBounds(doc, container.binaryChunk);
         expect(unions, isNotEmpty, reason: '$name has skinned nodes');
 
         // Geometries are emitted in mesh/primitive walk order; map each

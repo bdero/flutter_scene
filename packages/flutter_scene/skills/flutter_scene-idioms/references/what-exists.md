@@ -162,7 +162,7 @@ Every primitive except `PlaneGeometry` has a `Shape get collisionShape`.
 - `RibbonGeometry(path, {width = 1.0, stations = 64, alignment = RibbonAlignment.ground, up, storage = fixed})`; `updatePath(path)`. `RibbonAlignment` = `ground` | `path`.
 - `TubeGeometry(path, {radius = 0.5, radialSegments = 12, stations = 64, caps = true, storage})`.
 - `ExtrudeGeometry(path, {required List<Vector2> profile, stations = 64, caps = true, storage})`.
-- `PolylineGeometry(List<Vector3> points, {width = 8.0, widthMode = screenPixels, cap = butt, dash, perVertexWidth, perVertexColor})`. INERT until `updateForCamera(camera, viewportSize)` is called every frame. `PolylineWidthMode` = `screenPixels` | `worldUnits`; `PolylineCap` = `butt` | `round`; `DashPattern({dashLength, gapLength, cap})`.
+- `PolylineGeometry(List<Vector3> points, {width = 8.0, widthMode = screenPixels, cap = butt, dash, perVertexWidth, perVertexColor})`. `extends Geometry`, GPU-expanded for whichever camera renders it, so there is no per-frame call (`updateForCamera` is deprecated and does nothing). `PolylineWidthMode` = `screenPixels` | `worldUnits`; `PolylineCap` = `butt` | `round`; `DashPattern({dashLength, gapLength, cap})`.
 - `LineSegmentsGeometry(LineSegmentData segments, {width = 0.01, normalOffset = 0.0})`. `extends Geometry`, GPU-expanded, no per-frame CPU work. For large independent-segment sets.
 - `BillboardGeometry({capacity = 256})`. `floatsPerInstance = 14`; `BillboardFacing` = `spherical` | `axisLocked` | `velocityStretched`.
 
@@ -237,7 +237,10 @@ translucent surface blends over which.
 
 `UnlitMaterial({TextureSource? colorTexture})`. `baseColorTexture` (field name differs from the ctor
 arg), `baseColorTextureTransform`, `baseColorTextureTexCoord` (0), `alphaMode` (`opaque`; `mask` not
-implemented, behaves as blend), `baseColorFactor` (white), `vertexColorWeight` (1.0). Fog applies.
+implemented, behaves as blend), `baseColorFactor` (linear, white; `setBaseColor(Color)` decodes a
+Flutter color), `vertexColorWeight` (1.0), `displayReferred` (false; true composites the surface past
+exposure, tone mapping, fog and bloom so its colors reach the screen unchanged). Fog applies unless
+display-referred.
 
 ### PhysicallyBasedMaterial
 
@@ -378,7 +381,7 @@ rayleighCoefficient = 2.0, mieCoefficient = 0.005, turbidity = 10.0, energy = 1.
 `Scene.exposure` (1.0; not 2.0), `Scene.toneMapping` (`ToneMappingMode.pbrNeutral`; also `aces`,
 `reinhard`, `linear`, `agx`), `Scene.agxWhite` (16.29), `Scene.agxContrast` (1.25). Static
 `Scene.physicalCameraExposure({required aperture, shutterSpeed, iso})` returns a multiplier to assign
-to `exposure`.
+to `exposure`. `ToneMappingMode.linear` at exposure 1.0 is identity, so unlit colors match widgets.
 
 ---
 
@@ -451,8 +454,9 @@ antiAliasingMode, double? renderScale, FilterQuality? filterQuality, List<Plane>
 
 Widgets:
 - `SceneView(Scene scene, {Camera? camera, SceneCameraBuilder? cameraBuilder, SceneViewsBuilder?
-  viewsBuilder, autoTick = true, pixelRatio, onTick, loading, loadingBuilder, revealMinDuration,
-  warmUp = false, children})`. App-owned scene; does not write scene properties. `camera`,
+  viewsBuilder, autoTick = true, pixelRatio, onTick, loading, loadingBuilder, errorBuilder,
+  revealMinDuration, warmUp = false, children})`. `errorBuilder(context, error, retry)` replaces the
+  loading widget when the engine's static resources fail to load; `retry()` loads them again. App-owned scene; does not write scene properties. `camera`,
   `cameraBuilder`, `viewsBuilder` are mutually exclusive.
 - `SceneView.declarative({environment, environmentIntensity = 1.0, exposure = 1.0, toneMapping =
   pbrNeutral, camera, cameraBuilder, viewsBuilder, children, ...})`. View-owned scene.
@@ -500,7 +504,10 @@ Two model-loading paths, do not conflate:
   `loadSceneSubtree`, `releaseScene`, `clearSceneTemplateCache`.
 - Runtime glTF (no hook, parses every load): `Node.fromGlbAsset(assetPath)`,
   `Node.fromGlbBytes(bytes)`, `Node.fromGltfBytes(gltfJson, {required resolveUri})`. Each synthesizes
-  a root node.
+  a root node. A GLB whose images sit beside it by relative URI needs `resolveUri` too, or they bind a
+  white placeholder. `resolveTexture: (uri, content) async => texture` hands back a finished
+  `Texture2D` instead, so one texture can be cached and shared across models; key the cache by
+  `(uri, content)`.
 
 Sibling loaders: `loadTexture` (`.fstex`), `loadFmatMaterial`/`loadFmatSky` (`.fmat`).
 

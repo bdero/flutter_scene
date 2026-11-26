@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show internal;
+import 'package:flutter_scene/src/generated_assets/generated_assets.dart'
+    show debugViewsEntrySuffix;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -9,13 +11,11 @@ import 'package:flutter_scene/src/render/uniform_slots.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
 /// Whether the engine's own shaders were built with the surface debug views
-/// (flutter_scene's `debug_views` hook user-define). Reads the loaded base
-/// shader library, so call it once the scene's static resources are ready.
+/// (flutter_scene's `debug_views` hook user-define), as twins of their entries
+/// drawn while a view is active. Reads the loaded base shader library, so call
+/// it once the scene's static resources are ready.
 bool engineDebugViewsCompiledIn() =>
-    baseShaderLibrary['StandardFragment']!
-        .cachedUniformSlot('DebugViewInfo')
-        .sizeInBytes !=
-    null;
+    baseShaderLibrary['StandardFragment$debugViewsEntrySuffix'] != null;
 
 /// Which family a [SurfaceDebugChannel] belongs to, for grouping a menu and
 /// for hiding a family a material does not carry.
@@ -553,6 +553,10 @@ class DebugViewFrame {
 
   /// Whether any draw this frame may show a view.
   bool get anyViewActive => sceneView.isActive || hasNodeOverrides;
+
+  /// Whether any draw this frame may show a view on either side of the
+  /// split, so materials draw with their shaders built with the views.
+  bool get drawsSurfaceViews => anyViewActive || (splitView?.isActive ?? false);
 
   /// The view an item with [nodeOverride] shows.
   DebugView effectiveView(DebugView? nodeOverride) => nodeOverride ?? sceneView;

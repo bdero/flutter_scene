@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
+import 'package:flutter_scene/src/importer/src/gltf/bounds_baker.dart';
 
 import '../node.dart';
 import '../skin.dart';
@@ -63,3 +64,24 @@ Skin buildSkin({
 
   return skin;
 }
+
+/// The pose bounds of each skinned node's triangle primitives, keyed by glTF
+/// node index, in the node's space (see [bakeSkinnedNodeBounds]).
+Map<int, List<Aabb3?>> skinnedPoseBounds(
+  GltfDocument doc,
+  Uint8List bufferData,
+) => {
+  for (final MapEntry(key: node, value: boxes) in bakeSkinnedNodeBounds(
+    doc,
+    bufferData,
+  ).entries)
+    node: [
+      for (final box in boxes)
+        box == null
+            ? null
+            : Aabb3.minMax(
+                Vector3(box.minX, box.minY, box.minZ),
+                Vector3(box.maxX, box.maxY, box.maxZ),
+              ),
+    ],
+};

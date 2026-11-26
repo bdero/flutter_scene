@@ -1,17 +1,18 @@
-import 'dart:math' as math;
+import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/color_conversion.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart'
     show AlphaMode, TextureTransform;
-
-import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/material/texture_transform_cache.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
+import 'package:vector_math/vector_math.dart';
 
 /// A material that draws geometry with a flat color or texture, ignoring
 /// scene lighting.
@@ -52,7 +53,16 @@ class UnlitMaterial extends Material {
   /// Texture-coordinate channel used by [baseColorTexture].
   int baseColorTextureTexCoord = 0;
 
-  static final Float32List _textureTransformScratch = Float32List(8);
+  static final Float32List _fragInfoScratch = Float32List(7);
+  static final ByteData _fragInfoBytes = ByteData.sublistView(_fragInfoScratch);
+
+  static final gpu.SamplerOptions _repeatSampler = gpu.SamplerOptions(
+    widthAddressMode: gpu.SamplerAddressMode.repeat,
+    heightAddressMode: gpu.SamplerAddressMode.repeat,
+  );
+
+  final TextureTransformCache _textureTransform =
+      TextureTransformCache.single();
 
   /// How the material's alpha is interpreted. [AlphaMode.opaque] ignores
   /// alpha; [AlphaMode.blend] routes the material through the depth-sorted
@@ -79,13 +89,24 @@ class UnlitMaterial extends Material {
   /// depth test against the scene but takes no exposure, grading, tone
   /// mapping, fog or bloom, and does not order against translucent geometry.
   ///
-  /// With this set, [baseColorFactor] multiplies in display space rather than
-  /// linear space.
+  /// [baseColorFactor] and vertex colors stay linear either way; with this
+  /// set they are encoded to display values before tinting the texture.
   @override
   bool displayReferred = false;
 
   /// Linear RGBA tint multiplied with [baseColorTexture].
+  ///
+  /// Flutter colors (and `vector_math`'s `Colors` constants) are sRGB, so
+  /// convert one with [setBaseColor] or [ColorToLinear.toLinearRgba] rather
+  /// than copying its channels.
   Vector4 baseColorFactor = Colors.white;
+
+  /// Sets [baseColorFactor] from a Flutter [Color], decoding it from sRGB.
+  ///
+  /// The surface then shows the color's widget value wherever the scene's
+  /// display transform is identity, which is always for a [displayReferred]
+  /// surface and under `ToneMappingMode.linear` at exposure 1 otherwise.
+  void setBaseColor(Color color) => baseColorFactor = color.toLinearRgba();
 
   /// How strongly per-vertex colors influence the final color. `0`
   /// disables vertex color contribution; `1` (the default) fully
@@ -100,38 +121,35 @@ class UnlitMaterial extends Material {
   ) {
     super.bind(pass, transientsBuffer, lighting);
 
-    var fragInfo = Float32List.fromList([
-      baseColorFactor.r, baseColorFactor.g,
-      baseColorFactor.b, baseColorFactor.a, // color
-      vertexColorWeight, // vertex_color_weight
-      lodFade, // fade
-      displayReferred ? 1.0 : 0.0, // display_referred
-    ]);
+    _fragInfoScratch
+      ..[0] = baseColorFactor.r
+      ..[1] = baseColorFactor.g
+      ..[2] = baseColorFactor.b
+      ..[3] = baseColorFactor.a
+      ..[4] = vertexColorWeight
+      ..[5] = lodFade
+      ..[6] = displayReferred ? 1.0 : 0.0;
     pass.bindUniform(
       fragmentShader.cachedUniformSlot("FragInfo"),
-      transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+      transientsBuffer.emplace(_fragInfoBytes),
     );
-    final transform = _textureTransformScratch
-      ..[0] = baseColorTextureTransform.offset.x
-      ..[1] = baseColorTextureTransform.offset.y
-      ..[2] = baseColorTextureTransform.scale.x
-      ..[3] = baseColorTextureTransform.scale.y
-      ..[4] = math.cos(baseColorTextureTransform.rotation)
-      ..[5] = math.sin(baseColorTextureTransform.rotation)
-      ..[6] = baseColorTextureTexCoord.clamp(0, 1).toDouble();
     pass.bindUniform(
       fragmentShader.cachedUniformSlot('TextureTransform'),
-      transientsBuffer.emplace(ByteData.sublistView(transform)),
+      transientsBuffer.emplace(
+        _textureTransform.packSingle(
+          baseColorTextureTransform,
+          baseColorTextureTexCoord,
+        ),
+      ),
     );
+    final resolved = resolveTextureSource(baseColorTexture);
     pass.bindTexture(
       fragmentShader.cachedUniformSlot('base_color_texture'),
-      Material.whitePlaceholder(resolveTextureSource(baseColorTexture)),
-      sampler:
-          textureSourceSampler(baseColorTexture) ??
-          gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat,
-          ),
+      Material.whitePlaceholder(resolved),
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(baseColorTexture) ?? _repeatSampler,
+      ),
     );
     // The unlit shader carries the FogInfo block (fog.glsl) too.
     EngineLightingUniforms.bindFog(

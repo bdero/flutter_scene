@@ -113,10 +113,20 @@ final class WebGlTexture extends Texture {
     this.enableRenderTargetUsage,
     this.enableShaderReadUsage,
     this.enableShaderWriteUsage,
-    this.mipLevelCount,
-  ) {
+    this.mipLevelCount, {
+    this.layerCount = 1,
+  }) {
     if (sampleCount != 1 && sampleCount != 4) {
       throw Exception('Only a sample count of 1 or 4 is currently supported');
+    }
+    if (layerCount < 1 ||
+        (layerCount > 1 && textureType != TextureType.texture2DArray)) {
+      throw ArgumentError(
+        'layerCount ($layerCount) must be 1 for textures of type $textureType',
+      );
+    }
+    if (_isArray && sampleCount != 1) {
+      throw ArgumentError('$textureType does not support multisampling');
     }
     final entry = _formatTable[format];
     if (entry == null) {
@@ -134,28 +144,45 @@ final class WebGlTexture extends Texture {
       // The setup unit keeps this bind from replacing a texture a render
       // pass bound for its next draw.
       _gpuContext._bindTextureForSetup(target, _texture);
-      // texStorage2D on the cube target allocates all six faces (and their
-      // mips). A cube must be square.
-      gl.texStorage2D(
-        target,
-        mipLevelCount,
-        entry.internalFormat,
-        width,
-        height,
-      );
+      if (_isArray) {
+        // One allocation holds every layer and its mips.
+        gl.texStorage3D(
+          target,
+          mipLevelCount,
+          entry.internalFormat,
+          width,
+          height,
+          layerCount,
+        );
+      } else {
+        // texStorage2D on the cube target allocates all six faces (and their
+        // mips). A cube must be square.
+        gl.texStorage2D(
+          target,
+          mipLevelCount,
+          entry.internalFormat,
+          width,
+          height,
+        );
+      }
       // Sensible default sampler state for sampling. Pipelines override
       // these per `bindTexture` later via sampler objects.
       gl.texParameteri(
         target,
         web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
-        mipLevelCount > 1
-            ? web.WebGL2RenderingContext.LINEAR_MIPMAP_LINEAR
-            : web.WebGL2RenderingContext.LINEAR,
+        switch ((mipLevelCount > 1, _nearestOnly)) {
+          (true, false) => web.WebGL2RenderingContext.LINEAR_MIPMAP_LINEAR,
+          (true, true) => web.WebGL2RenderingContext.NEAREST_MIPMAP_NEAREST,
+          (false, false) => web.WebGL2RenderingContext.LINEAR,
+          (false, true) => web.WebGL2RenderingContext.NEAREST,
+        },
       );
       gl.texParameteri(
         target,
         web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
-        web.WebGL2RenderingContext.LINEAR,
+        _nearestOnly
+            ? web.WebGL2RenderingContext.NEAREST
+            : web.WebGL2RenderingContext.LINEAR,
       );
       gl.texParameteri(
         target,
@@ -186,6 +213,43 @@ final class WebGlTexture extends Texture {
         width,
         height,
       );
+    }
+    _valid = true;
+  }
+
+  /// Wraps a GL object this backend did not create as a render target.
+  ///
+  /// A [ExternalTargetHandleKind.framebuffer] binds as the whole framebuffer
+  /// and cannot be sampled (a WebXR layer's opaque framebuffer); a
+  /// [ExternalTargetHandleKind.texture] attaches to one of the backend's own
+  /// framebuffers and samples like any other texture. The caller keeps
+  /// ownership; nothing here deletes the handle.
+  WebGlTexture.external(
+    this._gpuContext,
+    Object handle, {
+    required this.width,
+    required this.height,
+    required ExternalTargetHandleKind kind,
+    this.format = PixelFormat.r8g8b8a8UNormInt,
+  }) : storageMode = StorageMode.devicePrivate,
+       sampleCount = 1,
+       textureType = TextureType.texture2D,
+       enableRenderTargetUsage = true,
+       enableShaderReadUsage = kind == ExternalTargetHandleKind.texture,
+       enableShaderWriteUsage = false,
+       mipLevelCount = 1,
+       layerCount = 1 {
+    final entry = _formatTable[format];
+    if (entry == null) {
+      throw Exception('Unsupported PixelFormat: $format');
+    }
+    _glFormat = entry;
+    _isExternal = true;
+    switch (kind) {
+      case ExternalTargetHandleKind.framebuffer:
+        _externalFramebuffer = handle as web.WebGLFramebuffer;
+      case ExternalTargetHandleKind.texture:
+        _texture = handle as web.WebGLTexture;
     }
     _valid = true;
   }
@@ -224,6 +288,18 @@ final class WebGlTexture extends Texture {
   final bool enableShaderWriteUsage;
   @override
   final int mipLevelCount;
+  @override
+  final int layerCount;
+
+  /// Whether this texture can only be sampled with nearest filtering.
+  bool get _nearestOnly =>
+      (format == PixelFormat.r32Float ||
+          format == PixelFormat.r32g32b32a32Float) &&
+      !_gpuContext.float32Filterable;
+
+  /// Whether this texture is allocated with `texStorage3D` and addressed by
+  /// layer.
+  bool get _isArray => textureType == TextureType.texture2DArray;
 
   // Sampler state last applied to this texture (GL sampler parameters are
   // per-texture-object state). Lets RenderPass.bindTexture skip redundant
@@ -237,11 +313,35 @@ final class WebGlTexture extends Texture {
   late final _GlFormat _glFormat;
   web.WebGLTexture? _texture;
   web.WebGLRenderbuffer? _renderbuffer;
+  web.WebGLFramebuffer? _externalFramebuffer;
+  bool _isExternal = false;
   bool _valid = false;
+
+  /// Internal: whether this wraps a GL object another system owns and reads
+  /// with GL's bottom-left origin. A pass drawing into one skips the shim's
+  /// top-down convention (see WebGlRenderPass).
+  bool get isExternal => _isExternal;
+
+  /// Internal: a complete framebuffer this texture stands for, which render
+  /// passes bind directly instead of attaching [glTexture]. Null for every
+  /// texture the backend created itself.
+  web.WebGLFramebuffer? get externalFramebuffer => _externalFramebuffer;
 
   @override
   bool get isValid => _valid;
   bool get isDepthOrStencil => _isDepthOrStencilFormat(format);
+
+  /// Deletes the GL objects, and every cached framebuffer attaching them.
+  void _release() {
+    if (!_valid) return;
+    _valid = false;
+    _gpuContext._forgetFramebuffersOf(this);
+    final gl = _gpuContext._gl;
+    if (_texture != null) gl.deleteTexture(_texture);
+    if (_renderbuffer != null) gl.deleteRenderbuffer(_renderbuffer);
+    _texture = null;
+    _renderbuffer = null;
+  }
 
   /// Internal: GL texture object (single-sample) or null for MSAA.
   web.WebGLTexture? get glTexture => _texture;
@@ -249,10 +349,12 @@ final class WebGlTexture extends Texture {
   /// Internal: GL renderbuffer (MSAA) or null for single-sample.
   web.WebGLRenderbuffer? get glRenderbuffer => _renderbuffer;
 
-  /// Internal: the GL texture target for this texture (2D or cube map).
-  int get glTarget => textureType == TextureType.textureCube
-      ? web.WebGL2RenderingContext.TEXTURE_CUBE_MAP
-      : web.WebGL2RenderingContext.TEXTURE_2D;
+  /// Internal: the GL texture target for this texture.
+  int get glTarget => switch (textureType) {
+    TextureType.textureCube => web.WebGL2RenderingContext.TEXTURE_CUBE_MAP,
+    TextureType.texture2DArray => web.WebGL2RenderingContext.TEXTURE_2D_ARRAY,
+    _ => web.WebGL2RenderingContext.TEXTURE_2D,
+  };
 
   /// Internal: the GL target a given [slice] addresses. For a cube each slice
   /// is a face (`TEXTURE_CUBE_MAP_POSITIVE_X + slice`); for 2D it is the 2D
@@ -262,7 +364,11 @@ final class WebGlTexture extends Texture {
       : web.WebGL2RenderingContext.TEXTURE_2D;
 
   @override
-  int get sliceCount => textureType == TextureType.textureCube ? 6 : 1;
+  int get sliceCount => switch (textureType) {
+    TextureType.textureCube => 6,
+    TextureType.texture2DArray => layerCount,
+    _ => 1,
+  };
 
   @override
   int get bytesPerTexel => _glFormat.bytesPerTexel;
@@ -315,6 +421,21 @@ final class WebGlTexture extends Texture {
       final blocks = sourceBytes.buffer
           .asUint8List(sourceBytes.offsetInBytes, sourceBytes.lengthInBytes)
           .toJS;
+      if (_isArray) {
+        gl.compressedTexSubImage3D(
+          glTarget,
+          mipLevel,
+          0,
+          0,
+          slice,
+          mipWidth,
+          mipHeight,
+          1,
+          _glFormat.internalFormat,
+          blocks,
+        );
+        return;
+      }
       gl.compressedTexSubImage2D(
         sliceTarget,
         mipLevel,
@@ -351,6 +472,23 @@ final class WebGlTexture extends Texture {
         view = sourceBytes.buffer
             .asUint8List(sourceBytes.offsetInBytes, sourceBytes.lengthInBytes)
             .toJS;
+    }
+    if (_isArray) {
+      // A layer is one texel deep at its z offset.
+      gl.texSubImage3D(
+        glTarget,
+        mipLevel,
+        0,
+        0,
+        slice,
+        mipWidth,
+        mipHeight,
+        1,
+        _glFormat.format,
+        _glFormat.type,
+        view,
+      );
+      return;
     }
     gl.texSubImage2D(
       sliceTarget,

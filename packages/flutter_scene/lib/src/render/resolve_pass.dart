@@ -133,17 +133,20 @@ class ResolvePass extends RenderGraphPass {
     );
     // Bloom is present only when BloomPass ran this frame; otherwise a
     // placeholder fills the slot and the resolve skips it (flag off).
-    final bloomTexture =
-        context.blackboard.get<gpu.Texture>(kBloomTextureBlackboardKey) ??
-        Material.getWhitePlaceholderTexture();
+    final bloomTexture = context.blackboard.get<gpu.Texture>(
+      kBloomTextureBlackboardKey,
+    );
     renderPass.bindTexture(
       _fragmentShader.cachedUniformSlot('bloom_color'),
-      bloomTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      Material.whitePlaceholder(bloomTexture),
+      sampler: samplerOrPlaceholder(
+        bloomTexture,
+        gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+          widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        ),
       ),
     );
     // The adapted auto exposure factor is present only when
@@ -164,15 +167,18 @@ class ResolvePass extends RenderGraphPass {
     );
     // The film-look grading LUT, or a neutral placeholder when no look is
     // set (lut_params.x stays 0 and the sample is skipped).
+    final gradingLut = _postProcess.colorGrading.lut?.texture;
     renderPass.bindTexture(
       _fragmentShader.cachedUniformSlot('grading_lut'),
-      _postProcess.colorGrading.lut?.texture ??
-          Material.getWhitePlaceholderTexture(),
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      Material.whitePlaceholder(gradingLut),
+      sampler: samplerOrPlaceholder(
+        gradingLut,
+        gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+          widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        ),
       ),
     );
     drawCompat(renderPass, 6);

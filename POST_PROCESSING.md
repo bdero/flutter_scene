@@ -103,37 +103,41 @@ will double up if both are on, so drive one or the other for a given pulse.
 The built-in pipeline is a fixed sequence; you turn stages on and tune
 them, you do not reorder them. From `Scene.render` for one view, in order:
 
-1. Shadow map (cascades and/or spot shadows), when a shadow-casting light
+1. User `CustomRenderPass`es at `RenderStage.beforeScene` run, before
+   anything of the view is drawn, for output the frame's own draws read
+   (such as a `drawObjects` mask a material samples). They have no color
+   chain to advance.
+2. Shadow map (cascades and/or spot shadows), when a shadow-casting light
    needs one.
-2. The depth prepass (and ambient occlusion, if enabled), when a
+3. The depth prepass (and ambient occlusion, if enabled), when a
    perspective camera and any consumer (occlusion, reflections, a material
    sampling scene depth, or a custom pass) need scene depth.
-3. The scene itself draws into linear HDR scene color, opaque then
+4. The scene itself draws into linear HDR scene color, opaque then
    translucent.
-4. Screen-space reflections refine the lit HDR color in place, when
+5. Screen-space reflections refine the lit HDR color in place, when
    enabled.
-5. God rays add volumetric in-scattered light, when enabled (`Scene.godRays`,
+6. God rays add volumetric in-scattered light, when enabled (`Scene.godRays`,
    requires a shadow-casting directional light and a perspective camera).
-6. User `CustomRenderPass`es at `RenderStage.afterScene` run, in the order
+7. User `CustomRenderPass`es at `RenderStage.afterScene` run, in the order
    added.
-7. Depth of field defocuses the HDR image, when enabled.
-8. `PostEffect`s at `PostInsertion.beforeTonemap` run, in
+8. Depth of field defocuses the HDR image, when enabled.
+9. `PostEffect`s at `PostInsertion.beforeTonemap` run, in
    `postProcess.customEffects` list order.
-9. Auto exposure meters the HDR image and derives the correction factor the
+10. Auto exposure meters the HDR image and derives the correction factor the
    resolve applies, when enabled.
-10. Bloom runs in HDR and is composited back in by the resolve.
-11. User `CustomRenderPass`es at `RenderStage.beforeToneMapping` run.
-12. The resolve pass produces the first display-referred image: chromatic
+11. Bloom runs in HDR and is composited back in by the resolve.
+12. User `CustomRenderPass`es at `RenderStage.beforeToneMapping` run.
+13. The resolve pass produces the first display-referred image: chromatic
     aberration (sample-time UV split), exposure, color grading, the tone
     mapping operator, display encoding, then vignette and film grain.
-13. Screen distortion warps the display image, when a pulse is live
+14. Screen distortion warps the display image, when a pulse is live
     (`Scene.screenDistortion`).
-14. User `CustomRenderPass`es at `RenderStage.afterToneMapping` run.
-15. FXAA anti-aliases the image, when the scene's anti-aliasing mode is
+15. User `CustomRenderPass`es at `RenderStage.afterToneMapping` run.
+16. FXAA anti-aliases the image, when the scene's anti-aliasing mode is
     `AntiAliasingMode.fxaa`.
-16. `PostEffect`s at `PostInsertion.afterTonemap` run.
-17. User `CustomRenderPass`es at `RenderStage.afterAntiAliasing` run.
-18. The selection outline composites around highlighted nodes, last, when
+17. `PostEffect`s at `PostInsertion.afterTonemap` run.
+18. User `CustomRenderPass`es at `RenderStage.afterAntiAliasing` run.
+19. The selection outline composites around highlighted nodes, last, when
     any node has a `Node.highlightColor` set.
 
 Every step is skipped entirely when its settings are off (or, for the

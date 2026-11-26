@@ -69,6 +69,10 @@ class AnimationTransforms {
   /// solely by a morph weights channel keeps its manual transform.
   bool drivesTransform = false;
 
+  /// The rotation weight blended so far this frame, starting at the weight
+  /// the clips leave to the bind pose. Null outside an [AnimationPlayer].
+  double? rotationBlendWeight;
+
   /// The node's rest morph weights, captured when the first weights channel
   /// binds it; null while no weights channel targets the node.
   Float32List? bindMorphWeights;
@@ -78,6 +82,50 @@ class AnimationTransforms {
   /// Reset to a copy of [bindMorphWeights] at the start of each frame.
   Float32List? animatedMorphWeights;
 
+  /// The path properties bound channels drive, by path.
+  final Map<String, AnimatedPathState> paths = {};
+
   /// Creates an [AnimationTransforms] anchored at the supplied bind pose.
   AnimationTransforms({required this.bindPose});
+}
+
+/// Animation state for one [AnimatedPath] held by an [AnimationPlayer],
+/// mirroring the [AnimationTransforms] pose pair.
+class AnimatedPathState {
+  /// Captures [target]'s current value as the rest value.
+  AnimatedPathState(this.target)
+    : bind = Float32List(target.componentCount),
+      animated = Float32List(target.componentCount),
+      _written = Float32List(target.componentCount) {
+    target.read(bind);
+    _written.setAll(0, bind);
+  }
+
+  /// The property this state drives.
+  final AnimatedPath target;
+
+  /// The rest value, captured when the first channel binds the path.
+  final Float32List bind;
+
+  /// Scratch value mutated by clips during [AnimationPlayer.update].
+  ///
+  /// Reset to a copy of [bind] at the start of each frame.
+  final Float32List animated;
+
+  final Float32List _written;
+
+  /// Writes [animated] to the property when it changed since the last write,
+  /// so a held value doesn't dirty a material every frame.
+  void flush() {
+    var changed = false;
+    for (var i = 0; i < animated.length; i++) {
+      if (animated[i] != _written[i]) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return;
+    _written.setAll(0, animated);
+    target.write(animated);
+  }
 }

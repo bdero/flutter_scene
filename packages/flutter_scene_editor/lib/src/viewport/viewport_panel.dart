@@ -12,6 +12,7 @@ import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../controller/editor_controller.dart';
+import '../inspector/material_preview.dart' show MaterialPreview;
 import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
 import 'component_gizmos.dart';
@@ -93,6 +94,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
   // nonzero shows the lighting warning badge.
   final _lightOverflow = ValueNotifier<int>(0);
   final _shadowOverflow = ValueNotifier<int>(0);
+
+  // A label shown over the viewport while it compiles shaders, which freezes
+  // the window for a second or more on some platforms. The frame on screen
+  // when the freeze starts stays there, so the label says why.
+  final _compileNotice = ValueNotifier<String?>(null);
+  bool _debugViewsCompiled = false;
   // Holds keyboard focus while the viewport is the active surface, so the
   // app-level shortcuts (undo, delete) fire after the viewport is clicked.
   final _focusNode = FocusNode(debugLabel: 'editorViewport');
@@ -139,6 +146,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _gizmoPrefs.addListener(_onControllerChanged);
     widget.uiHandle?.attachTool(_readToolMode, _writeToolMode);
     widget.cameraHandle?.attach(_camera, _cameraMoved);
+    // Selecting a node shows its material preview, which draws a different
+    // lit variant than this viewport.
+    unawaited(MaterialPreview.warmUp());
   }
 
   @override
@@ -177,6 +187,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _fps.dispose();
     _lightOverflow.dispose();
     _shadowOverflow.dispose();
+    _compileNotice.dispose();
     _focusNode.dispose();
     _freeLookPointer.dispose();
     super.dispose();
@@ -191,6 +202,24 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _bumpView() => _viewEpoch.value++;
+
+  /// Runs [action], which turns on a surface debug view, behind a compile
+  /// notice the first time. The views draw with shader variants that compile
+  /// on first use, so the notice paints before that stall and clears after.
+  Future<void> _withDebugViewCompileNotice(VoidCallback action) async {
+    if (_debugViewsCompiled) {
+      action();
+      return;
+    }
+    _debugViewsCompiled = true;
+    _compileNotice.value = 'Compiling debug view shaders…';
+    await WidgetsBinding.instance.endOfFrame;
+    action();
+    // The first frame with the view compiles; the next shows the result.
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted) _compileNotice.value = null;
+  }
 
   /// The camera saves with the document, so navigating it is a change, even
   /// though it never becomes an undo step.
@@ -1104,6 +1133,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                     ),
                                 ],
                                 onTick: _onTick,
+                                // Pipelines build on the UI thread on first
+                                // draw, a multi-second stall on Windows, so
+                                // build them before the scene shows.
+                                warmUp: true,
+                                warmUpExtraNodes: _ctrl.warmUpNodes,
+                                loadingBuilder: (_, _) => const Center(
+                                  child: _InfoBadge(text: 'Compiling shaders…'),
+                                ),
                               ),
                             ),
                           ),
@@ -1233,6 +1270,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               ),
                             ),
                           ),
+                        ValueListenableBuilder<String?>(
+                          valueListenable: _compileNotice,
+                          builder: (context, notice, _) => notice == null
+                              ? const SizedBox.shrink()
+                              : IgnorePointer(
+                                  child: Center(
+                                    child: _InfoBadge(text: notice),
+                                  ),
+                                ),
+                        ),
                         if (_modal case final modal?)
                           Positioned(
                             bottom: 8,
@@ -1277,7 +1324,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
                       preferences: _gizmoPrefs,
                     ),
                     const SizedBox(height: 4),
-                    _DebugOutputButton(controller: _ctrl, onChanged: _bumpView),
+                    _DebugOutputButton(
+                      controller: _ctrl,
+                      onChanged: _bumpView,
+                      surfaceViewNotice: _withDebugViewCompileNotice,
+                    ),
                     const SizedBox(height: 4),
                     AnimatedBuilder(
                       animation: _viewEpoch,
@@ -1655,10 +1706,18 @@ class _GizmoMenuButton extends StatelessWidget {
 /// image. Mode state lives on the scene's shared debug pass, so every
 /// viewport of that scene shows the same output.
 class _DebugOutputButton extends StatefulWidget {
-  const _DebugOutputButton({required this.controller, required this.onChanged});
+  const _DebugOutputButton({
+    required this.controller,
+    required this.onChanged,
+    required this.surfaceViewNotice,
+  });
 
   final EditorController controller;
   final VoidCallback onChanged;
+
+  /// Runs an action that turns on a surface debug view behind the viewport's
+  /// compile notice.
+  final Future<void> Function(VoidCallback action) surfaceViewNotice;
 
   @override
   State<_DebugOutputButton> createState() => _DebugOutputButtonState();
@@ -1712,12 +1771,12 @@ class _DebugOutputButtonState extends State<_DebugOutputButton> {
               child: _SurfaceViewGroupMenu(
                 group: group,
                 scene: scene,
-                onSelected: (entry) {
+                onSelected: (entry) => widget.surfaceViewNotice(() {
                   pass.mode = viewportDebugModes.first;
                   scene.debug.view = entry.view;
                   if (mounted) setState(() {});
                   widget.onChanged();
-                },
+                }),
               ),
             ),
         const PopupMenuDivider(),

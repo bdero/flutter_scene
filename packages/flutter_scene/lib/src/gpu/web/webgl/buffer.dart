@@ -47,7 +47,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
     if (buffer == null) {
       throw StateError('Failed to create WebGL buffer');
     }
-    _bindTypedForUpload(gl, target, buffer);
+    _bindForUpload(gl, target, buffer);
     gl.bufferData(
       target,
       sizeInBytes.toJS,
@@ -62,12 +62,13 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
     _valid = true;
   }
 
-  /// Binds [buffer] to its own [target] for an upload outside a render pass.
+  /// Binds [buffer] to its own [target] for an upload.
   ///
   /// ELEMENT_ARRAY_BUFFER is per-VAO state, so binding it here would silently
-  /// re-point whichever cached VAO the last draw left bound. Drop to the
-  /// default VAO first; RenderPass re-binds its VAO on every draw.
-  static void _bindTypedForUpload(
+  /// re-point whichever cached VAO the last draw left bound, and a later draw
+  /// through that VAO would read this buffer's indices. Drop to the default
+  /// VAO first; RenderPass re-binds its VAO on every draw.
+  static void _bindForUpload(
     web.WebGL2RenderingContext gl,
     int target,
     web.WebGLBuffer buffer,
@@ -79,6 +80,11 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   }
 
   final WebGlContext _gpuContext;
+  static int _nextId = 0;
+
+  /// Identifies this buffer in VAO cache keys; never reused.
+  final int _id = ++_nextId;
+
   late final Uint8List _staging;
 
   /// Non-null for a buffer created by [WebGlDeviceBuffer._initializeTyped].
@@ -102,6 +108,18 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   @override
   bool get isValid => _valid;
 
+  /// Deletes the GL buffers. A cached VAO that captured one keeps it alive
+  /// in the driver until that VAO is evicted.
+  void _release() {
+    if (!_valid) return;
+    _valid = false;
+    final gl = _gpuContext._gl;
+    if (_glElementBuffer != null) gl.deleteBuffer(_glElementBuffer);
+    if (_glOtherBuffer != null) gl.deleteBuffer(_glOtherBuffer);
+    _glElementBuffer = null;
+    _glOtherBuffer = null;
+  }
+
   int get _usage => storageMode == StorageMode.devicePrivate
       ? web.WebGL2RenderingContext.STATIC_DRAW
       : web.WebGL2RenderingContext.DYNAMIC_DRAW;
@@ -116,6 +134,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   /// dedicated element-typed buffer; all other targets share a non-element
   /// buffer.
   web.WebGLBuffer _bindForTarget(int target) {
+    assert(_valid, 'A released DeviceBuffer was bound.');
     final gl = _gpuContext._gl;
     final isElement = target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER;
     var buffer = isElement ? _glElementBuffer : _glOtherBuffer;
@@ -150,6 +169,15 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
       gl.bindBuffer(target, buffer);
     }
     return buffer;
+  }
+
+  /// The non-element GL buffer, created on first use but otherwise not bound,
+  /// for `bindBufferRange`, which binds `UNIFORM_BUFFER` itself.
+  web.WebGLBuffer _ensureNonElementBuffer() {
+    assert(_valid, 'A released DeviceBuffer was bound.');
+    final existing = _glOtherBuffer;
+    if (existing != null) return existing;
+    return _bindForTarget(web.WebGL2RenderingContext.UNIFORM_BUFFER);
   }
 
   /// Overwrite a byte range. Source bytes must fit at the destination
@@ -196,9 +224,10 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
       );
     }
     if (_glElementBuffer != null) {
-      gl.bindBuffer(
+      _bindForUpload(
+        gl,
         web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
-        _glElementBuffer,
+        _glElementBuffer!,
       );
       gl.bufferSubData(
         web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
@@ -235,7 +264,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
       return false;
     }
     final gl = _gpuContext._gl;
-    _bindTypedForUpload(gl, target, (_glElementBuffer ?? _glOtherBuffer)!);
+    _bindForUpload(gl, target, (_glElementBuffer ?? _glOtherBuffer)!);
     gl.bufferSubData(target, destinationOffsetInBytes, _jsViewOf(source));
     return true;
   }
@@ -269,115 +298,4 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   /// `bufferSubData` is immediately visible to the GL implementation.
   @override
   void flush({int offsetInBytes = 0, int lengthInBytes = -1}) {}
-}
-
-/// Bump allocator that hands out [BufferView] slices from a chain of
-/// [DeviceBuffer] blocks. Re-cycles blocks every [frameCount] frames when
-/// [reset] is called.
-///
-/// A faithful port of flutter_gpu's HostBuffer (block bump allocation,
-/// [frameCount]-frame rotation, per-emplacement uniform alignment) so the
-/// shim stays a drop-in flutter_gpu replacement. The one deliberate
-/// difference: block rollover accounts for the write's own length, and an
-/// emplacement into a fresh block gets a view of the data's length; the
-/// upstream check hands out views that overrun the block when an aligned
-/// offset fits but the write's end does not (fix submitted upstream).
-///
-/// flutter_scene's renderer does not use HostBuffer (its transients ride
-/// the completion-aware arenas in `render/frame_transients.dart`), so the
-/// buffer-ghosting cost of rewriting live GL buffers only affects direct
-/// shim consumers who emplace against in-flight frames, matching what
-/// flutter_gpu does natively.
-final class WebGlHostBuffer extends HostBuffer {
-  static const int _kFrameCount = 4;
-
-  WebGlHostBuffer._initialize(
-    this._gpuContext, {
-    this.blockLengthInBytes = HostBuffer.kDefaultBlockLengthInBytes,
-  }) {
-    for (var frame = 0; frame < _kFrameCount; frame++) {
-      _buffers.add([_allocateNewBlock(blockLengthInBytes)]);
-    }
-  }
-
-  final WebGlContext _gpuContext;
-
-  /// The length of each [DeviceBuffer] block.
-  @override
-  final int blockLengthInBytes;
-
-  @override
-  int get frameCount => _kFrameCount;
-
-  int _frameCursor = 0;
-  int _bufferCursor = 0;
-  int _offsetCursor = 0;
-
-  /// Per-frame block chains, matching flutter_gpu's layout.
-  final List<List<DeviceBuffer>> _buffers = [];
-
-  DeviceBuffer _allocateNewBlock(int length) =>
-      _gpuContext.createDeviceBuffer(StorageMode.hostVisible, length);
-
-  BufferView _allocateEmplacement(ByteData bytes) {
-    if (bytes.lengthInBytes > blockLengthInBytes) {
-      return BufferView(
-        _allocateNewBlock(bytes.lengthInBytes),
-        offsetInBytes: 0,
-        lengthInBytes: bytes.lengthInBytes,
-      );
-    }
-
-    var padding =
-        _gpuContext.minimumUniformByteAlignment -
-        (_offsetCursor % _gpuContext.minimumUniformByteAlignment);
-    padding %= _gpuContext.minimumUniformByteAlignment;
-    if (_offsetCursor + padding + bytes.lengthInBytes > blockLengthInBytes) {
-      final buffer = _allocateNewBlock(blockLengthInBytes);
-      _buffers[_frameCursor].add(buffer);
-      _bufferCursor++;
-      _offsetCursor = bytes.lengthInBytes;
-      return BufferView(
-        buffer,
-        offsetInBytes: 0,
-        lengthInBytes: bytes.lengthInBytes,
-      );
-    }
-
-    _offsetCursor += padding;
-    final view = BufferView(
-      _buffers[_frameCursor][_bufferCursor],
-      offsetInBytes: _offsetCursor,
-      lengthInBytes: bytes.lengthInBytes,
-    );
-    _offsetCursor += bytes.lengthInBytes;
-    return view;
-  }
-
-  /// Append byte data and return a view at the resulting GPU offset.
-  @override
-  BufferView emplace(ByteData bytes) {
-    final view = _allocateEmplacement(bytes);
-    if (!view.buffer.overwrite(
-      bytes,
-      destinationOffsetInBytes: view.offsetInBytes,
-    )) {
-      throw Exception(
-        'Failed to write range (offset=${view.offsetInBytes}, '
-        'length=${view.lengthInBytes}) to HostBuffer-managed DeviceBuffer '
-        '(frame=$_frameCursor, buffer=$_bufferCursor, '
-        'offset=$_offsetCursor).',
-      );
-    }
-    return view;
-  }
-
-  /// Resets the bump allocator to the beginning of the next frame's first
-  /// [DeviceBuffer] block.
-  @override
-  void reset() {
-    _frameCursor = (_frameCursor + 1) % frameCount;
-    _bufferCursor = 0;
-    _offsetCursor = 0;
-  }
 }

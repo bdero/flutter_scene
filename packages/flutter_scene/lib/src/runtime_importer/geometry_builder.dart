@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/gltf.dart';
+import 'package:vector_math/vector_math.dart';
 
 import '../geometry/geometry.dart';
 import '../geometry/interleaved_layout.dart';
@@ -18,11 +19,15 @@ import '../geometry/morphed_geometry.dart';
 /// the UI. The offline scene emitter shares the same packer.
 ///
 /// [morphTargetNames] and [defaultMorphWeights] carry the owning glTF mesh's
-/// target metadata when the primitive is morphed.
+/// target metadata when the primitive is morphed. [skinnedBounds] are the pose
+/// bounds of a skinned primitive (see `skinnedPoseBounds`). A skinned geometry
+/// without them carries no bounds, since its bind-pose extent under-covers the
+/// poses its joints take.
 Geometry geometryFromPacked(
   PackedPrimitive packed, {
   List<String>? morphTargetNames,
   List<double>? defaultMorphWeights,
+  Aabb3? skinnedBounds,
 }) {
   final morph = packed.morphTargets;
   final Geometry geometry = morph != null
@@ -42,6 +47,15 @@ Geometry geometryFromPacked(
                 ),
               ))
       : (packed.isSkinned ? SkinnedGeometry() : UnskinnedGeometry());
+  if (packed.isSkinned && skinnedBounds != null) {
+    geometry.setLocalBounds(
+      skinnedBounds,
+      Sphere.centerRadius(
+        skinnedBounds.center,
+        (skinnedBounds.max - skinnedBounds.min).length / 2,
+      ),
+    );
+  }
   // Uploaded as the lists the packer allocated (floats, and indices at their
   // packed width) so the web upload crosses them natively.
   geometry.uploadVertexData(

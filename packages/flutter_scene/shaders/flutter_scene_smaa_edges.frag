@@ -53,9 +53,13 @@ void main() {
   float final_delta = max(max_delta.x, max_delta.y);
 
   // Local contrast adaptation: a much stronger neighboring edge masks this
-  // one.
+  // one. Discard suppressed pixels so they skip framebuffer writes against the
+  // cleared zero target.
   edges.xy *= step(final_delta,
                    SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR * delta.xy);
+  if (dot(edges, vec2(1.0, 1.0)) == 0.0) {
+    discard;
+  }
 
   frag_color = vec4(edges, 0.0, 1.0);
 }

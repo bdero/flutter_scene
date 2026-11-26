@@ -616,10 +616,12 @@ class ShaderMaterial extends Material {
       pass.bindTexture(
         shader.cachedUniformSlot(name),
         Material.whitePlaceholder(resolved),
-        sampler:
-            bound.sampler ??
-            _shaderTextureSampler(bound.source) ??
-            defaultSamplerOptions,
+        sampler: samplerOrPlaceholder(
+          resolved,
+          bound.sampler ??
+              _shaderTextureSampler(bound.source) ??
+              defaultSamplerOptions,
+        ),
       );
     }
   }

@@ -13,6 +13,9 @@ enum AnimationProperty {
 
   /// Animates the node's morph target weights (see [Node.setMorphWeights]).
   weights,
+
+  /// Animates the property [BindKey.path] names (see [resolveAnimatedPath]).
+  path,
 }
 
 /// Identifies a single animation target as a (node name, property) pair.
@@ -28,15 +31,22 @@ class BindKey implements Comparable<BindKey> {
   /// Which component of the node's transform this channel drives.
   final AnimationProperty property;
 
+  /// The property an [AnimationProperty.path] channel drives, relative to
+  /// the node.
+  final String? path;
+
   /// Creates a key that targets [nodeName] / [property].
   BindKey({
     required this.nodeName,
     this.property = AnimationProperty.translation,
-  });
+    this.path,
+  }) : assert((property == AnimationProperty.path) == (path != null));
 
   @override
   int compareTo(BindKey other) {
-    if (nodeName == other.nodeName && property == other.property) {
+    if (nodeName == other.nodeName &&
+        property == other.property &&
+        path == other.path) {
       return 0;
     }
     return -1;

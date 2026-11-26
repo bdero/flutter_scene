@@ -2,12 +2,46 @@
 library;
 
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter_scene/scene.dart' show BloomSettings;
 import 'package:flutter_scene/src/render/bloom_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('a shorter bloom chain keeps its brightness', () {
+    for (final levels in [3, 4, 6]) {
+      for (final scatter in [0.0, .7, 1.0]) {
+        var up = 8000.0;
+        for (var level = levels - 2; level >= 0; level--) {
+          final weights = bloomUpsampleWeights(
+            bloomLevelWeight(scatter),
+            level,
+            levels,
+            normalization: 6,
+          );
+          up = weights.source * up + weights.base * 8000;
+          if (level > 0) expect(up, closeTo(8000, 1e-6));
+        }
+        expect(up, closeTo(48000, 1e-6));
+      }
+    }
+  });
+  test('views sharing a reference size spread bloom alike', () {
+    // A header, and a taller overlay the same character moves into.
+    const header = ui.Size(820, 760);
+    const overlay = ui.Size(820, 2568);
+    double texel(ui.Size view, {double? reference}) =>
+        view.height / bloomBaseSize(view, reference: reference).height;
+    expect(texel(overlay), greaterThan(texel(header) * 3));
+    expect(
+      texel(overlay, reference: 820),
+      closeTo(texel(header, reference: 820), 1e-9),
+    );
+    // The view measured against its own size is unchanged.
+    expect(bloomBaseSize(header, reference: 820), bloomBaseSize(header));
+  });
+
   test('the default scatter weights every mip equally', () {
     expect(bloomLevelWeight(0.7), 1.0);
     expect(_mipWeights(1.0, 6), everyElement(closeTo(1.0, 1e-9)));

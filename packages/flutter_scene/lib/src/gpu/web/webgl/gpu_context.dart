@@ -19,8 +19,13 @@ final class WebGlContext extends GpuContext {
       alpha: true,
       depth: false,
       stencil: false,
+      powerPreference: 'high-performance',
       preserveDrawingBuffer: true,
     );
+    // Lets a WebXR session bind this context's framebuffers without a later
+    // makeXRCompatible() call, which can lose the context. Ignored by
+    // browsers without WebXR.
+    (attrs as JSObject).setProperty('xrCompatible'.toJS, true.toJS);
     final gl =
         _canvas.getContext('webgl2', attrs) as web.WebGL2RenderingContext?;
     if (gl == null) {
@@ -29,9 +34,18 @@ final class WebGlContext extends GpuContext {
       );
     }
     _gl = gl;
+    // Before any link: the browser sizes the driver's compile thread pool
+    // when the page enables this, and with it a program's status can be
+    // polled instead of waited on (WebGlRenderPipeline.isLinkComplete).
+    _parallelShaderCompile =
+        _gl.getExtension('KHR_parallel_shader_compile') != null;
+    // Uploads are tightly packed, as flutter_gpu takes them. GL's default
+    // row alignment of 4 would skew any r8 or rg8 texture whose rows are not
+    // a multiple of four bytes.
+    _gl.pixelStorei(web.WebGL2RenderingContext.UNPACK_ALIGNMENT, 1);
     // Cache extensions we rely on for later phases.
     _gl.getExtension('EXT_color_buffer_float');
-    _gl.getExtension('OES_texture_float_linear');
+    float32Filterable = _gl.getExtension('OES_texture_float_linear') != null;
     // Anisotropic filtering. MAX_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FF.
     if (_gl.getExtension('EXT_texture_filter_anisotropic') != null) {
       _maxSupportedAnisotropy = _integerParameter(0x84FF) ?? 1;
@@ -53,6 +67,8 @@ final class WebGlContext extends GpuContext {
 
   bool _clipDepthZeroToOne = false;
 
+  bool _parallelShaderCompile = false;
+
   /// Whether clip-space depth spans `[0, 1]` (EXT_clip_control), so GLES
   /// shaders run without their `[-1, 1]` depth remap.
   bool get clipDepthZeroToOne => _clipDepthZeroToOne;
@@ -60,13 +76,82 @@ final class WebGlContext extends GpuContext {
   late final web.OffscreenCanvas _canvas;
   late final web.WebGL2RenderingContext _gl;
 
+  final List<_WebGlCompletion> _completions = [];
+  List<CompletionCallback> _unfencedCallbacks = [];
+  Timer? _completionTimer;
+
+  void _enqueueCompletion(CompletionCallback callback) {
+    // Root-zone scheduling keeps a fake clock from capturing the shared poll.
+    if (_unfencedCallbacks.isEmpty) {
+      Zone.root.scheduleMicrotask(_fenceSubmissions);
+    }
+    _unfencedCallbacks.add(Zone.current.bindUnaryCallbackGuarded(callback));
+  }
+
+  void _fenceSubmissions() {
+    final callbacks = _unfencedCallbacks;
+    _unfencedCallbacks = [];
+    // Passes encoded in one turn share a fence after their last command.
+    final sync = _gl.fenceSync(
+      web.WebGL2RenderingContext.SYNC_GPU_COMMANDS_COMPLETE,
+      0,
+    );
+    if (sync == null) {
+      Zone.root.createTimer(Duration.zero, () {
+        for (final callback in callbacks) {
+          callback(CompletionStatus.error);
+        }
+      });
+      return;
+    }
+    _completions.add(_WebGlCompletion(sync, callbacks));
+    _gl.flush();
+    _completionTimer ??= Zone.root.createTimer(Duration.zero, _pollCompletions);
+  }
+
+  void _pollCompletions() {
+    _completionTimer = null;
+    var completed = 0;
+    final ready = <(_WebGlCompletion, CompletionStatus)>[];
+    for (final pending in _completions) {
+      // WebGL 2 sync objects signal only after returning to the event loop.
+      final result = _gl.clientWaitSync(pending.sync, 0, 0);
+      if (result == web.WebGL2RenderingContext.TIMEOUT_EXPIRED) break;
+      _gl.deleteSync(pending.sync);
+      final status =
+          result == web.WebGL2RenderingContext.ALREADY_SIGNALED ||
+              result == web.WebGL2RenderingContext.CONDITION_SATISFIED
+          ? CompletionStatus.successful
+          : CompletionStatus.error;
+      ready.add((pending, status));
+      completed++;
+    }
+    _completions.removeRange(0, completed);
+    for (final (pending, status) in ready) {
+      for (final callback in pending.callbacks) {
+        callback(status);
+      }
+    }
+    if (_completions.isNotEmpty) {
+      _completionTimer ??= Zone.root.createTimer(
+        const Duration(milliseconds: 1),
+        _pollCompletions,
+      );
+    }
+  }
+
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
   /// buffer), in least-recently-used order; see WebGlRenderPass._applyVertexState.
   static const int _kMaxCachedVaos = 512;
-  final Map<String, web.WebGLVertexArrayObject> _vaoCache =
-      <String, web.WebGLVertexArrayObject>{};
+  final Map<String, _CachedVao> _vaoCache = <String, _CachedVao>{};
 
   int _maxSupportedAnisotropy = 1;
+
+  /// Whether 32-bit float textures can be sampled with linear filtering.
+  /// Without it [WebGlRenderPass.bindTexture] samples them nearest, since a
+  /// linear filter leaves them incomplete and they read as zero.
+  @visibleForTesting
+  bool float32Filterable = false;
 
   /// The device's maximum supported anisotropy (1 when the extension is
   /// unavailable, which disables anisotropic filtering).
@@ -104,6 +189,11 @@ final class WebGlContext extends GpuContext {
   // mipmap min filters sample correctly.
   @override
   bool get doesSupportManuallyMippedTextures => true;
+
+  // TEXTURE_2D_ARRAY is core WebGL2, and the GLSL ES 3.00 bundles declare
+  // sampler2DArray as written.
+  @override
+  bool get doesSupportTextureArrays => true;
 
   final Map<TextureCompressionFamily, bool> _compressionSupport = {};
 
@@ -178,9 +268,13 @@ final class WebGlContext extends GpuContext {
   /// The GL store is hinted STATIC_DRAW, which suits geometry written once at
   /// creation. A geometry uploaded repeatedly (CPU morph blending re-uploads
   /// on every weight change) allocates fresh buffers per upload rather than
-  /// rewriting these, so each one is still written once.
+  /// rewriting these. The renderer's instance-data pool does rewrite them,
+  /// once per frame.
   // TODO(web-buffers): Reuse a geometry's buffers when it re-uploads at the
   // same size, instead of allocating a new pair and dropping the old one.
+  // TODO(web-buffers): Hint the instance pool's buffers DYNAMIC_DRAW. Needs a
+  // usage flag through createGeometryBuffers; measure on ANGLE's D3D11
+  // backend, where the hint affects how buffers are stored.
   DeviceBuffer createTypedDeviceBuffer(int sizeInBytes, {required bool index}) {
     return WebGlDeviceBuffer._initializeTyped(
       this,
@@ -206,10 +300,7 @@ final class WebGlContext extends GpuContext {
   HostBuffer createHostBuffer({
     int blockLengthInBytes = HostBuffer.kDefaultBlockLengthInBytes,
   }) {
-    return WebGlHostBuffer._initialize(
-      this,
-      blockLengthInBytes: blockLengthInBytes,
-    );
+    return BumpHostBuffer(this, blockLengthInBytes: blockLengthInBytes);
   }
 
   @override
@@ -224,6 +315,7 @@ final class WebGlContext extends GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   }) {
     final resolvedType =
         textureType ??
@@ -242,6 +334,7 @@ final class WebGlContext extends GpuContext {
       enableShaderReadUsage,
       enableShaderWriteUsage,
       mipLevelCount,
+      layerCount: layerCount,
     );
   }
 
@@ -286,10 +379,12 @@ final class WebGlContext extends GpuContext {
     return _pipelineCache[key] = WebGlRenderPipeline._(this, vertex, fragment);
   }
 
-  // Framebuffer cache, keyed by the attachment textures. A pass previously
-  // created (and leaked) a framebuffer and ran the synchronous
-  // checkFramebufferStatus round trip every time; render targets recur every
-  // frame, so both now happen once per attachment combination.
+  // Framebuffer cache, keyed by the attachment textures, so the synchronous
+  // checkFramebufferStatus round trip runs once per attachment combination
+  // rather than every pass. Releasing a texture drops its entries; the
+  // capacity only bounds targets dropped without a release, and evicts the
+  // least recently used so a frame's working set stays resident.
+  static const _framebufferCacheCapacity = 256;
   final Map<(Texture, int, int, Texture?), web.WebGLFramebuffer>
   _framebufferCache = {};
 
@@ -300,16 +395,31 @@ final class WebGlContext extends GpuContext {
     Texture? depth,
     web.WebGLFramebuffer Function() create,
   ) {
+    assert(
+      color.isValid && (depth?.isValid ?? true),
+      'A released Texture was used as a render target.',
+    );
     final key = (color, mipLevel, slice, depth);
-    final cached = _framebufferCache[key];
-    if (cached != null) return cached;
-    if (_framebufferCache.length >= 64) {
-      for (final fbo in _framebufferCache.values) {
-        _gl.deleteFramebuffer(fbo);
-      }
-      _framebufferCache.clear();
+    // Reinserting moves the entry to the end of the map's iteration order,
+    // which keeps the first entry the least recently used.
+    final cached = _framebufferCache.remove(key);
+    if (cached != null) return _framebufferCache[key] = cached;
+    if (_framebufferCache.length >= _framebufferCacheCapacity) {
+      final oldest = _framebufferCache.keys.first;
+      _gl.deleteFramebuffer(_framebufferCache.remove(oldest));
     }
     return _framebufferCache[key] = create();
+  }
+
+  /// Deletes the cached framebuffers that attach [texture].
+  void _forgetFramebuffersOf(Texture texture) {
+    _framebufferCache.removeWhere((key, fbo) {
+      if (!identical(key.$1, texture) && !identical(key.$4, texture)) {
+        return false;
+      }
+      _gl.deleteFramebuffer(fbo);
+      return true;
+    });
   }
 
   /// Snapshot the underlying `OffscreenCanvas` into a `ui.Image` for display
@@ -341,19 +451,21 @@ final class WebGlContext extends GpuContext {
     if (_canvas.width != texture.width) _canvas.width = texture.width;
     if (_canvas.height != texture.height) _canvas.height = texture.height;
 
-    final readFbo = _gl.createFramebuffer();
-    if (readFbo == null) {
-      throw StateError('Failed to create framebuffer for present blit');
-    }
+    final readFbo =
+        texture.webGl.externalFramebuffer ??
+        _framebufferFor(
+          texture,
+          0,
+          0,
+          null,
+          () => WebGlRenderPass._createFramebuffer(_gl, texture, 0, 0, null),
+        );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.READ_FRAMEBUFFER, readFbo);
-    _gl.framebufferTexture2D(
-      web.WebGL2RenderingContext.READ_FRAMEBUFFER,
-      web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
-      web.WebGL2RenderingContext.TEXTURE_2D,
-      texture.webGl.glTexture,
-      0,
-    );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
+    // The blit runs outside any pass and GL keeps the last pass's scissor and
+    // color mask, so a region copy (one eye of a shared target) would clip it.
+    _gl.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
+    _gl.colorMask(true, true, true, true);
     // Flip vertically during the blit (dst Y runs height -> 0). WebGL2
     // rasterizes into FBO textures bottom-up, so the swapchain texture is
     // stored bottom-up; this flip presents it upright on the canvas. (The
@@ -374,7 +486,14 @@ final class WebGlContext extends GpuContext {
       web.WebGL2RenderingContext.NEAREST,
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, null);
-    _gl.deleteFramebuffer(readFbo);
+  }
+
+  /// Blit [texture] onto the OffscreenCanvas and transfer the result out as
+  /// an `ImageBitmap`, for a consumer outside Flutter (another WebGL context,
+  /// or a DOM canvas). Synchronous, like [snapshotTextureSync].
+  web.ImageBitmap snapshotTextureBitmap(Texture texture) {
+    _blitTextureToCanvas(texture);
+    return _canvas.transferToImageBitmap();
   }
 
   /// Synchronously snapshot [texture] into a `ui.Image`. Blits to the
@@ -471,4 +590,25 @@ _createGeometryBuffers(int vertexBytes, int indexBytes) {
 /// `EXT_clip_control`, which sets the clip-space origin and depth range.
 extension type _ExtClipControl._(JSObject _) implements JSObject {
   external void clipControlEXT(int origin, int depth);
+}
+
+/// A cached VAO and the `(buffer id, offset)` each instance slot points at.
+final class _CachedVao {
+  _CachedVao(this.vao);
+
+  final web.WebGLVertexArrayObject vao;
+  final Map<int, (int, int)> _instanceBindings = {};
+
+  bool matchesInstanceBinding(int slot, BufferView view) {
+    final buffer = view.buffer.webGl;
+    if (!buffer._valid || buffer._glOtherBuffer == null) return false;
+    final previous = _instanceBindings[slot];
+    return previous != null &&
+        previous.$1 == buffer._id &&
+        previous.$2 == view.offsetInBytes;
+  }
+
+  void recordInstanceBinding(int slot, BufferView view) {
+    _instanceBindings[slot] = (view.buffer.webGl._id, view.offsetInBytes);
+  }
 }

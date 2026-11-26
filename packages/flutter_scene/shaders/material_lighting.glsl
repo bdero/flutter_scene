@@ -20,9 +20,34 @@
 // never-taken reads where the code that used it is gone, so both tiers keep
 // one binding interface.
 
+// Each feature the lean tier drops has its own define, so a build can compile
+// out just the features a project never uses (the `lighting_features` hook
+// user-define, see lighting_features.dart).
+#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#ifndef FLUTTER_SCENE_NO_IRRADIANCE_FIELD
+#define FLUTTER_SCENE_NO_IRRADIANCE_FIELD
+#endif
+#ifndef FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
+#define FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
+#endif
+#ifndef FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
+#define FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
+#endif
+#ifndef FLUTTER_SCENE_NO_PARALLAX_REFLECTION
+#define FLUTTER_SCENE_NO_PARALLAX_REFLECTION
+#endif
+#ifndef FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
+#define FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
+#endif
+#ifndef FLUTTER_SCENE_NO_POINT_SHADOWS
+#define FLUTTER_SCENE_NO_POINT_SHADOWS
+#endif
+#endif
+
 // Distance fog (the FogInfo block + ApplyFog), applied to the final lit color.
 #include <fog.glsl>
 #include <octahedral.glsl>
+#include <ssao_depth_pack.glsl>
 // The baked lightmap. Included only where it is used, so a plain lit entry
 // compiles to exactly the same code it did before the slot existed.
 #ifdef FLUTTER_SCENE_LIGHTMAP
@@ -233,20 +258,22 @@ vec3 MultiBounceOcclusion(float visibility, vec3 albedo) {
 
 // Widens a specular lobe to cover unresolved normal variation in one pixel.
 float SpecularAARoughness(vec3 normal, float roughness) {
-  // This toggle is a frame uniform, so the derivatives remain under uniform
-  // control flow.
-  if (frag_info.specular_aa_variance <= 0.0) {
-    return roughness;
-  }
+  // Derivatives come before the branch and the function returns once. An
+  // early return compiles to a one-iteration loop, and ANGLE writes a
+  // derivative inside such a loop as 0.0.
   vec3 d_normal_x = dFdx(normal);
   vec3 d_normal_y = dFdy(normal);
-  float variance = frag_info.specular_aa_variance *
-                   max(dot(d_normal_x, d_normal_x),
-                       dot(d_normal_y, d_normal_y));
-  float kernel = min(2.0 * variance, frag_info.specular_aa_threshold);
-  float square_roughness =
-      clamp(roughness * roughness + kernel, kMinRoughness * kMinRoughness, 1.0);
-  return sqrt(square_roughness);
+  float filtered = roughness;
+  if (frag_info.specular_aa_variance > 0.0) {
+    float variance = frag_info.specular_aa_variance *
+                     max(dot(d_normal_x, d_normal_x),
+                         dot(d_normal_y, d_normal_y));
+    float kernel = min(2.0 * variance, frag_info.specular_aa_threshold);
+    float square_roughness = clamp(roughness * roughness + kernel,
+                                   kMinRoughness * kMinRoughness, 1.0);
+    filtered = sqrt(square_roughness);
+  }
+  return filtered;
 }
 
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
@@ -390,6 +417,57 @@ highp vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
   return diffuse + specular;
 }
 
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
+    !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
+// Upsamples a reduced-resolution occlusion texture whose ba carry each texel's
+// packed depth. Bilinear weights are scaled by how close each texel's depth
+// lies to this surface's plane, predicted from [view_depth] and its screen
+// derivative [depth_slope]. When no texel lies on the plane, the one closest
+// in depth is used.
+vec4 SampleOcclusionBilateral(highp vec2 screen_uv, highp float view_depth,
+                              highp vec2 depth_slope) {
+  ivec2 size = textureSize(ssao_texture, 0);
+  highp vec2 position = screen_uv * vec2(size) - 0.5;
+  highp vec2 base = floor(position);
+  highp vec2 fraction = position - base;
+  highp vec2 pixels_per_texel = 1.0 / (vec2(size) * frag_info.ssao_params.zw);
+  bool orthographic = frag_info.view_projection.z > 0.5;
+  // A plane is linear in reciprocal depth under perspective.
+  highp float inverse_depth = 1.0 / max(view_depth, 1e-6);
+  highp vec2 inverse_slope = -depth_slope * inverse_depth * inverse_depth;
+  // Half a pixel of slope covers the gap between a texel's center and the
+  // pixel its depth was taken from.
+  highp float tolerance = 0.02 * abs(view_depth) +
+                          0.5 * (abs(depth_slope.x) + abs(depth_slope.y)) +
+                          1e-4;
+  vec4 sum = vec4(0.0);
+  float weight_sum = 0.0;
+  vec4 closest = vec4(1.0);
+  highp float closest_delta = 1e30;
+  for (int i = 0; i < 4; i++) {
+    ivec2 corner = ivec2(i - (i / 2) * 2, i / 2);
+    ivec2 coord = clamp(ivec2(base) + corner, ivec2(0), size - ivec2(1));
+    vec4 texel = texelFetch(ssao_texture, coord, 0);
+    highp vec2 offset = (vec2(coord) - position) * pixels_per_texel;
+    highp float expected =
+        orthographic
+            ? view_depth + dot(depth_slope, offset)
+            : 1.0 / max(inverse_depth + dot(inverse_slope, offset), 1e-12);
+    highp float delta = abs(UnpackOcclusionDepth(texel.ba) - expected);
+    vec2 bilinear = mix(1.0 - fraction, fraction, vec2(corner));
+    float weight = bilinear.x * bilinear.y *
+                   clamp(1.0 - delta / tolerance, 0.0, 1.0);
+    sum += texel * weight;
+    weight_sum += weight;
+    if (delta < closest_delta) {
+      closest_delta = delta;
+      closest = texel;
+    }
+  }
+  return weight_sum > 1e-4 ? sum / weight_sum : closest;
+}
+#endif
+
 // Lights a surface described by `material` and returns the final fragment
 // color (linear HDR, premultiplied by alpha). This is the engine-owned half of
 // the material contract; a material's Surface() function fills `material` and
@@ -419,13 +497,21 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   vec3 ao_bent_normal = vec3(0.0);
   float ao_bent_valid = 0.0;
   vec4 ssao_sample = vec4(1.0);
-#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
+    !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
+  // Taken before any branch so the derivatives stay in uniform control flow.
+  highp float occlusion_view_depth = GetFragmentViewDepth();
+  highp vec2 occlusion_depth_slope =
+      vec2(dFdx(occlusion_view_depth), dFdy(occlusion_view_depth));
+#endif
+#if defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION) && \
+    !defined(FLUTTER_SCENE_SKIP_SSAO)
   // Keeps ssao_texture declared (the engine binds it); never taken.
   if (frag_info.ssao_params.x > 1e30) {
     occlusion = texture(ssao_texture, vec2(0.0)).r;
   }
 #endif
-#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
   if (frag_info.ssao_params.x > 0.5) {
     highp vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
     // TODO(flutter_scene): the occlusion target is stored top-down like the
@@ -435,7 +521,17 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     // each backend.
     // Both terms estimate the same visibility. Multiplying them counts the
     // same blocked hemisphere twice and over-darkens surfaces with baked AO.
-    ssao_sample = texture(ssao_texture, screen_uv);
+    if (frag_info.ssao_lighting.z < 0.5 && frag_info.camera_up.w < 0.5) {
+      ssao_sample = SampleOcclusionBilateral(screen_uv, occlusion_view_depth,
+                                             occlusion_depth_slope);
+    } else {
+      // TODO(ssao-upsample): the bent normal and indirect light layouts have
+      // no free channel for depth, so they upsample bilinearly and blur across
+      // silhouettes at half resolution. Once rendering into an array layer is
+      // in the Flutter floor, carry depth in a second layer of this sampler
+      // and give them the bilateral path.
+      ssao_sample = textureLod(ssao_texture, screen_uv, 0.0);
+    }
     // With indirect light active the texture carries radiance in rgb and
     // visibility in a; otherwise visibility rides in r.
     occlusion = min(
@@ -458,6 +554,52 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
         clamp(frag_info.ssao_lighting.y, 0.0, 1.0));
   }
 #endif
+
+  // The sun's visibility comes first: its shadow lookup is the largest block
+  // in the shader, and here little else is live, so it does not force the
+  // later terms out of registers.
+  float geometric_n_dot_l = 0.0;
+  vec3 light_vector = vec3(0.0);
+  // FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT (`directional_light: false`) compiles
+  // the directional light out: the material shades as if the scene had none.
+#ifndef FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT
+  if (frag_info.has_directional_light > 0.5) {
+    light_vector = -normalize(frag_info.directional_light_direction.xyz);
+    geometric_n_dot_l = dot(GetWorldNormal(), light_vector);
+  }
+#endif
+  // Whether the surface faces the sun is a geometric property, so gate the
+  // shadow terms on the geometric normal. Using the perturbed normal lets a
+  // normal map's relief push n_dot_l across the terminator on a nearly sun-
+  // facing face (worst near a low sun), spuriously darkening the shadow-ambient
+  // term on bumpy top faces.
+  float facing = clamp(geometric_n_dot_l / 0.15, 0.0, 1.0);
+
+  // Sun-shadow visibility (1 lit .. 0 shadowed). The shadow map is only
+  // meaningful for sun-facing surfaces; a back face receives no sun by
+  // definition, so it is treated as fully shadowed (facing = 0) without a
+  // shadow-map lookup, whose normal-offset bias assumes a sun-facing receiver
+  // and would otherwise stripe the back face with acne.
+  float shadow = 1.0;
+#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && \
+    !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
+  shadow =
+      (frag_info.has_directional_light > 0.5 && frag_info.casts_shadow > 0.5 &&
+       facing > 0.0)
+          ? SampleShadow(v_position, GetWorldNormal())
+          : 1.0;
+#endif
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
+    !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION) && \
+    !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
+  // Screen-space contact shadow for the sun, marched by the occlusion pass.
+  // Applies whether or not a shadow map is active, grounding small contacts
+  // that shadow-map resolution and bias miss.
+  if (frag_info.ssao_lighting.w > 0.5 && frag_info.camera_up.w < 0.5) {
+    shadow = min(shadow, ssao_sample.g);
+  }
+#endif
+  float sun_visibility = facing * shadow;
 
   vec3 camera_normal = GetViewDirection();
 
@@ -550,6 +692,247 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       mix(reflection_normal, bent_normal, roughness * roughness));
 #endif
 
+  highp vec3 direct = vec3(0.0);
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+  // The hooked path accumulates each light's lobes separately for Composite().
+  highp vec3 direct_diffuse = vec3(0.0);
+  highp vec3 direct_specular = vec3(0.0);
+  LightContext light_context;
+  light_context.normal = normal;
+  light_context.view = camera_normal;
+  light_context.position = vec3(0.0);
+#endif
+  // Additional analytic lights (point, spot, and directional lights past the
+  // first). The scene may hold any number of lights; per-object culling (or
+  // the froxel lookup below) gives this fragment a contiguous slice of the
+  // light-index buffer, and the loop shades only that slice. Every fetch is a
+  // computed-UV texture read, so no uniform array is dynamically indexed.
+  //
+  // punctual_dims.x is the parameters-texture row count; 0 means the scene has
+  // no punctual lights this frame, so ignore any stale per-object count (and
+  // never divide by the zero texture height in the fetch helpers).
+  //
+  // Froxel mode (froxel_grid.z > 0): the fragment's light slice comes from
+  // its froxel instead of the per-draw uniforms (PunctualLightSlice in
+  // material_shadow_sampling.glsl), so no draw carries light state and the
+  // loop budget applies per froxel, not per object.
+  //
+  // The loop runs before the image-based and sun terms so none of their
+  // values stay live across it. Otherwise small register files spill them on
+  // every fragment, including ones no punctual light reaches.
+  vec2 punctual_slice = PunctualLightSlice();
+  int punctual_offset = int(punctual_slice.x + 0.5);
+  int punctual_count = int(punctual_slice.y + 0.5);
+  // A dynamically bounded loop: every shader dialect this compiles to is
+  // GLSL ES 3.00 or newer, where runtime loop bounds are legal, so no driver
+  // can unroll it and the budget is a CPU-side data choice
+  // (kMaxPunctualLights per object, kMaxFroxelLights per froxel).
+  for (int i = 0; i < punctual_count; i++) {
+    // Resolve this slot to a light row through the per-object index buffer.
+    int light_row = int(FetchPunctualIndex(punctual_offset + i) + 0.5);
+    highp vec4 l0 = FetchPunctualTexel(light_row, 0); // position.xyz, type
+    highp vec4 l1 = FetchPunctualTexel(light_row, 1); // color.rgb, inverse range
+    float type = l0.w;
+    highp vec3 radiance = l1.rgb;
+    // A sized point or spot light (radius in texel 3.w) widens the specular
+    // lobe by its apparent half-angle, so a glossy surface reflects a bulb
+    // rather than a point of unbounded radiance.
+    float light_roughness = roughness;
+#ifndef FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
+    if (type > 2.5) {
+#ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
+      // TODO(custom-ambient-area-lights): the LTC tables ride brdf_lut, which
+      // a custom-ambient material does not declare, so rect area lights are
+      // skipped. Give the LTC tables their own binding to light these too.
+      continue;
+#else
+      // Rect area light. Texel 2 carries the world right axis and width,
+      // texel 3 the up axis and height; the light emits along
+      // cross(right, up). The LTC form factor bakes in the cosine lobe and
+      // inverse-square falloff, so only the range window applies here.
+      highp vec4 a2 = FetchPunctualTexel(light_row, 2);
+      highp vec4 a3 = FetchPunctualTexel(light_row, 3);
+      highp vec3 half_w = a2.xyz * (a2.w * 0.5);
+      highp vec3 half_h = a3.xyz * (a3.w * 0.5);
+      highp vec3 c0 = l0.xyz - half_w - half_h;
+      highp vec3 c1 = l0.xyz + half_w - half_h;
+      highp vec3 c2 = l0.xyz + half_w + half_h;
+      highp vec3 c3 = l0.xyz - half_w + half_h;
+      highp vec3 to_center = l0.xyz - v_position;
+      highp float dist_sq = dot(to_center, to_center);
+      highp float factor = dist_sq * l1.w * l1.w;
+      float window = clamp(1.0 - factor * factor, 0.0, 1.0);
+      float facing =
+          step(0.0, dot(cross(c1 - c0, c3 - c0), v_position - c0));
+      vec2 ltc_uv = clamp(vec2(roughness, sqrt(1.0 - n_dot_v)), 0.0, 1.0);
+      vec4 t1 = textureLod(brdf_lut, LtcLutUv(ltc_uv, 1.0), 0.0);
+      vec4 t2 = textureLod(brdf_lut, LtcLutUv(ltc_uv, 2.0), 0.0);
+      mat3 inv_m = mat3(
+          vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
+      float spec_shape = LtcIntegrate(
+          normal, camera_normal, v_position, inv_m, c0, c1, c2, c3);
+      float diff_shape = LtcIntegrate(
+          normal, camera_normal, v_position, mat3(1.0), c0, c1, c2, c3);
+      vec3 spec_color = reflectance * t2.x + (vec3(1.0) - reflectance) * t2.y;
+      direct += radiance * (window * window) * facing *
+                (spec_color * spec_shape * material.specular +
+                 albedo * (1.0 - metallic) * diff_shape);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+      // The clearcoat's own LTC lobe over the same rect, with the coat's
+      // normal and roughness and the dielectric F0 of 0.04. The base layer's
+      // coat attenuation is applied once at the final composite.
+      if (material.clearcoat > 0.0) {
+        vec2 coat_ltc_uv = clamp(
+            vec2(coat_roughness, sqrt(1.0 - coat_n_dot_v)), 0.0, 1.0);
+        vec4 ct1 = textureLod(brdf_lut, LtcLutUv(coat_ltc_uv, 1.0), 0.0);
+        vec4 ct2 = textureLod(brdf_lut, LtcLutUv(coat_ltc_uv, 2.0), 0.0);
+        mat3 coat_inv_m = mat3(
+            vec3(ct1.x, 0.0, ct1.y), vec3(0.0, 1.0, 0.0),
+            vec3(ct1.z, 0.0, ct1.w));
+        float coat_shape = LtcIntegrate(
+            coat_normal, camera_normal, v_position, coat_inv_m,
+            c0, c1, c2, c3);
+        coat_direct += radiance * (window * window) * facing * coat_shape *
+                       (0.04 * ct2.x + 0.96 * ct2.y);
+      }
+#endif
+#endif
+    } else
+#endif  // FLUTTER_SCENE_NO_RECT_AREA_LIGHTS
+    {
+    vec3 punctual_light_vector;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+    light_context.color = radiance;
+    light_context.position = l0.xyz;
+    light_context.type = type;
+    light_context.light_row = float(light_row);
+    light_context.shadow_slot = -1.0;
+    light_context.distance_attenuation = 1.0;
+    light_context.cone_attenuation = 1.0;
+    light_context.shadow = 1.0;
+    light_context.direction = vec3(0.0);
+#endif
+    if (type < 0.5) {
+      // Directional: the travel direction is in texel 2; no attenuation.
+      punctual_light_vector = -normalize(FetchPunctualTexel(light_row, 2).xyz);
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+      light_context.direction = -punctual_light_vector;
+#endif
+    } else {
+      highp vec3 to_light = l0.xyz - v_position;
+      highp float dist_sq = dot(to_light, to_light);
+      punctual_light_vector = to_light * inversesqrt(max(dist_sq, 1e-8));
+      // Windowed distance falloff: with an inverse range of 0 (infinite
+      // range) the window is 1. The falloff exponent (texel 3.z) is 2 for
+      // the physical inverse square; lower exponents reach further without
+      // brightening the near field (an artistic control), and pow(dist_sq,
+      // e/2) = dist^e.
+      highp float inv_range = l1.w;
+      highp float factor = dist_sq * inv_range * inv_range;
+      float window = clamp(1.0 - factor * factor, 0.0, 1.0);
+#ifndef FLUTTER_SCENE_LIGHTING_HOOKS
+      // The slice is culled per object or froxel, so it can hold lights that
+      // stop short of this fragment. They add nothing, so skip their fetches
+      // and shading. Hooks still see every light in the slice.
+      if (window <= 0.0) {
+        continue;
+      }
+#endif
+      // spot offset, shadow slot, falloff exponent
+      highp vec4 l3 = FetchPunctualTexel(light_row, 3);
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+      light_context.shadow_slot = l3.y;
+#endif
+      // The source radius floors the distance, so a surface inside the
+      // bulb is not lit beyond its surface.
+      highp float source_radius = l3.w;
+      highp float distance_attenuation =
+          (window * window) /
+          max(pow(max(dist_sq, source_radius * source_radius), l3.z * 0.5),
+              1e-4);
+      if (source_radius > 0.0) {
+        float widened = roughness * roughness +
+                        source_radius * 0.5 * inversesqrt(max(dist_sq, 1e-8));
+        light_roughness = sqrt(min(widened, 1.0));
+      }
+      radiance *= distance_attenuation;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+      light_context.distance_attenuation = distance_attenuation;
+#endif
+      if (type > 1.5) {
+        // Spot cone: a squared linear ramp on the cosine between the inner and
+        // outer cone, using the precomputed scale (texel 2 w) and offset.
+        highp vec4 l2 = FetchPunctualTexel(light_row, 2); // direction.xyz, angular scale
+        float cd = dot(normalize(l2.xyz), -punctual_light_vector);
+        float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
+        radiance *= cone * cone;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+        light_context.cone_attenuation = cone * cone;
+        light_context.direction = normalize(l2.xyz);
+#else
+        if (cone <= 0.0) {
+          continue;
+        }
+#endif
+        // Spot shadow, when this spot has a slot in the shared atlas. Gate on
+        // the geometric normal (the shadow is a geometric property).
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+        if (cone > 0.0 && l3.y > -0.5 &&
+            frag_info.shadow_atlas_params.x > 0.5) {
+          float spot_shadow =
+              SampleSpotShadow(light_row, v_position, GetWorldNormal());
+          radiance *= spot_shadow;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+          light_context.shadow = spot_shadow;
+#endif
+        }
+#endif
+      }
+#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && !defined(FLUTTER_SCENE_NO_POINT_SHADOWS)
+      else if (type > 0.5 && l3.y > -0.5 &&
+               frag_info.shadow_atlas_params.x > 0.5) {
+        // Point shadow, when this light's cube faces ride the shared atlas
+        // (l3.y is its shadow slot).
+        float point_shadow =
+            SamplePointShadow(light_row, v_position, GetWorldNormal());
+        radiance *= point_shadow;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+        light_context.shadow = point_shadow;
+#endif
+      }
+#endif
+    }
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+    light_context.light_vector = punctual_light_vector;
+    light_context.radiance = radiance;
+#ifdef FLUTTER_SCENE_HOOK_LIGHT
+    LightTerms punctual_terms = Light(material, light_context);
+    direct_diffuse += punctual_terms.diffuse;
+    direct_specular += punctual_terms.specular;
+#else
+    highp vec3 punctual_specular;
+    direct_diffuse += EvaluateAnalyticLightTerms(
+        material, punctual_light_vector, radiance, normal, camera_normal,
+        albedo, metallic, light_roughness, reflectance, n_dot_v,
+        material.specular, anisotropic_tangent, anisotropic_bitangent,
+        punctual_specular);
+    direct_specular += punctual_specular;
+#endif
+#else
+    direct += EvaluateAnalyticLight(
+        material, punctual_light_vector, radiance, normal, camera_normal,
+        albedo, metallic, light_roughness, reflectance, n_dot_v,
+        material.specular, anisotropic_tangent, anisotropic_bitangent);
+#endif
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+    coat_direct += EvaluateClearcoatLight(
+        punctual_light_vector, radiance, coat_normal, camera_normal,
+        coat_roughness);
+#endif
+    }
+  }
+
+
   // Roughness-dependent Fresnel reflectance for the indirect specular lobe.
   vec3 k_S = FresnelSchlickRoughness(n_dot_v_energy, reflectance, roughness);
 
@@ -561,7 +944,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   mat3 environment_transform = mat3(frag_info.environment_transform);
   vec3 env_normal = environment_transform *
                     (ao_bent_valid > 0.5 ? ao_bent_normal : normal);
-#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#ifdef FLUTTER_SCENE_NO_PARALLAX_REFLECTION
   vec3 env_reflection = environment_transform * reflection_normal;
 #else
   vec3 env_reflection =
@@ -599,7 +982,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                         env_reflection, roughness);
   // Cross-fade a secondary environment in (area transitions) when active. Both
   // share the bound layout, so the same samplers' _b pair is read.
-#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+#ifdef FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
   const float env_blend = 0.0;
   // Keeps prefiltered_radiance_b bound to its own slot; never taken.
   if (frag_info.radiance_blend.x > 1e30) {
@@ -634,7 +1017,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #endif
     prefiltered_color = mix(prefiltered_color, prefiltered_b, env_blend);
   }
-#endif  // FLUTTER_SCENE_LEAN_LIGHTING
+#endif  // FLUTTER_SCENE_NO_ENVIRONMENT_BLEND
   // environment_intensity scales the image-based lighting; a bake carries its
   // own lightmap_intensity instead.
 #ifndef FLUTTER_SCENE_LIGHTMAP
@@ -657,7 +1040,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // a camera-dependent normal makes it flicker like z-fighting. The field's
   // stored radiance already carries the environment intensity, so it is not
   // scaled again here.
-#ifndef FLUTTER_SCENE_LEAN_LIGHTING
+#ifndef FLUTTER_SCENE_NO_IRRADIANCE_FIELD
   float gi_coverage = IrradianceFieldCoverage(v_position);
   if (gi_coverage > 0.0) {
     highp vec3 gi = SampleIrradianceField(v_position, normal, camera_normal);
@@ -670,7 +1053,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     transmitted_irradiance = mix(transmitted_irradiance, gi_back, gi_coverage);
 #endif
   }
-#endif  // FLUTTER_SCENE_LEAN_LIGHTING
+#endif  // FLUTTER_SCENE_NO_IRRADIANCE_FIELD
 #endif
 #endif  // FLUTTER_SCENE_CUSTOM_AMBIENT
 
@@ -726,7 +1109,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // enabled; otherwise the specular lobe uses the same occlusion (the
   // historical behavior).
   float specular_occlusion;
-#ifndef FLUTTER_SCENE_LEAN_LIGHTING
+#ifndef FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION
   if (frag_info.ssao_params.y > 1.5 && ao_bent_valid > 0.5) {
     specular_occlusion = ComputeBentConeOcclusion(
         ao_bent_normal, reflect(-camera_normal, normal), occlusion, roughness);
@@ -747,48 +1130,6 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // Sun direction and how squarely this surface faces it. `facing` ramps from
   // 0 (at or past the terminator) to 1 (sun-facing) over a small band, so the
   // sun's influence falls off smoothly rather than at a hard line.
-  float geometric_n_dot_l = 0.0;
-  vec3 light_vector = vec3(0.0);
-  // FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT (`directional_light: false`) compiles
-  // the directional light out: the material shades as if the scene had none.
-#ifndef FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT
-  if (frag_info.has_directional_light > 0.5) {
-    light_vector = -normalize(frag_info.directional_light_direction.xyz);
-    geometric_n_dot_l = dot(GetWorldNormal(), light_vector);
-  }
-#endif
-  // Whether the surface faces the sun is a geometric property, so gate the
-  // shadow terms on the geometric normal. Using the perturbed normal lets a
-  // normal map's relief push n_dot_l across the terminator on a nearly sun-
-  // facing face (worst near a low sun), spuriously darkening the shadow-ambient
-  // term on bumpy top faces.
-  float facing = clamp(geometric_n_dot_l / 0.15, 0.0, 1.0);
-
-  // Sun-shadow visibility (1 lit .. 0 shadowed). The shadow map is only
-  // meaningful for sun-facing surfaces; a back face receives no sun by
-  // definition, so it is treated as fully shadowed (facing = 0) without a
-  // shadow-map lookup, whose normal-offset bias assumes a sun-facing receiver
-  // and would otherwise stripe the back face with acne.
-  float shadow = 1.0;
-#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && \
-    !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
-  shadow =
-      (frag_info.has_directional_light > 0.5 && frag_info.casts_shadow > 0.5 &&
-       facing > 0.0)
-          ? SampleShadow(v_position, GetWorldNormal())
-          : 1.0;
-#endif
-#if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
-    !defined(FLUTTER_SCENE_LEAN_LIGHTING) && \
-    !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
-  // Screen-space contact shadow for the sun, marched by the occlusion pass.
-  // Applies whether or not a shadow map is active, grounding small contacts
-  // that shadow-map resolution and bias miss.
-  if (frag_info.ssao_lighting.w > 0.5 && frag_info.camera_up.w < 0.5) {
-    shadow = min(shadow, ssao_sample.g);
-  }
-#endif
-  float sun_visibility = facing * shadow;
 
   // When shadow_ambient_strength (radiance_blend.y) is non-zero, the sun's
   // occlusion also darkens the IBL ambient: a sky-baked environment already
@@ -800,7 +1141,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       (indirect_diffuse * diffuse_occlusion +
        indirect_specular * specular_occlusion) *
       ambient_shadow;
-#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
   // Screen-space bounce: the occlusion pass's gathered radiance lights the
   // diffuse lobe. Its own bitfield already resolved visibility, so only the
   // baked occlusion map applies.
@@ -841,16 +1182,6 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // Analytic directional light (Cook-Torrance, layered on top of the IBL
   // ambient term). The shadowed first directional light shades here; its shadow
   // visibility multiplies the whole term.
-  highp vec3 direct = vec3(0.0);
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-  // The hooked path accumulates each light's lobes separately for Composite().
-  highp vec3 direct_diffuse = vec3(0.0);
-  highp vec3 direct_specular = vec3(0.0);
-  LightContext light_context;
-  light_context.normal = normal;
-  light_context.view = camera_normal;
-  light_context.position = vec3(0.0);
-#endif
 #ifndef FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT
   if (frag_info.has_directional_light > 0.5) {
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
@@ -878,7 +1209,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     direct_specular += sun_specular;
 #endif
 #else
-    direct = EvaluateAnalyticLight(material, light_vector,
+    direct += EvaluateAnalyticLight(material, light_vector,
                                    frag_info.directional_light_color.rgb, normal,
                                    camera_normal, albedo, metallic, roughness,
                                    reflectance, n_dot_v, material.specular,
@@ -894,218 +1225,6 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   }
 #endif
 
-  // Additional analytic lights (point, spot, and directional lights past the
-  // first). The scene may hold any number of lights; per-object culling (or
-  // the froxel lookup below) gives this fragment a contiguous slice of the
-  // light-index buffer, and the loop shades only that slice. Every fetch is a
-  // computed-UV texture read, so no uniform array is dynamically indexed.
-  //
-  // punctual_dims.x is the parameters-texture row count; 0 means the scene has
-  // no punctual lights this frame, so ignore any stale per-object count (and
-  // never divide by the zero texture height in the fetch helpers).
-  //
-  // Froxel mode (froxel_grid.z > 0): the fragment's light slice comes from
-  // its froxel instead of the per-draw uniforms (PunctualLightSlice in
-  // material_shadow_sampling.glsl), so no draw carries light state and the
-  // loop budget applies per froxel, not per object.
-  vec2 punctual_slice = PunctualLightSlice();
-  int punctual_offset = int(punctual_slice.x + 0.5);
-  int punctual_count = int(punctual_slice.y + 0.5);
-  // A dynamically bounded loop: every shader dialect this compiles to is
-  // GLSL ES 3.00 or newer, where runtime loop bounds are legal, so no driver
-  // can unroll it and the budget is a CPU-side data choice
-  // (kMaxPunctualLights per object, kMaxFroxelLights per froxel).
-  for (int i = 0; i < punctual_count; i++) {
-    // Resolve this slot to a light row through the per-object index buffer.
-    int light_row = int(FetchPunctualIndex(punctual_offset + i) + 0.5);
-    highp vec4 l0 = FetchPunctualTexel(light_row, 0); // position.xyz, type
-    highp vec4 l1 = FetchPunctualTexel(light_row, 1); // color.rgb, inverse range
-    float type = l0.w;
-    highp vec3 radiance = l1.rgb;
-    // A sized point or spot light (radius in texel 3.w) widens the specular
-    // lobe by its apparent half-angle, so a glossy surface reflects a bulb
-    // rather than a point of unbounded radiance.
-    float light_roughness = roughness;
-#ifndef FLUTTER_SCENE_LEAN_LIGHTING
-    if (type > 2.5) {
-#ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
-      // TODO(custom-ambient-area-lights): the LTC tables ride brdf_lut, which
-      // a custom-ambient material does not declare, so rect area lights are
-      // skipped. Give the LTC tables their own binding to light these too.
-      continue;
-#else
-      // Rect area light. Texel 2 carries the world right axis and width,
-      // texel 3 the up axis and height; the light emits along
-      // cross(right, up). The LTC form factor bakes in the cosine lobe and
-      // inverse-square falloff, so only the range window applies here.
-      highp vec4 a2 = FetchPunctualTexel(light_row, 2);
-      highp vec4 a3 = FetchPunctualTexel(light_row, 3);
-      highp vec3 half_w = a2.xyz * (a2.w * 0.5);
-      highp vec3 half_h = a3.xyz * (a3.w * 0.5);
-      highp vec3 c0 = l0.xyz - half_w - half_h;
-      highp vec3 c1 = l0.xyz + half_w - half_h;
-      highp vec3 c2 = l0.xyz + half_w + half_h;
-      highp vec3 c3 = l0.xyz - half_w + half_h;
-      highp vec3 to_center = l0.xyz - v_position;
-      highp float dist_sq = dot(to_center, to_center);
-      highp float factor = dist_sq * l1.w * l1.w;
-      float window = clamp(1.0 - factor * factor, 0.0, 1.0);
-      float facing =
-          step(0.0, dot(cross(c1 - c0, c3 - c0), v_position - c0));
-      vec2 ltc_uv = clamp(vec2(roughness, sqrt(1.0 - n_dot_v)), 0.0, 1.0);
-      vec4 t1 = texture(brdf_lut, LtcLutUv(ltc_uv, 1.0));
-      vec4 t2 = texture(brdf_lut, LtcLutUv(ltc_uv, 2.0));
-      mat3 inv_m = mat3(
-          vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
-      float spec_shape = LtcIntegrate(
-          normal, camera_normal, v_position, inv_m, c0, c1, c2, c3);
-      float diff_shape = LtcIntegrate(
-          normal, camera_normal, v_position, mat3(1.0), c0, c1, c2, c3);
-      vec3 spec_color = reflectance * t2.x + (vec3(1.0) - reflectance) * t2.y;
-      direct += radiance * (window * window) * facing *
-                (spec_color * spec_shape * material.specular +
-                 albedo * (1.0 - metallic) * diff_shape);
-#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-      // The clearcoat's own LTC lobe over the same rect, with the coat's
-      // normal and roughness and the dielectric F0 of 0.04. The base layer's
-      // coat attenuation is applied once at the final composite.
-      if (material.clearcoat > 0.0) {
-        vec2 coat_ltc_uv = clamp(
-            vec2(coat_roughness, sqrt(1.0 - coat_n_dot_v)), 0.0, 1.0);
-        vec4 ct1 = texture(brdf_lut, LtcLutUv(coat_ltc_uv, 1.0));
-        vec4 ct2 = texture(brdf_lut, LtcLutUv(coat_ltc_uv, 2.0));
-        mat3 coat_inv_m = mat3(
-            vec3(ct1.x, 0.0, ct1.y), vec3(0.0, 1.0, 0.0),
-            vec3(ct1.z, 0.0, ct1.w));
-        float coat_shape = LtcIntegrate(
-            coat_normal, camera_normal, v_position, coat_inv_m,
-            c0, c1, c2, c3);
-        coat_direct += radiance * (window * window) * facing * coat_shape *
-                       (0.04 * ct2.x + 0.96 * ct2.y);
-      }
-#endif
-#endif
-    } else
-#endif  // FLUTTER_SCENE_LEAN_LIGHTING
-    {
-    vec3 punctual_light_vector;
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-    light_context.color = radiance;
-    light_context.position = l0.xyz;
-    light_context.type = type;
-    light_context.light_row = float(light_row);
-    light_context.shadow_slot = -1.0;
-    light_context.distance_attenuation = 1.0;
-    light_context.cone_attenuation = 1.0;
-    light_context.shadow = 1.0;
-    light_context.direction = vec3(0.0);
-#endif
-    if (type < 0.5) {
-      // Directional: the travel direction is in texel 2; no attenuation.
-      punctual_light_vector = -normalize(FetchPunctualTexel(light_row, 2).xyz);
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-      light_context.direction = -punctual_light_vector;
-#endif
-    } else {
-      highp vec3 to_light = l0.xyz - v_position;
-      highp float dist_sq = dot(to_light, to_light);
-      punctual_light_vector = to_light * inversesqrt(max(dist_sq, 1e-8));
-      // Windowed distance falloff: with an inverse range of 0 (infinite
-      // range) the window is 1. The falloff exponent (texel 3.z) is 2 for
-      // the physical inverse square; lower exponents reach further without
-      // brightening the near field (an artistic control), and pow(dist_sq,
-      // e/2) = dist^e.
-      highp float inv_range = l1.w;
-      highp float factor = dist_sq * inv_range * inv_range;
-      float window = clamp(1.0 - factor * factor, 0.0, 1.0);
-      // spot offset, shadow slot, falloff exponent
-      highp vec4 l3 = FetchPunctualTexel(light_row, 3);
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-      light_context.shadow_slot = l3.y;
-#endif
-      // The source radius floors the distance, so a surface inside the
-      // bulb is not lit beyond its surface.
-      highp float source_radius = l3.w;
-      highp float distance_attenuation =
-          (window * window) /
-          max(pow(max(dist_sq, source_radius * source_radius), l3.z * 0.5),
-              1e-4);
-      if (source_radius > 0.0) {
-        float widened = roughness * roughness +
-                        source_radius * 0.5 * inversesqrt(max(dist_sq, 1e-8));
-        light_roughness = sqrt(min(widened, 1.0));
-      }
-      radiance *= distance_attenuation;
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-      light_context.distance_attenuation = distance_attenuation;
-#endif
-      if (type > 1.5) {
-        // Spot cone: a squared linear ramp on the cosine between the inner and
-        // outer cone, using the precomputed scale (texel 2 w) and offset.
-        highp vec4 l2 = FetchPunctualTexel(light_row, 2); // direction.xyz, angular scale
-        float cd = dot(normalize(l2.xyz), -punctual_light_vector);
-        float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
-        radiance *= cone * cone;
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-        light_context.cone_attenuation = cone * cone;
-        light_context.direction = normalize(l2.xyz);
-#endif
-        // Spot shadow, when this spot has a slot in the shared atlas. Gate on
-        // the geometric normal (the shadow is a geometric property).
-#ifndef FLUTTER_SCENE_SKIP_SHADOWS
-        if (l3.y > -0.5 && frag_info.spot_shadow_params.x > 0.5) {
-          float spot_shadow = SampleSpotShadow(
-              light_row, int(l3.y + 0.5), v_position, GetWorldNormal());
-          radiance *= spot_shadow;
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-          light_context.shadow = spot_shadow;
-#endif
-        }
-#endif
-      }
-#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
-      else if (type > 0.5 && l3.y > -0.5 &&
-               frag_info.spot_shadow_params.x > 0.5) {
-        // Point shadow, when this light's cube faces ride the shared atlas
-        // (l3.y is its first tile after the cascades).
-        float point_shadow = SamplePointShadow(
-            light_row, l3.y, v_position, GetWorldNormal());
-        radiance *= point_shadow;
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-        light_context.shadow = point_shadow;
-#endif
-      }
-#endif
-    }
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-    light_context.light_vector = punctual_light_vector;
-    light_context.radiance = radiance;
-#ifdef FLUTTER_SCENE_HOOK_LIGHT
-    LightTerms punctual_terms = Light(material, light_context);
-    direct_diffuse += punctual_terms.diffuse;
-    direct_specular += punctual_terms.specular;
-#else
-    highp vec3 punctual_specular;
-    direct_diffuse += EvaluateAnalyticLightTerms(
-        material, punctual_light_vector, radiance, normal, camera_normal,
-        albedo, metallic, light_roughness, reflectance, n_dot_v,
-        material.specular, anisotropic_tangent, anisotropic_bitangent,
-        punctual_specular);
-    direct_specular += punctual_specular;
-#endif
-#else
-    direct += EvaluateAnalyticLight(
-        material, punctual_light_vector, radiance, normal, camera_normal,
-        albedo, metallic, light_roughness, reflectance, n_dot_v,
-        material.specular, anisotropic_tangent, anisotropic_bitangent);
-#endif
-#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-    coat_direct += EvaluateClearcoatLight(
-        punctual_light_vector, radiance, coat_normal, camera_normal,
-        coat_roughness);
-#endif
-    }
-  }
 
   highp vec3 emissive = material.emissive;
 

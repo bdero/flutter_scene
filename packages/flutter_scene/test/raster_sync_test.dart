@@ -1,6 +1,10 @@
 // ignore_for_file: implementation_imports
+import 'dart:async';
+
 import 'package:flutter_scene/src/gpu/raster_sync.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/gpu_available.dart';
 
 /// [FramePacer] paces the progressive radiance prefilter, one band per frame.
 /// Where nothing presents (a headless test, a backgrounded embedding) there is
@@ -46,6 +50,18 @@ void main() {
     final fresh = FramePacer();
     expect(fresh, isNot(same(stalled)));
     await fresh.awaitFrame(timeout: timeout);
+  });
+
+  testWidgets('leaves no pending timer in a widget test that ends before '
+      'the engine answers', (tester) async {
+    if (!gpuAvailable()) {
+      markTestSkipped('Requires a GPU device.');
+      return;
+    }
+    // The engine answers on the real event loop, but a widget test runs on a
+    // fake clock and fails on any timer of that clock still pending when it
+    // ends. The give-up timer must not belong to the test's clock.
+    unawaited(awaitRasterThread());
   });
 
   test('completes without a GPU context', () async {

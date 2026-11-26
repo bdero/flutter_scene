@@ -1,8 +1,7 @@
-// Covers PolylineGeometry: the camera-facing strip expansion math,
-// round cap disks, the draw-on range, and the factory's argument
-// checks. The expansion is pure (it takes a view-projection matrix),
-// so it runs without a GPU context; the PolylineGeometry class itself
-// uploads to the GPU and is exercised by the example app.
+// Covers PolylineGeometry's CPU side: the vertices and draw range its
+// vertex shader reads, dash resampling, and the factory's argument checks.
+// Also covers expandPolyline, the CPU strip expansion the trail ribbon
+// uses. All of it is pure, so it runs without a GPU context.
 
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -174,6 +173,119 @@ void main() {
       expect(near, closeTo(16, 0.5));
       expect(far, closeTo(16, 0.5));
       expect((near - far).abs(), lessThan(0.5));
+    });
+  });
+
+  group('buildPolylineVertices', () {
+    final points = [Vector3(0, 0, 0), Vector3(3, 0, 0), Vector3(3, 4, 0)];
+    final colors = [
+      Vector4(1, 0, 0, 1),
+      Vector4(0, 1, 0, 1),
+      Vector4(0, 0, 1, 1),
+    ];
+    final mesh = buildPolylineVertices(
+      points,
+      widths: [2.0, 4.0, 6.0],
+      colors: colors,
+      diskPoints: const [2],
+    );
+    List<double> vertex(int index) => mesh.vertices.sublist(
+      index * polylineVertexFloats,
+      (index + 1) * polylineVertexFloats,
+    );
+
+    test('emits two strip vertices per point and a disk per cap', () {
+      expect(
+        mesh.vertices,
+        hasLength((points.length * 2 + 17) * polylineVertexFloats),
+      );
+      // Two triangles per segment, sixteen per disk.
+      expect(mesh.indices, hasLength((2 * 2 + 16) * 3));
+    });
+
+    test('a strip vertex carries its point and both neighbors', () {
+      final middle = vertex(2);
+      expect(middle.sublist(0, 3), [3, 0, 0]);
+      expect(middle.sublist(3, 6), [0, 0, 0]);
+      expect(middle.sublist(6, 9), [3, 4, 0]);
+    });
+
+    test('an end point stands in for its missing neighbor', () {
+      expect(vertex(0).sublist(3, 6), [0, 0, 0]);
+      expect(vertex(4).sublist(6, 9), [3, 4, 0]);
+    });
+
+    test('the two sides of a point differ only in side and u', () {
+      final left = vertex(2);
+      final right = vertex(3);
+      // Shape: side, unused, half width, disk flag.
+      expect(left.sublist(9, 13), [-1, 0, 2, 0]);
+      expect(right.sublist(9, 13), [1, 0, 2, 0]);
+      expect(left[16], 0);
+      expect(right[16], 1);
+      expect(left.sublist(0, 9), right.sublist(0, 9));
+    });
+
+    test('arcs are fractions of the length and v is the distance', () {
+      // The line is 3 + 4 = 7 units long.
+      final middle = vertex(2);
+      expect(middle[13], closeTo(3 / 7, 1e-6));
+      expect(middle[14], 0);
+      expect(middle[15], 1);
+      expect(middle[17], 3);
+      expect(vertex(4)[17], 7);
+    });
+
+    test('each vertex takes its point color', () {
+      expect(vertex(3).sublist(18, 22), [0, 1, 0, 1]);
+    });
+
+    test('a disk is a center and a unit ring around its point', () {
+      const base = 6;
+      final center = vertex(base);
+      expect(center.sublist(0, 3), [3, 4, 0]);
+      // A disk has no tangent, so its neighbors are the point.
+      expect(center.sublist(3, 9), [3, 4, 0, 3, 4, 0]);
+      expect(center.sublist(9, 13), [0, 0, 3, 1]);
+      for (var k = 0; k < 16; k++) {
+        final rim = vertex(base + 1 + k);
+        expect(rim[9] * rim[9] + rim[10] * rim[10], closeTo(1, 1e-6));
+        expect(rim[12], 1);
+      }
+    });
+
+    test('a zero-length line has no arc to divide by', () {
+      final flat = buildPolylineVertices(
+        [Vector3(1, 1, 1), Vector3(1, 1, 1)],
+        widths: [1.0, 1.0],
+        colors: [Vector4.zero(), Vector4.zero()],
+        diskPoints: const [],
+      );
+      expect(flat.vertices.every((value) => value.isFinite), isTrue);
+    });
+  });
+
+  group('polylineDrawRange', () {
+    final points = [Vector3(0, 0, 0), Vector3(2, 0, 0), Vector3(2, 2, 0)];
+
+    test('the whole line spans both end points', () {
+      expect(polylineDrawRange(points, 0.0, 1.0), [0, 1, 0, 0, 0, 2, 2, 0]);
+    });
+
+    test('a trimmed range ends part way along a segment', () {
+      final range = polylineDrawRange(points, 0.25, 0.75);
+      expect(range.sublist(0, 2), [0.25, 0.75]);
+      expect(range.sublist(2, 5), [1, 0, 0]);
+      expect(range.sublist(5, 8), [2, 1, 0]);
+    });
+
+    test('the range clamps to the line', () {
+      expect(polylineDrawRange(points, -1.0, 3.0).sublist(0, 2), [0, 1]);
+    });
+
+    test('a zero-length line keeps the whole range', () {
+      final flat = [Vector3(1, 1, 1), Vector3(1, 1, 1)];
+      expect(polylineDrawRange(flat, 0.5, 0.5).sublist(0, 2), [0, 1]);
     });
   });
 

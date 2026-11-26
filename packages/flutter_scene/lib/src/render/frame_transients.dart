@@ -174,6 +174,11 @@ abstract interface class FrameTransients implements TransientWriter {
   /// Recycles completed buffers and resets frame stats. Called once per
   /// frame from the render setup.
   void beginFrame();
+
+  /// [emplace] for [data] kept in its own element type. The web backends
+  /// upload by element type, so this skips the byte-wise copy a `ByteData`
+  /// view of a `Float32List` costs under dart2wasm.
+  gpu.BufferView emplaceTyped(TypedData data);
 }
 
 /// Per-emplacement pooled transients for the immediate-execution WebGL2
@@ -189,10 +194,16 @@ abstract interface class FrameTransients implements TransientWriter {
 /// flight. Buffers recycle through a completion-gated pool per size class
 /// and are released after [kTransientIdleFrames] unused frames, the same
 /// policies as [TransientArena].
+///
+/// With [vertexData], buffers are geometry buffers, which the web backends
+/// create as typed vertex buffers whose uploads skip the staging mirror.
+/// The pool is then only for vertex-rate data, such as instance transforms.
 class ImmediatePoolTransients implements FrameTransients {
-  ImmediatePoolTransients(this._tracker) {
+  ImmediatePoolTransients(this._tracker, {this.vertexData = false}) {
     _tracker.addBeforeSubmitListener(_onBeforeSubmit);
   }
+
+  final bool vertexData;
 
   /// The smallest pooled buffer size; tiny uniform blocks share this class.
   static const int kMinBufferLengthInBytes = 512;
@@ -202,14 +213,21 @@ class ImmediatePoolTransients implements FrameTransients {
   /// Buffers handed out since the last submission; stamped by it.
   final List<_TransientBlock> _used = [];
 
-  /// Stamped buffers, reusable once the watermark passes their stamp.
-  final List<_TransientBlock> _pooled = [];
+  /// Stamped buffers in submission order, awaiting completion.
+  final ListQueue<_TransientBlock> _pending = ListQueue();
+
+  /// Completed buffers, newest last within each size class.
+  final Map<int, List<_TransientBlock>> _available = {};
 
   int _frame = 0;
+  int _completed = 0;
 
   /// Total live buffers. For tests.
   @visibleForTesting
-  int get bufferCount => _used.length + _pooled.length;
+  int get bufferCount =>
+      _used.length +
+      _pending.length +
+      _available.values.fold(0, (total, blocks) => total + blocks.length);
 
   /// Device buffers every [ImmediatePoolTransients] has created. For tests
   /// that check steady-state rendering allocates nothing.
@@ -225,33 +243,35 @@ class ImmediatePoolTransients implements FrameTransients {
   }
 
   @override
-  gpu.BufferView emplace(ByteData bytes) {
-    final length = bytes.lengthInBytes;
+  gpu.BufferView emplace(ByteData bytes) => emplaceTyped(bytes);
+
+  @override
+  gpu.BufferView emplaceTyped(TypedData data) {
+    final length = data.lengthInBytes;
     final sizeClass = _sizeClassFor(length);
-    final completed = _tracker.completedThrough;
+    _promoteCompleted();
 
     // Most recently used first, so surplus buffers age out.
-    _TransientBlock? block;
-    for (var i = _pooled.length - 1; i >= 0; i--) {
-      final candidate = _pooled[i];
-      if (candidate.length == sizeClass && candidate.stamp <= completed) {
-        block = candidate;
-        _pooled.removeAt(i);
-        break;
-      }
-    }
-    block ??= _TransientBlock(
-      _createBuffer(sizeClass),
-      ByteData(0), // No CPU staging: writes go straight to the device.
-      sizeClass,
-      false,
-    );
+    final available = _available[sizeClass];
+    final block = available != null && available.isNotEmpty
+        ? available.removeLast()
+        : _TransientBlock(
+            _createBuffer(sizeClass),
+            sizeClass,
+            false,
+            staged: false,
+          );
     block.lastUsed = _frame;
     _used.add(block);
 
     // Device-resident before the view is returned: the immediate backend
     // consumes it as soon as the caller binds and draws.
-    if (!block.device.overwrite(bytes)) {
+    final uploaded = vertexData
+        ? gpu.writeGeometryData(block.device, data, destinationOffsetInBytes: 0)
+        : block.device.overwrite(
+            data is ByteData ? data : ByteData.sublistView(data),
+          );
+    if (!uploaded) {
       debugPrint(
         'ImmediatePoolTransients: failed to upload $length bytes to a '
         '$sizeClass-byte transient buffer.',
@@ -264,8 +284,9 @@ class ImmediatePoolTransients implements FrameTransients {
     );
   }
 
-  static gpu.DeviceBuffer _createBuffer(int length) {
+  gpu.DeviceBuffer _createBuffer(int length) {
     buffersCreated++;
+    if (vertexData) return gpu.createGeometryBuffers(length, 0).vertex;
     return gpu.gpuContext.createDeviceBuffer(
       gpu.StorageMode.hostVisible,
       length,
@@ -273,35 +294,49 @@ class ImmediatePoolTransients implements FrameTransients {
   }
 
   void _onBeforeSubmit(int id) {
+    _promoteCompleted();
     for (final block in _used) {
       block.stamp = id;
-      _pooled.add(block);
+      if (id <= _completed) {
+        (_available[block.length] ??= []).add(block);
+      } else {
+        _pending.addLast(block);
+      }
     }
     _used.clear();
+  }
+
+  void _promoteCompleted() {
+    final completed = _tracker.completedThrough;
+    if (completed == _completed) return;
+    _completed = completed;
+    while (_pending.isNotEmpty && _pending.first.stamp <= completed) {
+      final block = _pending.removeFirst();
+      (_available[block.length] ??= []).add(block);
+    }
   }
 
   @override
   void beginFrame() {
     _onBeforeSubmit(_tracker.latestSubmission);
     _frame++;
-    final completed = _tracker.completedThrough;
-    _pooled.removeWhere(
-      (block) =>
-          block.stamp <= completed &&
-          _frame - block.lastUsed > kTransientIdleFrames,
-    );
+    for (final blocks in _available.values) {
+      blocks.removeWhere((block) => block.retireIfIdle(_completed, _frame));
+    }
   }
 }
 
 /// Creates the platform-default [FrameTransients]: a staged, block-based
 /// [TransientArena] where GPU work executes after submission, and a
 /// per-emplacement [ImmediatePoolTransients] where GL commands execute at
-/// encode time and a bound buffer can never be written again.
+/// encode time and a bound buffer can never be written again. [vertexData]
+/// marks a pool that only ever holds vertex-rate data.
 FrameTransients createFrameTransients(
   GpuSubmissionTracker tracker, {
   int? alignment,
+  bool vertexData = false,
 }) => kImmediateGpuExecution
-    ? ImmediatePoolTransients(tracker)
+    ? ImmediatePoolTransients(tracker, vertexData: vertexData)
     : TransientArena(tracker, alignment: alignment);
 
 /// A completion-aware bump allocator for per-frame transient GPU data.
@@ -381,11 +416,7 @@ class TransientArena implements FrameTransients {
     _open.clear();
     _frame++;
     final completed = _tracker.completedThrough;
-    _sealed.removeWhere(
-      (block) =>
-          block.stamp <= completed &&
-          _frame - block.lastUsed > kTransientIdleFrames,
-    );
+    _sealed.removeWhere((block) => block.retireIfIdle(completed, _frame));
   }
 
   /// Decides where an emplacement of [length] lands: at the aligned offset
@@ -409,6 +440,21 @@ class TransientArena implements FrameTransients {
     }
     return (rollOver: false, offset: aligned);
   }
+
+  @override
+  gpu.BufferView emplaceTyped(TypedData data) => emplace(_bytesOf(data));
+
+  // A byte view of [data], memoized for the last list. Non-instanced draws
+  // pack into one reused scratch list, so consecutive draws share the view.
+  ByteData _bytesOf(TypedData data) {
+    if (data is ByteData) return data;
+    if (identical(data, _lastTyped)) return _lastTypedBytes!;
+    _lastTyped = data;
+    return _lastTypedBytes = ByteData.sublistView(data);
+  }
+
+  TypedData? _lastTyped;
+  ByteData? _lastTypedBytes;
 
   @override
   gpu.BufferView emplace(ByteData bytes) {
@@ -485,8 +531,7 @@ class TransientArena implements FrameTransients {
       gpu.StorageMode.hostVisible,
       length,
     );
-    return _TransientBlock(device, ByteData(length), length, oversize)
-      ..lastUsed = _frame;
+    return _TransientBlock(device, length, oversize)..lastUsed = _frame;
   }
 
   /// Uploads and seals every open block. Runs just before each submission,
@@ -502,6 +547,9 @@ class TransientArena implements FrameTransients {
 
   void _seal(_TransientBlock block, int stamp) {
     if (block.cursor > 0) {
+      // TODO(webgpu-transients): upload `block.words` directly. A ByteData
+      // source misses the WebGPU buffer's whole-word copy for a Uint32List,
+      // which needs DeviceBuffer.overwrite to accept TypedData.
       final ok = block.device.overwrite(
         ByteData.sublistView(block.staging, 0, block.cursor),
       );
@@ -522,45 +570,98 @@ class TransientArena implements FrameTransients {
   }
 }
 
-class _TransientBlock {
-  _TransientBlock(this.device, this.staging, this.length, this.oversize)
-    : _stagingBytes = staging.buffer.asUint8List(
-        staging.offsetInBytes,
-        staging.lengthInBytes,
-      );
-
-  /// Writes up to this many bytes word by word, below the cost of the source
-  /// view a bulk copy needs. Uniform blocks land here.
-  static const int _wordCopyLimit = 256;
-
-  final gpu.DeviceBuffer device;
-  final ByteData staging;
-  final Uint8List _stagingBytes;
-  final int length;
-  final bool oversize;
-
-  /// Copies [bytes] into the staging at [offset].
-  void stage(int offset, ByteData bytes) {
-    final length = bytes.lengthInBytes;
-    if (length <= _wordCopyLimit && length & 3 == 0) {
-      for (var i = 0; i < length; i += 4) {
-        staging.setUint32(
-          offset + i,
-          bytes.getUint32(i, Endian.host),
-          Endian.host,
-        );
-      }
-      return;
+/// CPU staging for a [TransientArena] block, backed by 32-bit words.
+///
+/// Word storage keeps staging copies whole-word under dart2wasm, where 32-bit
+/// access to a byte-backed list is much slower.
+@visibleForTesting
+class TransientStagingBuffer {
+  TransientStagingBuffer(this.capacity)
+    : assert(capacity >= 0),
+      words = Uint32List((capacity + 3) >> 2) {
+    final full = ByteData.sublistView(words);
+    staging = (capacity & 3) == 0
+        ? full
+        : ByteData.sublistView(full, 0, capacity);
+    if (!kIsWasm) {
+      _bytes = words.buffer.asUint8List(0, capacity);
     }
-    _stagingBytes.setRange(
-      offset,
-      offset + length,
-      bytes.buffer.asUint8List(bytes.offsetInBytes, length),
-    );
   }
+
+  /// Above this size on non-Wasm runtimes, `Uint8List.setRange` beats a Dart
+  /// word loop; uniform blocks stay below it and avoid allocating a view.
+  static const int _wordCopyLimit = 1024;
+
+  final int capacity;
+  final Uint32List words;
+  late final ByteData staging;
+  Uint8List? _bytes;
 
   /// Bytes staged so far while open; reset when sealed.
   int cursor = 0;
+
+  /// Copies [bytes] into [words] at byte [offset].
+  void stage(int offset, ByteData bytes) {
+    final byteLength = bytes.lengthInBytes;
+    if (!kIsWasm && byteLength > _wordCopyLimit) {
+      _bytes!.setRange(
+        offset,
+        offset + byteLength,
+        bytes.buffer.asUint8List(bytes.offsetInBytes, byteLength),
+      );
+      return;
+    }
+    if ((offset & 3) == 0) {
+      final dstWord = offset >> 2;
+      final wordCount = byteLength >> 2;
+      for (var i = 0; i < wordCount; i++) {
+        words[dstWord + i] = bytes.getUint32(i << 2, Endian.host);
+      }
+      for (var b = wordCount << 2; b < byteLength; b++) {
+        staging.setUint8(offset + b, bytes.getUint8(b));
+      }
+      return;
+    }
+    final endOffset = offset + byteLength;
+    var dstPos = offset;
+    var srcPos = 0;
+    while (dstPos < endOffset && (dstPos & 3) != 0) {
+      staging.setUint8(dstPos, bytes.getUint8(srcPos));
+      dstPos++;
+      srcPos++;
+    }
+    final middleWords = (endOffset - dstPos) >> 2;
+    final dstWord = dstPos >> 2;
+    for (var i = 0; i < middleWords; i++) {
+      words[dstWord + i] = bytes.getUint32(srcPos, Endian.host);
+      srcPos += 4;
+    }
+    dstPos += middleWords << 2;
+    while (dstPos < endOffset) {
+      staging.setUint8(dstPos, bytes.getUint8(srcPos));
+      dstPos++;
+      srcPos++;
+    }
+  }
+}
+
+class _TransientBlock extends TransientStagingBuffer {
+  _TransientBlock(this.device, this.length, this.oversize, {bool staged = true})
+    : super(staged ? length : 0);
+
+  final gpu.DeviceBuffer device;
+  final int length;
+  final bool oversize;
+
+  /// Releases the device buffer when no submitted work still reads it and it
+  /// has sat unused past [kTransientIdleFrames], returning whether it did.
+  bool retireIfIdle(int completed, int frame) {
+    if (stamp > completed || frame - lastUsed <= kTransientIdleFrames) {
+      return false;
+    }
+    gpu.gpuHost.releaseBuffer(device);
+    return true;
+  }
 
   /// The last submission id that may reference this block's device buffer.
   int stamp = 0;
@@ -580,4 +681,5 @@ final FrameTransients uniformTransients = createFrameTransients(
 final FrameTransients instanceTransients = createFrameTransients(
   rendererSubmissions,
   alignment: 16,
+  vertexData: true,
 );

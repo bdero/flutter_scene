@@ -1,8 +1,7 @@
 /// The identity the editor was built with, baked at build time by the app's
-/// build hook into an `editor_build_info.json` data asset. Installation and
+/// build hook into an `editor_build_info.json` asset. Installation and
 /// project version warnings compare against these fields; a missing asset
-/// (data assets disabled) yields [EditorBuildInfo.unknown] and the warnings
-/// simply do not fire.
+/// yields [EditorBuildInfo.unknown] and the warnings simply do not fire.
 library;
 
 import 'dart:convert';
@@ -32,8 +31,7 @@ class EditorBuildInfo {
 
   bool get isKnown => frameworkRevision != null;
 
-  /// Loads the baked build info from [assetKey] (the hosting app's data
-  /// asset, `packages/<app>/editor_build_info.json`).
+  /// Loads the baked build info from the hosting app's [assetKey].
   static Future<EditorBuildInfo> load(String assetKey) async {
     try {
       final decoded = jsonDecode(await rootBundle.loadString(assetKey));

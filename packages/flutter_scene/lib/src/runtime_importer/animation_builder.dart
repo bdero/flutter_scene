@@ -7,7 +7,8 @@ import '../node.dart';
 
 /// Builds an engine [Animation] from a glTF animation. Each glTF channel
 /// becomes an engine [AnimationChannel] keyed by the target node's name and
-/// property (translation/rotation/scale/weights). The engine currently
+/// property (translation/rotation/scale/weights), or one per target node of
+/// a `KHR_animation_pointer` channel's engine paths. The engine currently
 /// supports linear timeline interpolation; STEP samplers degrade to "always
 /// pick the next keyframe" via the same resolver, and CUBICSPLINE samplers
 /// keep only the keyframe values (tangents discarded).
@@ -17,10 +18,25 @@ Animation buildAnimation({
   required List<GltfBufferView> bufferViews,
   required Uint8List bufferData,
   required List<Node> engineNodes,
+  required List<GltfPunctualLight> lights,
   required GltfCoordinatePolicy coordinatePolicy,
 }) {
   final channels = <AnimationChannel>[];
   for (final channel in gltfAnimation.channels) {
+    if (channel.pathTargets.isNotEmpty) {
+      channels.addAll(
+        _buildPathChannels(
+          channel,
+          gltfAnimation.samplers,
+          accessors,
+          bufferViews,
+          bufferData,
+          engineNodes,
+          lights,
+        ),
+      );
+      continue;
+    }
     final targetNodeIdx = channel.targetNode;
     if (targetNodeIdx == null ||
         targetNodeIdx < 0 ||
@@ -105,6 +121,58 @@ Animation buildAnimation({
     channels.add(AnimationChannel(bindTarget: bindKey, resolver: resolver));
   }
   return Animation(name: gltfAnimation.name ?? '', channels: channels);
+}
+
+Iterable<AnimationChannel> _buildPathChannels(
+  GltfAnimationChannel channel,
+  List<GltfAnimationSampler> samplers,
+  List<GltfAccessor> accessors,
+  List<GltfBufferView> bufferViews,
+  Uint8List bufferData,
+  List<Node> engineNodes,
+  List<GltfPunctualLight> lights,
+) sync* {
+  if (channel.sampler < 0 || channel.sampler >= samplers.length) return;
+  final sampler = samplers[channel.sampler];
+  final times = readAccessorAsFloat32(
+    accessors[sampler.input],
+    bufferViews,
+    bufferData,
+  ).toList();
+  final count = channel.pathComponentCount;
+  final values = convertGltfPathKeyframes(
+    channel,
+    lights,
+    selectGltfKeyframeValues(
+      readAccessorAsFloat32(accessors[sampler.output], bufferViews, bufferData),
+      componentCount: count,
+      cubicSpline: sampler.interpolation == 'CUBICSPLINE',
+    ),
+  );
+  if (times.isEmpty || values.length != times.length * count) {
+    debugPrint(
+      'Skipping animation pointer "${channel.pointer}" whose keyframes are '
+      'not $count floats each',
+    );
+    return;
+  }
+  for (final target in channel.pathTargets) {
+    if (target.node < 0 || target.node >= engineNodes.length) continue;
+    yield AnimationChannel(
+      bindTarget: BindKey(
+        nodeName: engineNodes[target.node].name,
+        property: AnimationProperty.path,
+        path: target.path,
+      ),
+      resolver: PropertyResolver.makePathTimeline(
+        target.path,
+        times,
+        values,
+        componentCount: count,
+        step: sampler.interpolation == 'STEP',
+      ),
+    );
+  }
 }
 
 List<Vector3> _readVec3List(Float32List values) {

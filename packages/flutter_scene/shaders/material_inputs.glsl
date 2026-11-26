@@ -10,12 +10,15 @@
 // be declared before it is included.
 
 // Applies offset/scale plus a cosine/sine rotation pair to texture coordinates.
+// The rotation turns UVs counter-clockwise, as KHR_texture_transform's prose
+// and example specify (its GLSL snippet, read column-major, has the opposite
+// sign).
 highp vec2 ApplyMaterialUvTransform(highp vec2 uv, highp vec4 transform,
                                     vec2 rotation) {
   highp vec2 scaled = uv * transform.zw;
   return transform.xy +
-         vec2(rotation.x * scaled.x - rotation.y * scaled.y,
-              rotation.y * scaled.x + rotation.x * scaled.y);
+         vec2(rotation.x * scaled.x + rotation.y * scaled.y,
+              -rotation.y * scaled.x + rotation.x * scaled.y);
 }
 
 // Applies a texture transform whose rotation is stored as an angle.

@@ -640,7 +640,7 @@ void main() {
     expect(compiled.sidecar['depth_write'], isTrue);
     expect(compiled.glsl, contains('GetSceneColorFiltered'));
     expect(compiled.glsl, contains('#define FLUTTER_SCENE_SKIP_SSAO'));
-    expect(compiled.glsl, isNot(contains('uniform sampler2D ssao_texture;')));
+    expect(compiled.glsl, isNot(contains('sampler2D ssao_texture;')));
     // The scene-color sampler and its accessors compile in through the shared
     // include, on the define the emitter writes for a declared input.
     expect(compiled.glsl, contains('#define FLUTTER_SCENE_SCENE_COLOR'));
@@ -696,6 +696,15 @@ void main() {
     );
   });
 
+  test('texture rotation follows KHR_texture_transform', () {
+    // u' = c * u + s * v, v' = -s * u + c * v, as the extension's example
+    // implies. The opposite sign points TextureTransformTest's arrow at red.
+    final inputs = File('shaders/material_inputs.glsl').readAsStringSync();
+
+    expect(inputs, contains('rotation.x * scaled.x + rotation.y * scaled.y'));
+    expect(inputs, contains('-rotation.y * scaled.x + rotation.x * scaled.y'));
+  });
+
   test('filtered scene color lives in a reviewable shader include', () {
     final filtered = File(
       'shaders/filtered_scene_color.glsl',
@@ -730,7 +739,7 @@ void main() {
       source,
       contains('(1.0 - 0.5 * material.sheen_roughness) * occlusion *'),
     );
-    expect(source, contains('return roughness;'));
+    expect(source, contains('float filtered = roughness;'));
     expect(source, contains('max(material.sheen_roughness, kMinRoughness)'));
     expect(pbr, contains('kMinRoughness * kMinRoughness'));
     expect(
@@ -763,8 +772,10 @@ void main() {
     expect(lighting, contains('min(CascadeBlendWeight(uv, margin, band),'));
     expect(lighting, contains('float shadow = shadow_sum + (1.0 - weight);'));
     // The weight guard replaces the old `found` flag, so a full cascade ends
-    // the walk instead of a second lookup.
-    expect(lighting, contains('if (weight < 1.0 && count > IDX)'));
+    // the walk instead of a second lookup. The walk is a loop over the
+    // cascade count, so the cascade sampler is compiled once.
+    expect(lighting, contains('for (int i = 0; i < count; i++) {'));
+    expect(lighting, contains('if (weight < 1.0) {'));
     // An early return inside the blend would emit a loop here (see the
     // Direct3D note on SampleShadow), so the helper must stay a select.
     expect(lighting, isNot(contains('if (band <= 0.0) return')));
@@ -787,7 +798,7 @@ void main() {
     expect(sampling, contains('if (fade < 1.0) {'));
     expect(
       sampling.indexOf('if (fade < 1.0) {'),
-      lessThan(sampling.indexOf('    _TRY_CASCADE(0)')),
+      lessThan(sampling.indexOf('for (int i = 0; i < count; i++) {')),
     );
     final packing = File(
       'lib/src/material/engine_lighting.dart',
@@ -819,8 +830,28 @@ void main() {
     expect(normals, contains('vec4 authored = GetWorldTangent();'));
     expect(
       normals,
-      contains('return CotangentFrame(normal, view_vector, uv);'),
+      contains('mat3 frame = CotangentFrame(normal, view_vector, uv);'),
     );
+  });
+
+  test('derived tangent frames orient like supplied tangents', () {
+    // Without both, a mesh with no tangents reads one normal-map channel
+    // inverted (NormalTangentTest's flipped Y).
+    final normals = File('shaders/normals.glsl').readAsStringSync();
+
+    expect(normals, contains('dot(cross(d_view_x, d_view_y), normal) < 0.0'));
+    expect(
+      normals,
+      contains('B *= gl_FrontFacing ? -orientation : orientation;'),
+    );
+  });
+
+  test('back faces mirror the whole tangent frame', () {
+    // The normal and bitangent flip with the face, so without the tangent a
+    // double-sided normal map reads its red channel inverted from behind.
+    final normals = File('shaders/normals.glsl').readAsStringSync();
+
+    expect(normals, contains('frame[0] *= gl_FrontFacing ? 1.0 : -1.0;'));
   });
 
   test('vertex bodies carry normals by the inverse-transpose', () {

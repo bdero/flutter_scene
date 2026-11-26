@@ -25,6 +25,14 @@ mat3 CotangentFrame(vec3 normal, highp vec3 view_vector, highp vec2 uv) {
   highp vec3 T = view_y_perp * d_uv_x.x + view_x_perp * d_uv_y.x;
   highp vec3 B = view_y_perp * d_uv_x.y + view_x_perp * d_uv_y.y;
 
+  // Divide out the sign of the screen's orientation, then point B the way a
+  // supplied tangent's bitangent does: along -V on a front face, since glTF
+  // normal maps are +Y up and V grows down.
+  highp float orientation =
+      dot(cross(d_view_x, d_view_y), normal) < 0.0 ? -1.0 : 1.0;
+  T *= orientation;
+  B *= gl_FrontFacing ? -orientation : orientation;
+
   // Construct a scale-invariant frame. An edge-on card drives T and B toward
   // zero; if the squared length underflows to zero (or a denormal the GPU
   // flushes to zero inside inversesqrt) the reciprocal is +Inf and 0 * Inf is a
@@ -38,15 +46,23 @@ mat3 CotangentFrame(vec3 normal, highp vec3 view_vector, highp vec2 uv) {
 }
 
 mat3 TangentFrame(vec3 normal, highp vec3 view_vector, highp vec2 uv) {
+  // The derived frame is built before the branch on the vertex tangent and the
+  // function returns once, so its derivatives stay out of varying control flow
+  // and out of the one-iteration loop an early return compiles to, inside
+  // which ANGLE writes a derivative as 0.0.
+  mat3 frame = CotangentFrame(normal, view_vector, uv);
   vec4 authored = GetWorldTangent();
   highp vec3 tangent = authored.xyz - normal * dot(normal, authored.xyz);
   highp float tangent_length_squared = dot(tangent, tangent);
-  if (tangent_length_squared <= 1e-10 || abs(authored.w) < 0.5) {
-    return CotangentFrame(normal, view_vector, uv);
+  if (tangent_length_squared > 1e-10 && abs(authored.w) >= 0.5) {
+    tangent *= inversesqrt(tangent_length_squared);
+    vec3 bitangent = normalize(cross(normal, tangent)) * sign(authored.w);
+    frame = mat3(tangent, bitangent, normal);
   }
-  tangent *= inversesqrt(tangent_length_squared);
-  vec3 bitangent = normalize(cross(normal, tangent)) * sign(authored.w);
-  return mat3(tangent, bitangent, normal);
+  // A back face already flips the normal and bitangent; flipping the tangent
+  // too mirrors the whole frame.
+  frame[0] *= gl_FrontFacing ? 1.0 : -1.0;
+  return frame;
 }
 
 vec3 PerturbNormal(sampler2D normal_tex, vec3 normal, highp vec3 view_vector,

@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/light_culling.dart';
 import 'package:flutter_scene/src/render/point_shadow.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
 import 'package:flutter_scene/src/render/spot_shadow.dart';
 
 /// The per-object punctual light budget: how many lights the per-object
@@ -29,8 +30,8 @@ const int kMaxPunctualLights = 16;
 /// are kept); the fragment loop shades exactly the froxel's count.
 const int kMaxFroxelLights = 255;
 
-// A punctual light is one row of the parameters texture, eight RGBA32F texels
-// wide:
+// A punctual light is one row of the parameters texture, twelve RGBA32F
+// texels wide:
 //   col 0: position.xyz, type   (0 directional, 1 point, 2 spot)
 //   col 1: color.rgb * intensity, inverse range (0 = infinite)
 //   col 2: direction.xyz, spot angular scale
@@ -39,14 +40,17 @@ const int kMaxFroxelLights = 255;
 //   col 4-7: world -> spot-clip matrix for a shadow-casting spot. A
 //          shadow-casting point light instead packs its face-depth mapping and
 //          sampling parameters here (col 4: depth scale/offset, normal bias,
-//          softness; col 5: depth bias, inverse face resolution), and its
-//          col 3 shadow slot is its first atlas tile relative to the cascade
-//          tiles. Unused otherwise.
+//          softness; col 5: depth bias, inverse face resolution). Unused
+//          otherwise.
+//   col 8: a shadow-casting spot's atlas tile in atlas UV (top-left xy,
+//          extent zw), or a point light's two tiles' top-left corners.
+//   col 9: a spot's depth bias, normal bias, softness, and inverse tile
+//          resolution, or a point light's tile extent in xy.
 // The shader reads these by computed UV, sidestepping the GLSL ES 1.00 ban on
 // dynamically indexing a uniform array in a fragment shader. The shadow data
 // rides here rather than in its own texture so no extra sampler is needed
 // (the lit shader is at the backend's sampler limit).
-const int _texelsPerLight = 8;
+const int _texelsPerLight = 12;
 const int _floatsPerLight = _texelsPerLight * 4;
 
 // The per-object light-index buffer is packed into a 2D texture at most this
@@ -72,9 +76,6 @@ class PunctualLighting {
     this.spotShadowCount = 0,
     this.pointShadowTileCount = 0,
     this.rectAreaLightCount = 0,
-    this.spotShadowDepthBias = 0.0,
-    this.spotShadowNormalBias = 0.0,
-    this.spotShadowSoftness = 0.0,
     this.internalBuffer,
   });
 
@@ -88,9 +89,6 @@ class PunctualLighting {
       spotShadowCount = 0,
       pointShadowTileCount = 0,
       rectAreaLightCount = 0,
-      spotShadowDepthBias = 0.0,
-      spotShadowNormalBias = 0.0,
-      spotShadowSoftness = 0.0,
       internalBuffer = null;
 
   /// The buffer that built this result, for per-view froxel builds
@@ -118,19 +116,14 @@ class PunctualLighting {
   final int indexWidth;
   final int indexHeight;
 
-  /// Number of shadow-casting spots this frame (their tiles follow the
-  /// directional cascades in the shared shadow atlas, and their matrices ride
-  /// in the params texture). Zero disables spot shadow sampling.
+  /// Number of shadow-casting spots this frame (their tiles, matrices, and
+  /// shadow parameters ride in the params texture). Zero disables spot shadow
+  /// sampling.
   final int spotShadowCount;
 
   /// Number of atlas tiles claimed by shadow-casting point lights (two per
-  /// caster, following the spot tiles). Zero disables point shadow sampling.
+  /// caster). Zero disables point shadow sampling.
   final int pointShadowTileCount;
-
-  /// Shared spot-shadow sampling parameters (from the first caster).
-  final double spotShadowDepthBias;
-  final double spotShadowNormalBias;
-  final double spotShadowSoftness;
 }
 
 // A ring of exactly-sized host-visible RGBA32F textures, so a frame in flight is
@@ -267,6 +260,7 @@ class _PackedLights {
 class PunctualLightBuffer {
   final _TextureRing _paramsRing = _TextureRing();
   final _TextureRing _indexRing = _TextureRing();
+  int _indexCapacity = 0;
 
   bool _warnedOverflow = false;
 
@@ -293,11 +287,8 @@ class PunctualLightBuffer {
     required Bvh bvh,
     SpotShadowFrame? spotShadows,
     PointShadowFrame? pointShadows,
-    // The shared atlas gives every tile one size, so a point light's faces
-    // render at half that rather than at its own shadowMapResolution. The
-    // shader clamps its kernel with this, so it has to be the size the faces
-    // actually got.
-    int pointFaceResolution = 512,
+    // Where the shadow tiles went. Required when either frame is set.
+    ShadowAtlasLayout? shadowAtlas,
     bool enableFroxels = true,
   }) {
     // One build per frame, so this is where the rings roll over.
@@ -327,56 +318,19 @@ class PunctualLightBuffer {
         packed.cullables.every((light) => light.channelMask == 0xFF) &&
         items.every((item) => item.lightChannelMask == 0xFF);
 
-    // Stamp each shadow-casting spot's slot (texel 3.y) and world -> spot-clip
-    // matrix (texels 4-7) into its parameters row, so the shader can sample the
-    // right shared-atlas tile without a separate matrices texture.
+    stampShadowRows(
+      packed.params,
+      directionals: directionals,
+      primaryDirectional: primaryDirectional,
+      points: points,
+      spots: spots,
+      spotShadows: spotShadows,
+      pointShadows: pointShadows,
+      shadowAtlas: shadowAtlas,
+    );
     final spotTileCount = spotShadows?.matrices.length ?? 0;
-    if (spotShadows != null) {
-      final spotRowStart =
-          directionals.where((d) => !identical(d, primaryDirectional)).length +
-          points.length;
-      for (var si = 0; si < spots.length; si++) {
-        final slot = spotShadows.slotOf(spots[si]);
-        if (slot < 0) continue;
-        final base = (spotRowStart + si) * _floatsPerLight;
-        packed.params[base + 13] = slot.toDouble();
-        packed.params.setRange(
-          base + 16,
-          base + 32,
-          spotShadows.matrices[slot].storage,
-        );
-      }
-    }
-
-    // Stamp each shadow-casting point light's first atlas tile (texel 3.y,
-    // relative to the cascade tiles, after the spot tiles) and its face-depth
-    // mapping plus sampling parameters (texels 4-5, free for point rows). The
-    // shader reconstructs each cube face's projection analytically from the
-    // light position, so no per-face matrices are needed: window depth is
-    // scale - offset / faceDepth, the standard perspective mapping.
     final pointTileCount =
         (pointShadows?.casters.length ?? 0) * kPointShadowTilesPerLight;
-    if (pointShadows != null) {
-      final pointRowStart = directionals
-          .where((d) => !identical(d, primaryDirectional))
-          .length;
-      for (var pi = 0; pi < points.length; pi++) {
-        final slot = pointShadows.slotOf(points[pi]);
-        if (slot < 0) continue;
-        final light = points[pi].light;
-        final near = light.shadowNear;
-        final far = math.max(light.shadowFar, near * (1.0 + 1e-4));
-        final base = (pointRowStart + pi) * _floatsPerLight;
-        packed.params[base + 13] =
-            (spotTileCount + slot * kPointShadowTilesPerLight).toDouble();
-        packed.params[base + 16] = far / (far - near);
-        packed.params[base + 17] = far * near / (far - near);
-        packed.params[base + 18] = light.shadowNormalBias;
-        packed.params[base + 19] = light.shadowSoftness;
-        packed.params[base + 20] = light.shadowDepthBias;
-        packed.params[base + 21] = 1.0 / pointFaceResolution;
-      }
-    }
 
     // Bump the froxel epoch only when the packed light data actually changed
     // (compared after the spot-shadow stamping above), so a static view with
@@ -429,15 +383,19 @@ class PunctualLightBuffer {
         spotShadowCount: spotTileCount,
         pointShadowTileCount: pointTileCount,
         rectAreaLightCount: areas.length,
-        spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
-        spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
-        spotShadowSoftness: spotShadows?.softness ?? 0.0,
         internalBuffer: _froxelsEligible ? this : null,
       );
     }
 
-    final indexWidth = math.min(indexLength, _indexTexMaxWidth);
-    final indexHeight = (indexLength + indexWidth - 1) ~/ indexWidth;
+    // Keep capacity as light lists shrink so their textures stay reusable.
+    if (indexLength > _indexCapacity) {
+      _indexCapacity = math.max(1, _indexCapacity);
+      while (_indexCapacity < indexLength) {
+        _indexCapacity *= 2;
+      }
+    }
+    final indexWidth = math.min(_indexCapacity, _indexTexMaxWidth);
+    final indexHeight = (_indexCapacity + indexWidth - 1) ~/ indexWidth;
     // RGBA32F; the light index rides in .r, the rest is unread padding.
     final indexData = Float32List(indexWidth * indexHeight * 4);
     for (var i = 0; i < indexLength; i++) {
@@ -454,9 +412,6 @@ class PunctualLightBuffer {
       spotShadowCount: spotTileCount,
       pointShadowTileCount: pointTileCount,
       rectAreaLightCount: areas.length,
-      spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
-      spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
-      spotShadowSoftness: spotShadows?.softness ?? 0.0,
       internalBuffer: _froxelsEligible ? this : null,
     );
   }
@@ -499,6 +454,7 @@ class PunctualLightBuffer {
   void releaseTextures() {
     _paramsRing.clear();
     _indexRing.clear();
+    _indexCapacity = 0;
     _froxelRing.clear();
     _cachedFroxels = null;
     _froxelCacheEpoch = -1;
@@ -764,6 +720,94 @@ class PunctualLightBuffer {
       depthOffset: depthOffset,
       overflowedFroxels: overflowed,
     );
+  }
+
+  /// Stamps each shadow-casting spot and point light's shadow data into its
+  /// row of [params], packed by [packLights] from the same lights. Requires
+  /// [shadowAtlas] when either frame is set.
+  @visibleForTesting
+  static void stampShadowRows(
+    Float32List params, {
+    required List<DirectionalLightComponent> directionals,
+    DirectionalLightComponent? primaryDirectional,
+    required List<PointLightComponent> points,
+    required List<SpotLightComponent> spots,
+    SpotShadowFrame? spotShadows,
+    PointShadowFrame? pointShadows,
+    ShadowAtlasLayout? shadowAtlas,
+  }) {
+    // Stamp each shadow-casting spot's slot (texel 3.y), world -> spot-clip
+    // matrix (texels 4-7), atlas tile (texel 8), and shadow parameters (texel
+    // 9) into its parameters row, so the shader needs no separate texture.
+    final atlasWidth = shadowAtlas?.width ?? 1;
+    final atlasHeight = shadowAtlas?.height ?? 1;
+    if (spotShadows != null) {
+      final atlas = shadowAtlas!;
+      final spotRowStart =
+          directionals.where((d) => !identical(d, primaryDirectional)).length +
+          points.length;
+      for (var si = 0; si < spots.length; si++) {
+        final slot = spotShadows.slotOf(spots[si]);
+        if (slot < 0) continue;
+        final light = spots[si].light;
+        final tile = atlas.spotTiles[slot];
+        final base = (spotRowStart + si) * _floatsPerLight;
+        params[base + 13] = slot.toDouble();
+        params.setRange(
+          base + 16,
+          base + 32,
+          spotShadows.matrices[slot].storage,
+        );
+        params.setRange(
+          base + 32,
+          base + 36,
+          tile.uvRect(atlasWidth, atlasHeight).storage,
+        );
+        params[base + 36] = light.shadowDepthBias;
+        params[base + 37] = light.shadowNormalBias;
+        params[base + 38] = light.shadowSoftness;
+        params[base + 39] = 1.0 / tile.size;
+      }
+    }
+
+    // Stamp each shadow-casting point light's slot (texel 3.y), face-depth
+    // mapping plus sampling parameters (texels 4-5, free for point rows), and
+    // its two atlas tiles (texels 8-9). The shader reconstructs each cube
+    // face's projection analytically from the light position, so no per-face
+    // matrices are needed: window depth is scale - offset / faceDepth, the
+    // standard perspective mapping.
+    if (pointShadows != null) {
+      final atlas = shadowAtlas!;
+      final pointRowStart = directionals
+          .where((d) => !identical(d, primaryDirectional))
+          .length;
+      for (var pi = 0; pi < points.length; pi++) {
+        final slot = pointShadows.slotOf(points[pi]);
+        if (slot < 0) continue;
+        final light = points[pi].light;
+        final near = light.shadowNear;
+        final far = math.max(light.shadowFar, near * (1.0 + 1e-4));
+        final first = atlas.pointTiles[slot * kPointShadowTilesPerLight];
+        final second = atlas.pointTiles[slot * kPointShadowTilesPerLight + 1];
+        final firstRect = first.uvRect(atlasWidth, atlasHeight);
+        final secondRect = second.uvRect(atlasWidth, atlasHeight);
+        final base = (pointRowStart + pi) * _floatsPerLight;
+        params[base + 13] = slot.toDouble();
+        params[base + 16] = far / (far - near);
+        params[base + 17] = far * near / (far - near);
+        params[base + 18] = light.shadowNormalBias;
+        params[base + 19] = light.shadowSoftness;
+        params[base + 20] = light.shadowDepthBias;
+        // Faces render at half the tile edge.
+        params[base + 21] = 2.0 / first.size;
+        params[base + 32] = firstRect.x;
+        params[base + 33] = firstRect.y;
+        params[base + 34] = secondRect.x;
+        params[base + 35] = secondRect.y;
+        params[base + 36] = firstRect.z;
+        params[base + 37] = firstRect.w;
+      }
+    }
   }
 
   /// Packs the additional analytic lights into the parameters buffer, returning

@@ -986,9 +986,8 @@ abstract class Geometry {
   /// default; [SkinnedGeometry] overrides it to `false` since the
   /// position scan would yield bind-pose extents, which under-cover
   /// the skinned mesh once joints animate. Skinned geometries get
-  /// their bounds from the offline-baked `skinned_pose_union_aabb`
-  /// instead, or fall back to the always-visible cull path when the
-  /// importer didn't bake one (notably the runtime GLB importer).
+  /// their bounds from the pose union the importers bake instead, or
+  /// fall back to the always-visible cull path when there is none.
   bool get _autoScanBoundsOnUpload => true;
 
   /// The exact interleaved vertex stride [uploadVertexData] expects, or
@@ -1061,8 +1060,12 @@ abstract class Geometry {
   /// select a custom material's generated vertex shader (see
   /// [Material.materialVertexShader]). Unskinned geometry is `'unskinned'`;
   /// [SkinnedGeometry] overrides this to `'skinned'`.
+  ///
+  /// Null means the geometry builds its vertices in its own vertex shader
+  /// (a ribbon, a camera-facing quad), so no material's vertex shader
+  /// replaces it in any pass.
   @internal
-  String get materialVertexVariant => 'unskinned';
+  String? get materialVertexVariant => 'unskinned';
 
   /// The morph target deltas this geometry carries, or null for unmorphed
   /// geometry. Overridden by the morphed geometry subclasses.

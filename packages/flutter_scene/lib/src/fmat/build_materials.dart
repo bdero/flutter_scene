@@ -12,6 +12,8 @@ import '../generated_assets/engine_identity.dart'
     show debugViewsVariantSuffix, engineIdentity;
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
+import '../generated_assets/lighting_features.dart';
+import '../generated_assets/wgsl_sidecar.dart' show wgslSidecarPathFor;
 import 'fmat.dart';
 import 'fmat_emitter.dart'
     show
@@ -23,7 +25,10 @@ import 'fmat_emitter.dart'
         lightmapEntryName,
         materialSamplesEnvironment,
         radianceCubeEntryName;
+import '../gpu/web/shader_bundle_generated.dart' as fb;
+import 'depth_surface_fallback.dart';
 import 'framework_shaders.dart';
+import 'shader_bundle_lint.dart';
 import 'target_shader_bundle.dart';
 
 /// Controls where [buildMaterials] puts generated `.fmat` shader assets.
@@ -139,6 +144,7 @@ const _frameworkShaderFiles = <String>[
   'pbr.glsl',
   'scene_inputs.glsl',
   'smaa.glsl',
+  'ssao_depth_pack.glsl',
   'ssao_geometry.glsl',
   'texture.glsl',
   'tone_mapping.glsl',
@@ -186,6 +192,10 @@ const _frameworkShaderFiles = <String>[
 /// defaults to the app's `flutter_scene_debug_views` hook user-define (a hook
 /// cannot read flutter_scene's own `debug_views`), so set both. Without it the
 /// materials draw through the fallback debug shader while a view is active.
+///
+/// The app's `flutter_scene_lighting_features` hook user-define compiles lit
+/// features out of the materials, like flutter_scene's own
+/// `lighting_features` does for the engine's shaders, so set both.
 Future<void> buildMaterials({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
@@ -202,6 +212,9 @@ Future<void> buildMaterials({
   discoveryRoot: discoveryRoot,
   assetMode: assetMode,
   debugViews: debugViews ?? HookOptions.of(buildInput).debugViews,
+  compiledOutLightingFeatures: HookOptions.of(
+    buildInput,
+  ).compiledOutLightingFeatures,
 );
 
 /// Builds flutter_scene's bundled physical material shaders.
@@ -219,6 +232,7 @@ Future<void> buildBundledPhysicalMaterials({
   bool pruneGeneratedTree = true,
   String? fileVariant,
   bool debugViews = false,
+  Set<LightingFeature> compiledOutLightingFeatures = const {},
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -241,6 +255,7 @@ Future<void> buildBundledPhysicalMaterials({
   pruneGeneratedTree: pruneGeneratedTree,
   fileVariant: fileVariant,
   debugViews: debugViews,
+  compiledOutLightingFeatures: compiledOutLightingFeatures,
 );
 
 Future<void> _buildMaterials({
@@ -257,6 +272,7 @@ Future<void> _buildMaterials({
   bool pruneGeneratedTree = true,
   String? fileVariant,
   bool debugViews = false,
+  Set<LightingFeature> compiledOutLightingFeatures = const {},
 }) async {
   // ignore: deprecated_member_use_from_same_package
   if (assetMode == MaterialAssetMode.legacyOnly) {
@@ -315,28 +331,26 @@ Future<void> _buildMaterials({
   // output keyed to it is separated by target. Several builds share one tree.
   final target = shaderBundleTargetKey(buildInput);
 
-  final frameworkShaders = await frameworkShaderInclude();
+  final frameworkShaders = await engineShaderIncludeDirectory(buildInput);
 
-  // Generated GLSL and the synthesized manifest live under the package's build
-  // directory; they are regenerated each run.
+  // The generated GLSL is an intermediate, regenerated each run.
   final generatedDir = Directory.fromUri(
-    packageRoot.resolve('build/fmat/$bundleName/'),
+    hookIntermediateDirectory(buildInput, 'fmat/$bundleName'),
   );
-  generatedDir.createSync(recursive: true);
+  final intermediates = hookIntermediateDirectory(buildInput, 'shaderbundles');
 
-  // impellerc always writes the compiled bundle under build/shaderbundles/;
-  // the generated tree gets a copy of it, and the sidecar and index are written
-  // straight into whichever tree ships them.
-  final bundleFile = File(
-    packageRoot
-        .resolve('build/shaderbundles/$bundleName.shaderbundle')
-        .toFilePath(),
+  // The compiled bundle is an intermediate too. The generated tree gets a copy
+  // of it, and the sidecar and index are written straight into whichever tree
+  // ships them.
+  final bundleFile = File.fromUri(
+    shaderBundleIntermediate(buildInput, bundleName),
   );
   // Builds with and without the debug views sharing one tree write different
   // files instead of racing on one.
   final variant =
       '${fileVariant ?? await engineIdentity()}'
-      '${debugViews ? debugViewsVariantSuffix : ''}';
+      '${debugViews ? debugViewsVariantSuffix : ''}'
+      '${lightingFeaturesVariantSuffix(compiledOutLightingFeatures)}';
   final shippedBundleFile = tree == null
       ? bundleFile
       : File.fromUri(
@@ -356,7 +370,7 @@ Future<void> _buildMaterials({
           variant: variant,
           target: target,
         ) ??
-        packageRoot.resolve('build/shaderbundles/$bundleName.fmat.json'),
+        intermediates.resolve('$bundleName.fmat.json'),
   );
   final indexFile = File.fromUri(
     tree?.fileUri(
@@ -366,8 +380,14 @@ Future<void> _buildMaterials({
           variant: variant,
           target: target,
         ) ??
-        packageRoot.resolve('build/shaderbundles/$bundleName.index.json'),
+        intermediates.resolve('$bundleName.index.json'),
   );
+  // The WebGPU backend's WGSL, only under flutter_scene_webgpu. Data-asset
+  // builds do not carry it yet.
+  // TODO(webgpu-data-assets): register the WGSL as a data asset too.
+  final wgslFile = wgslSidecarsForBuild(buildInput) && tree != null
+      ? File(wgslSidecarPathFor(shippedBundleFile.path))
+      : null;
 
   final sidecars = <String, Object?>{};
   final materialSources = <String, String>{};
@@ -382,6 +402,8 @@ Future<void> _buildMaterials({
       buildInput,
       'fmat package=$assetOwner bundle=$bundleName '
       'shadows=$generateShadowVariants debug_views=$debugViews '
+      'lighting_off='
+      '${describeCompiledOutLightingFeatures(compiledOutLightingFeatures)} '
       'lightmaps=${(lightmapVariantMaterials.toList()..sort()).join(',')}',
     ),
   );
@@ -403,10 +425,8 @@ Future<void> _buildMaterials({
   // material or shader file changed.
   stampBuffer.write(' compiler=${materialCompilerFingerprint()}');
   final stamp = stampBuffer.toString();
-  final stampFile = File(
-    packageRoot.resolve('build/shaderbundles/$bundleName.inputs').toFilePath(),
-  );
-  final outputs = [shippedBundleFile, sidecarFile, indexFile];
+  final stampFile = File.fromUri(intermediates.resolve('$bundleName.inputs'));
+  final outputs = [shippedBundleFile, sidecarFile, indexFile, ?wgslFile];
   var fresh = tree != null
       ? tree.isFresh(
           GeneratedAssetFamily.material,
@@ -431,6 +451,7 @@ Future<void> _buildMaterials({
       bundleFile: shippedBundleFile,
       sidecarFile: sidecarFile,
       indexFile: indexFile,
+      wgslFile: wgslFile,
       tree: tree,
       stamp: stamp,
       owner: assetOwner,
@@ -452,6 +473,8 @@ Future<void> _buildMaterials({
   // with no previous output still fails with the real error.
   try {
     final manifest = <String, Object?>{};
+    // Each material's own depth-pass entries, mapped to the material.
+    final depthSurfaceOwners = <String, String>{};
     for (final materialPath in materialPaths) {
       if (!materialPath.endsWith('.fmat')) {
         throw Exception('Material files must end with ".fmat": $materialPath');
@@ -478,7 +501,14 @@ Future<void> _buildMaterials({
             lightmapVariantMaterials.contains(entryName) &&
             compiled.material.shadingModel != FmatShadingModel.unlit,
         debugViews: debugViews,
+        compiledOutLightingFeatures: compiledOutLightingFeatures,
       );
+      if (materialHasDepthSurface(compiled.material)) {
+        for (final kind in DepthSurfaceKind.values) {
+          depthSurfaceOwners[depthSurfaceEntryName(compiled.material, kind)] =
+              entryName;
+        }
+      }
       for (final variant in fragmentVariants.entries) {
         final variantEntryName = variant.key;
         final fragFileName = '$variantEntryName.frag';
@@ -487,9 +517,7 @@ Future<void> _buildMaterials({
         ).writeAsStringSync(variant.value);
         manifest[variantEntryName] = <String, Object?>{
           'type': 'fragment',
-          // impellerc resolves a bundle entry's `file` relative to the package
-          // root, so reference it from there instead of from the manifest.
-          'file': 'build/fmat/$bundleName/$fragFileName',
+          'file': fragFileName,
         };
       }
 
@@ -510,7 +538,7 @@ Future<void> _buildMaterials({
         ).writeAsStringSync(vertexGlsl);
         manifest[vertexEntry] = <String, Object?>{
           'type': 'vertex',
-          'file': 'build/fmat/$bundleName/$vertFileName',
+          'file': vertFileName,
         };
       });
 
@@ -518,50 +546,67 @@ Future<void> _buildMaterials({
       materialSources[entryName] = materialPath;
     }
 
-    // Write the synthesized shader-bundle manifest next to the generated
-    // shaders, so its `file` entries resolve relative to it.
-    final manifestRelativePath =
-        'build/fmat/$bundleName/$bundleName.shaderbundle.json';
-    File(
-      packageRoot.resolve(manifestRelativePath).toFilePath(),
-    ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
-
-    // Snapshot the previous bundle so a failed compile that left a partial
-    // file behind can be rolled back to the last good bundle.
-    final previousBundleBytes = bundleFile.existsSync()
-        ? bundleFile.readAsBytesSync()
-        : null;
-    try {
-      // Compile, with flutter_scene's shaders/ on the include path so the
-      // generated shaders' framework `#include`s resolve directly (no copies).
-      await buildTargetShaderBundleJson(
-        buildInput: buildInput,
-        buildOutput: buildOutput,
-        manifestFileName: manifestRelativePath,
-        includeDirectories: [frameworkShaders],
-        // Match the engine bundle's GLES dialect (GLSL ES 3.00); the
-        // framework radiance sampling these materials can `#include` uses
-        // textureLod, which is not available in 1.00 without an extension.
-        glesLanguageVersion: 300,
-        // The material bundle ships under materials/ next to its sidecar and
-        // index, not as a standalone shader bundle.
-        copyToGeneratedTree: false,
-      );
-    } catch (_) {
-      // Roll back only when the failed compile actually disturbed the bundle;
-      // an unnecessary rewrite changes the file's timestamp mid-build, which
-      // the tool flags as a modified file and reruns the build for.
-      if (previousBundleBytes != null &&
-          (!bundleFile.existsSync() ||
-              !_sameBytes(bundleFile.readAsBytesSync(), previousBundleBytes))) {
-        bundleFile.writeAsBytesSync(previousBundleBytes);
+    // Compile, with flutter_scene's shaders/ on the include path so the
+    // generated shaders' framework `#include`s resolve directly (no copies).
+    // A failed compile leaves the last good bundle in place. A material whose
+    // own depth passes are all that fails is rebuilt without them, so a depth
+    // pass can never fail an app's build.
+    while (true) {
+      try {
+        await buildTargetShaderBundle(
+          buildInput: buildInput,
+          buildOutput: buildOutput,
+          bundleName: bundleName,
+          manifest: manifest,
+          entryRoot: generatedDir.uri,
+          includeDirectories: [frameworkShaders],
+          // Match the engine bundle's GLES dialect (GLSL ES 3.00); the
+          // framework radiance sampling these materials can `#include` uses
+          // textureLod, which is not available in 1.00 without an extension.
+          glesLanguageVersion: 300,
+          // The material bundle ships under materials/ next to its sidecar
+          // and index, not as a standalone shader bundle.
+          copyToGeneratedTree: false,
+        );
+        _lintMaterialBundle(
+          bundleFile,
+          manifest,
+          generatedDir,
+          depthSurfaceOwners,
+        );
+        break;
+      } catch (error) {
+        final failing = materialsFailingOnlyInDepthPasses(
+          error,
+          depthSurfaceOwners,
+          manifest.keys.toSet(),
+        );
+        if (failing == null) rethrow;
+        for (final material in failing) {
+          depthSurfaceOwners.removeWhere((entry, owner) {
+            if (owner != material) return false;
+            manifest.remove(entry);
+            return true;
+          });
+          sidecars[material] = withoutDepthSurfaces(
+            (sidecars[material]! as Map).cast<String, Object?>(),
+          );
+          stderr.writeln(
+            'flutter_scene: material "$material" ships without its own depth '
+            'passes, so it casts shadows and writes depth as solid geometry. '
+            'Its depth fragments failed to build:\n$error',
+          );
+        }
       }
-      rethrow;
     }
 
     // Publish the freshly compiled bundle into the tree that ships it.
     if (tree != null) {
       writeGeneratedBytes(shippedBundleFile.uri, bundleFile.readAsBytesSync());
+    }
+    final compiledWgsl = File(wgslSidecarPathFor(bundleFile.path));
+    if (wgslFile != null && compiledWgsl.existsSync()) {
+      writeGeneratedBytes(wgslFile.uri, compiledWgsl.readAsBytesSync());
     }
     // Write the combined parameter sidecar next to the produced bundle.
     writeGeneratedString(
@@ -613,6 +658,7 @@ Future<void> _buildMaterials({
       bundleFile: shippedBundleFile,
       sidecarFile: sidecarFile,
       indexFile: indexFile,
+      wgslFile: wgslFile,
       tree: tree,
       stamp: stamp,
       owner: assetOwner,
@@ -634,6 +680,7 @@ Future<void> _buildMaterials({
     bundleFile: shippedBundleFile,
     sidecarFile: sidecarFile,
     indexFile: indexFile,
+    wgslFile: wgslFile,
     tree: tree,
     stamp: stamp,
     owner: assetOwner,
@@ -647,18 +694,55 @@ Future<void> _buildMaterials({
   );
 }
 
+/// Checks the compiled [bundleFile] for shapes that build but misbehave on
+/// some backends. A problem in a material's own depth passes throws, so the
+/// caller drops them like a failed compile; any other is reported.
+void _lintMaterialBundle(
+  File bundleFile,
+  Map<String, Object?> manifest,
+  Directory generatedDir,
+  Map<String, String> depthSurfaceOwners,
+) {
+  final glsl = <String, String>{
+    for (final MapEntry(:key, :value) in manifest.entries)
+      if (value case {'file': final String file})
+        key: File.fromUri(generatedDir.uri.resolve(file)).readAsStringSync(),
+  };
+  final problems = lintShaderBundle(
+    fb.ShaderBundle(bundleFile.readAsBytesSync()),
+    glsl,
+  );
+  if (problems.isEmpty) return;
+  final inDepthPasses = {
+    for (final entry in problems.entries)
+      if (depthSurfaceOwners.containsKey(entry.key)) entry.key: entry.value,
+  };
+  if (inDepthPasses.isNotEmpty) {
+    throw StateError(describeLintProblems(inDepthPasses));
+  }
+  stderr.writeln(
+    'flutter_scene: material shaders that may misbehave on some backends:\n'
+    '${describeLintProblems(problems)}',
+  );
+}
+
 /// Emits the fragment entries contributed by [compiled].
 Map<String, String> emitFragmentShaderVariants(
   FmatCompilation compiled, {
   required bool generateShadowVariant,
   bool generateLightmapVariant = false,
   bool debugViews = false,
+  Set<LightingFeature> compiledOutLightingFeatures = const {},
 }) {
   final material = compiled.material;
   final entryName = material.name;
-  // The surface debug views are compiled into the shaded entries only; the
-  // depth surfaces never show them.
-  final base = [if (debugViews) kDebugViewsDefine];
+  // The surface debug views and the compiled-out lighting features apply to
+  // the shaded entries only; the depth surfaces never light anything.
+  final base = [
+    if (debugViews) kDebugViewsDefine,
+    for (final f in LightingFeature.values)
+      if (compiledOutLightingFeatures.contains(f)) f.define,
+  ];
   // The outermost axis, so a Lightmap entry still gets its Shadow and Cube
   // twins. Only materials expected to carry a bake generate it; it doubles
   // the entries of the ones that do.
@@ -712,14 +796,6 @@ Map<String, String> emitFragmentShaderVariants(
   return variants;
 }
 
-bool _sameBytes(List<int> a, List<int> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
-}
-
 // Registers the bundle/sidecar/index outputs and declares the source
 // dependencies. Shared by the success path (which also rewrites the index)
 // and the kept-last-good failure path (which registers the existing files;
@@ -731,6 +807,7 @@ void _registerOutputs({
   required File bundleFile,
   required File sidecarFile,
   required File indexFile,
+  required File? wgslFile,
   required GeneratedAssetTree? tree,
   required String stamp,
   required String owner,
@@ -764,6 +841,8 @@ void _registerOutputs({
       'package': owner,
       'bundleName': bundleName,
       'shaderBundleFileName': bundleFile.uri.pathSegments.last,
+      if (wgslFile != null && wgslFile.existsSync())
+        'wgslFileName': wgslFile.uri.pathSegments.last,
       'sidecarFileName': sidecarFile.uri.pathSegments.last,
       'materials': {
         for (final key in sidecars.keys)
@@ -801,8 +880,24 @@ void _registerOutputs({
         stamp: stamp,
         owner: owner,
         target: target,
-      )
-      ..save();
+      );
+    if (wgslFile == null || !wgslFile.existsSync()) {
+      tree.drop(
+        GeneratedAssetFamily.material,
+        '$bundleName#wgsl',
+        target: target,
+      );
+    } else {
+      tree.recordFile(
+        family: GeneratedAssetFamily.material,
+        id: '$bundleName#wgsl',
+        uri: wgslFile.uri,
+        stamp: stamp,
+        owner: owner,
+        target: target,
+      );
+    }
+    tree.save();
   } else {
     buildOutput.assets.data.addAll([
       DataAsset(
@@ -828,8 +923,8 @@ void _registerOutputs({
         );
   }
 
-  // Declare the real inputs as dependencies. buildShaderBundleJson declares the
-  // (generated) .frag files; the sources that actually drive a rebuild are the
+  // Declare the real inputs as dependencies. The compile skips the generated
+  // .frag files; the sources that actually drive a rebuild are the
   // .fmat files and the framework GLSL they include. Every source is declared
   // even when one failed to compile, so fixing it retriggers the hook.
   buildOutput.dependencies.addAll(materialPaths.map(packageRoot.resolve));

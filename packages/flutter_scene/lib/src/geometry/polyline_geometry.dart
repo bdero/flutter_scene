@@ -5,7 +5,14 @@ import 'dart:ui' as ui;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
-import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
+import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/geometry/vertex_layout.dart';
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/depth_raster.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
+import 'package:flutter_scene/src/render/view_sizing.dart';
+import 'package:flutter_scene/src/shaders.dart';
 
 /// How a [PolylineGeometry]'s width is measured.
 /// {@category Geometry}
@@ -56,33 +63,36 @@ class DashPattern {
 // Triangle-fan segments in a round cap disk.
 const int _diskSegments = 16;
 
+/// Floats per polyline vertex: position, previous, and next (3 each), shape
+/// (4), arcs (3), texture coordinates (2), and color (4).
+const int polylineVertexFloats = 22;
+
+// TODO(polyline-joins): add rounded corner joins.
 /// A thick, camera-facing line through a list of points.
 ///
-/// `PolylineGeometry` builds a triangle strip that always faces the
-/// camera, which suits navigation routes and other overlay lines. The
-/// strip is regenerated for the current view by [updateForCamera], which
-/// should be called every frame before rendering.
+/// `PolylineGeometry` draws a triangle strip that always faces the camera,
+/// which suits navigation routes and other overlay lines. The strip is
+/// expanded on the GPU for whichever camera renders it, so every view of a
+/// scene sees the line facing it and nothing needs updating per frame.
 ///
-/// The result is an ordinary triangle mesh: pair it with any material,
-/// and use [perVertexColor] for gradient or distance-fade effects.
+/// Pair it with any material, and use [perVertexColor] for gradient or
+/// distance-fade effects. Texture `u` runs across the line and `v` is the
+/// distance along it. The points are in the geometry's local space and the
+/// owning node's transform places the whole line.
 ///
 /// [PolylineCap.round] adds a camera-facing disk at each end point,
 /// [drawStart]/[drawEnd] trim the line or animate it drawing on, and a
 /// [DashPattern] breaks it into dashes, which its own cap can round.
-/// Corners use an averaged
-/// direction, which stays smooth on a finely sampled curve but can
-/// pinch on a very sharp turn. Rounded corner joins and a GPU
-/// vertex-shader expansion that avoids the per-frame rebuild are
-/// planned follow-ups.
+/// Corners use an averaged direction, which stays smooth on a finely
+/// sampled curve but can pinch on a very sharp turn.
 /// {@category Geometry}
-class PolylineGeometry extends MeshGeometry {
+class PolylineGeometry extends Geometry {
   /// Creates a polyline through [points] (at least two).
   ///
   /// [width] is measured per [widthMode]. [perVertexWidth] overrides it
   /// per point for tapering, and [perVertexColor] sets a color per
   /// point for gradients. [cap] selects rounded or flat ends, and
-  /// [dash] breaks the line into dashes. The strip is a placeholder
-  /// until the first [updateForCamera] call.
+  /// [dash] breaks the line into dashes.
   factory PolylineGeometry(
     List<Vector3> points, {
     double width = 8.0,
@@ -127,107 +137,90 @@ class PolylineGeometry extends MeshGeometry {
       dashCapIndices = dashed.dashCapIndices;
     }
 
-    final copied = working;
-    final widths = workingWidths;
-    final count = copied.length;
-
-    // Cumulative arc length at each point, for the texture v coordinate.
-    final distances = List<double>.filled(count, 0.0);
-    for (var i = 1; i < count; i++) {
-      distances[i] = distances[i - 1] + copied[i].distanceTo(copied[i - 1]);
-    }
-    Vector4 colorOf(int i) => workingColors[i];
-
-    // Texture coordinates and colors do not depend on the camera, so
-    // they are set once here. The placeholder positions collapse the
-    // strip onto the points until updateForCamera runs.
-    //
     // Round dash caps put a disk at every dash boundary; otherwise the
     // disks are just the line's two round ends.
     final diskPoints = (dash != null && dash.cap == PolylineCap.round)
         ? dashCapIndices
-        : diskPointIndices(count, cap);
-    final stripVertexCount = count * 2;
-    final vertexCount =
-        stripVertexCount + diskPoints.length * (_diskSegments + 1);
-    final positions = Float32List(vertexCount * 3);
-    final normals = Float32List(vertexCount * 3);
-    final texCoords = Float32List(vertexCount * 2);
-    final colors = Float32List(vertexCount * 4);
-
-    void writeVertex(int v, Vector3 at, double u, double texV, Vector4 color) {
-      positions[v * 3] = at.x;
-      positions[v * 3 + 1] = at.y;
-      positions[v * 3 + 2] = at.z;
-      normals[v * 3 + 2] = 1.0;
-      texCoords[v * 2] = u;
-      texCoords[v * 2 + 1] = texV;
-      colors[v * 4] = color.x;
-      colors[v * 4 + 1] = color.y;
-      colors[v * 4 + 2] = color.z;
-      colors[v * 4 + 3] = color.w;
-    }
-
-    final indices = <int>[];
-
-    // The strip: two vertices per point.
-    for (var i = 0; i < count; i++) {
-      final color = colorOf(i);
-      writeVertex(i * 2, copied[i], 0.0, distances[i], color);
-      writeVertex(i * 2 + 1, copied[i], 1.0, distances[i], color);
-    }
-    for (var i = 0; i < count - 1; i++) {
-      final a = i * 2;
-      indices
-        ..addAll([a, a + 1, a + 2])
-        ..addAll([a + 1, a + 3, a + 2]);
-    }
-
-    // A triangle-fan disk for each round cap.
-    for (var ord = 0; ord < diskPoints.length; ord++) {
-      final point = diskPoints[ord];
-      final base = stripVertexCount + ord * (_diskSegments + 1);
-      final color = colorOf(point);
-      for (var k = 0; k <= _diskSegments; k++) {
-        writeVertex(base + k, copied[point], 0.5, distances[point], color);
-      }
-      for (var k = 0; k < _diskSegments; k++) {
-        final next = (k + 1) % _diskSegments;
-        indices.addAll([base, base + 1 + k, base + 1 + next]);
-      }
-    }
-
+        : diskPointIndices(working.length, cap);
     return PolylineGeometry._(
-      copied,
-      widths,
+      working,
+      workingWidths,
       widthMode,
-      diskPoints,
-      positions: positions,
-      normals: normals,
-      texCoords: texCoords,
-      colors: colors,
-      indices: indices,
+      buildPolylineVertices(
+        working,
+        widths: workingWidths,
+        colors: workingColors,
+        diskPoints: diskPoints,
+      ),
     );
   }
 
   PolylineGeometry._(
     this._points,
-    this._widths,
+    List<double> widths,
     this._widthMode,
-    this._diskPoints, {
-    required super.positions,
-    required super.normals,
-    required super.texCoords,
-    required super.colors,
-    required super.indices,
-  }) : super.fromArrays(storage: GeometryStorage.updatable);
+    ({Float32List vertices, List<int> indices}) mesh,
+  ) {
+    setVertexShader(baseShaderLibrary['PolylineVertex']!);
+
+    final vertexCount = mesh.vertices.length ~/ polylineVertexFloats;
+    final vertexBytes = ByteData.sublistView(mesh.vertices);
+    final wide = vertexCount > 0xFFFF;
+    final TypedData indices = wide
+        ? Uint32List.fromList(mesh.indices)
+        : Uint16List.fromList(mesh.indices);
+    final indexBytes = ByteData.sublistView(indices);
+    final buffer = gpu.gpuContext.createDeviceBuffer(
+      gpu.StorageMode.hostVisible,
+      vertexBytes.lengthInBytes + indexBytes.lengthInBytes,
+    );
+    buffer.overwrite(vertexBytes);
+    buffer.overwrite(
+      indexBytes,
+      destinationOffsetInBytes: vertexBytes.lengthInBytes,
+    );
+    setVertices(
+      gpu.BufferView(
+        buffer,
+        offsetInBytes: 0,
+        lengthInBytes: vertexBytes.lengthInBytes,
+      ),
+      vertexCount,
+    );
+    setIndices(
+      gpu.BufferView(
+        buffer,
+        offsetInBytes: vertexBytes.lengthInBytes,
+        lengthInBytes: indexBytes.lengthInBytes,
+      ),
+      wide ? gpu.IndexType.int32 : gpu.IndexType.int16,
+    );
+
+    // A pixel width has no world size to pad by, so such a line is culled
+    // by its center line and can leave a view up to half its width early.
+    var pad = 0.0;
+    if (_widthMode == PolylineWidthMode.worldUnits) {
+      for (final width in widths) {
+        pad = math.max(pad, width / 2.0);
+      }
+    }
+    final aabb = Aabb3.minMax(_points.first.clone(), _points.first.clone());
+    for (final point in _points) {
+      aabb.hullPoint(point);
+    }
+    aabb.min.sub(Vector3.all(pad));
+    aabb.max.add(Vector3.all(pad));
+    setLocalBounds(
+      aabb,
+      Sphere.centerRadius(
+        (aabb.min + aabb.max) * 0.5,
+        (aabb.max - aabb.min).length * 0.5,
+      ),
+    );
+  }
 
   final List<Vector3> _points;
-  final List<double> _widths;
   final PolylineWidthMode _widthMode;
-  // The point indices that receive a round cap disk: the line's round
-  // ends, or every dash boundary when the dash pattern is round-capped.
-  final List<int> _diskPoints;
 
   /// The fraction of the line, by arc length, where the visible range
   /// begins. With [drawEnd] this trims the line or animates it drawing
@@ -238,25 +231,128 @@ class PolylineGeometry extends MeshGeometry {
   /// ends. See [drawStart]. The default is `1`.
   double drawEnd = 1.0;
 
-  /// Rebuilds the camera-facing strip for [camera] and [viewportSize].
-  ///
-  /// Call once per frame before rendering. Reuses the GPU buffers.
-  void updateForCamera(Camera camera, ui.Size viewportSize) {
-    final expanded = expandPolyline(
-      _points,
-      widths: _widths,
-      widthMode: _widthMode,
-      diskPoints: _diskPoints,
-      drawStart: drawStart,
-      drawEnd: drawEnd,
-      viewProjection: camera.getViewTransform(viewportSize),
-      cameraPosition: camera.position,
-      viewportSize: viewportSize,
+  // The range the cached boundary points below were resolved for.
+  double _rangeStart = double.nan;
+  double _rangeEnd = double.nan;
+  final Float32List _range = Float32List(8);
+
+  /// Does nothing. The line follows the rendering camera on its own.
+  @Deprecated('The line follows the rendering camera on its own. Remove it.')
+  void updateForCamera(Camera camera, ui.Size viewportSize) {}
+
+  @override
+  VertexLayoutDescriptor? get defaultVertexLayout => _kPolylineLayout;
+
+  // The strip reads the model transform from the FrameInfo uniform, so the
+  // color encoder must not bind a model-transform buffer over slot 1.
+  @override
+  bool get bindsModelTransformInstance => false;
+
+  // The strip turns to face each pass's camera, so the material-less passes
+  // (selection mask, depth, shadow) must not cull it.
+  @override
+  bool get isDoubleSided => true;
+
+  // The expansion runs in the engine's own vertex shader; a custom
+  // material's generated vertex variants do not apply to this geometry.
+  @override
+  String? get materialVertexVariant => null;
+
+  // The first stream's position is the center line, not the drawn vertex.
+  // TODO(custom-velocity-vertex): give the line motion vectors.
+  @override
+  VertexLayoutDescriptor? get velocityPositionLayout => null;
+
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    Matrix4 modelTransform,
+    Matrix4 cameraTransform,
+    Vector3 cameraPosition, {
+    // See [materialVertexVariant]; the override is accepted and ignored.
+    gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
+  }) {
+    bindGeometryBuffers(pass);
+
+    if (drawStart != _rangeStart || drawEnd != _rangeEnd) {
+      _rangeStart = drawStart;
+      _rangeEnd = drawEnd;
+      _range.setAll(0, polylineDrawRange(_points, drawStart, drawEnd));
+    }
+
+    final frameInfo = _frameInfoScratch
+      ..setRange(0, 16, cameraTransform.storage)
+      ..setRange(16, 32, modelTransform.storage)
+      ..setRange(32, 48, currentViewSizingTransform);
+    frameInfo[48] = cameraPosition.x;
+    frameInfo[49] = cameraPosition.y;
+    frameInfo[50] = cameraPosition.z;
+    frameInfo[52] = currentViewSizingSize[0];
+    frameInfo[53] = currentViewSizingSize[1];
+    frameInfo[54] = _widthMode == PolylineWidthMode.screenPixels ? 1.0 : 0.0;
+    // [56..57] the drawn range, [60..62] and [64..66] its boundary points.
+    frameInfo[56] = _range[0];
+    frameInfo[57] = _range[1];
+    frameInfo.setRange(60, 63, _range, 2);
+    frameInfo.setRange(64, 67, _range, 5);
+    frameInfo[68] = currentDrawDepthOffset[0];
+    frameInfo[69] = currentDrawDepthOffset[1];
+    pass.bindUniform(
+      vertexShader.cachedUniformSlot('FrameInfo'),
+      transientsBuffer.emplace(scratchBytesOf(frameInfo)),
     );
-    updatePositions(expanded.positions);
-    updateNormals(expanded.normals);
   }
 }
+
+// Shared by every draw; emplace copies it out. Three matrices and six
+// vectors, of which the unwritten components stay zero.
+final Float32List _frameInfoScratch = Float32List(72);
+
+final VertexLayoutDescriptor _kPolylineLayout = VertexLayoutDescriptor(
+  buffers: const [
+    VertexBufferDescriptor(
+      strideInBytes: polylineVertexFloats * 4,
+      attributes: [
+        VertexAttributeDescriptor(
+          name: 'position',
+          format: gpu.VertexFormat.float32x3,
+        ),
+        VertexAttributeDescriptor(
+          name: 'previous',
+          format: gpu.VertexFormat.float32x3,
+          offsetInBytes: 12,
+        ),
+        VertexAttributeDescriptor(
+          name: 'next',
+          format: gpu.VertexFormat.float32x3,
+          offsetInBytes: 24,
+        ),
+        VertexAttributeDescriptor(
+          name: 'shape',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 36,
+        ),
+        VertexAttributeDescriptor(
+          name: 'arcs',
+          format: gpu.VertexFormat.float32x3,
+          offsetInBytes: 52,
+        ),
+        VertexAttributeDescriptor(
+          name: 'texture_coords',
+          format: gpu.VertexFormat.float32x2,
+          offsetInBytes: 64,
+        ),
+        VertexAttributeDescriptor(
+          name: 'color',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 72,
+        ),
+      ],
+    ),
+  ],
+);
 
 /// The polyline point indices that receive a round cap disk: the two
 /// end points when [cap] is [PolylineCap.round], otherwise none.
@@ -267,8 +363,114 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
   return const <int>[];
 }
 
+// The cumulative arc length at each point.
+List<double> _arcLengths(List<Vector3> points) {
+  final arc = List<double>.filled(points.length, 0.0);
+  for (var i = 1; i < points.length; i++) {
+    arc[i] = arc[i - 1] + points[i].distanceTo(points[i - 1]);
+  }
+  return arc;
+}
+
+/// Packs [points] into the vertices and triangle indices the polyline
+/// vertex shader expands, [polylineVertexFloats] floats per vertex.
+///
+/// The strip is two vertices per point, one on each side. Each index in
+/// [diskPoints] adds a cap disk of a center vertex and a 16-vertex ring.
+/// Every vertex carries its point and the two neighbors its tangent runs
+/// between, so the shader can place it for any camera.
+({Float32List vertices, List<int> indices}) buildPolylineVertices(
+  List<Vector3> points, {
+  required List<double> widths,
+  required List<Vector4> colors,
+  required List<int> diskPoints,
+}) {
+  final count = points.length;
+  final arc = _arcLengths(points);
+  final total = arc[count - 1];
+  double fraction(int i) => total > 0.0 ? arc[i] / total : 0.0;
+
+  final stripVertexCount = count * 2;
+  final vertexCount =
+      stripVertexCount + diskPoints.length * (_diskSegments + 1);
+  final vertices = Float32List(vertexCount * polylineVertexFloats);
+
+  // The last four arguments are the shape attribute's x and y, the texture
+  // u, and whether the vertex belongs to a cap disk.
+  void write(int vertex, int point, double x, double y, double u, bool disk) {
+    // A disk has no tangent, so its neighbors are the point itself.
+    final previous = disk || point == 0 ? point : point - 1;
+    final next = disk || point == count - 1 ? point : point + 1;
+    final at = vertex * polylineVertexFloats;
+    points[point].copyIntoArray(vertices, at);
+    points[previous].copyIntoArray(vertices, at + 3);
+    points[next].copyIntoArray(vertices, at + 6);
+    vertices[at + 9] = x;
+    vertices[at + 10] = y;
+    vertices[at + 11] = widths[point] / 2.0;
+    vertices[at + 12] = disk ? 1.0 : 0.0;
+    vertices[at + 13] = fraction(point);
+    vertices[at + 14] = fraction(previous);
+    vertices[at + 15] = fraction(next);
+    vertices[at + 16] = u;
+    vertices[at + 17] = arc[point];
+    colors[point].copyIntoArray(vertices, at + 18);
+  }
+
+  final indices = <int>[];
+  for (var i = 0; i < count; i++) {
+    write(i * 2, i, -1.0, 0.0, 0.0, false);
+    write(i * 2 + 1, i, 1.0, 0.0, 1.0, false);
+  }
+  for (var i = 0; i < count - 1; i++) {
+    final a = i * 2;
+    indices
+      ..addAll([a, a + 1, a + 2])
+      ..addAll([a + 1, a + 3, a + 2]);
+  }
+
+  // A triangle-fan disk for each round cap.
+  for (var ord = 0; ord < diskPoints.length; ord++) {
+    final point = diskPoints[ord];
+    final base = stripVertexCount + ord * (_diskSegments + 1);
+    write(base, point, 0.0, 0.0, 0.5, true);
+    for (var k = 0; k < _diskSegments; k++) {
+      final angle = 2.0 * math.pi * k / _diskSegments;
+      write(base + 1 + k, point, math.cos(angle), math.sin(angle), 0.5, true);
+      final next = (k + 1) % _diskSegments;
+      indices.addAll([base, base + 1 + k, base + 1 + next]);
+    }
+  }
+  return (vertices: vertices, indices: indices);
+}
+
+/// The draw range the polyline vertex shader trims to, as eight floats: the
+/// start and end arc-length fractions, then the local-space point at each.
+///
+/// [drawStart] and [drawEnd] clamp to `0..1`. A zero-length line has no
+/// range to trim, so it reports the whole line.
+Float32List polylineDrawRange(
+  List<Vector3> points,
+  double drawStart,
+  double drawEnd,
+) {
+  final arc = _arcLengths(points);
+  final total = arc.last;
+  final start = total > 0.0 ? _clamp01(drawStart) : 0.0;
+  final end = total > 0.0 ? _clamp01(drawEnd) : 1.0;
+  final range = Float32List(8)
+    ..[0] = start
+    ..[1] = end;
+  _pointAtArc(points, arc, start * total).copyIntoArray(range, 2);
+  _pointAtArc(points, arc, end * total).copyIntoArray(range, 5);
+  return range;
+}
+
 /// Expands [points] into a camera-facing triangle strip's vertex
-/// positions and normals, including round cap disks.
+/// positions and normals on the CPU, including round cap disks.
+///
+/// `PolylineGeometry` does this in its vertex shader. The trail ribbon,
+/// whose points change every frame, still expands here.
 ///
 /// [drawStart] and [drawEnd] (fractions `0..1` of the arc length) trim
 /// the visible range: points outside it collapse onto the range

@@ -231,6 +231,17 @@ class RenderTexture extends ChangeNotifier implements TextureSource {
   TransientTexturePool get transientTexturePool =>
       _surface.transientTexturePool();
 
+  /// Releases the render targets this target holds and clears [texture].
+  /// Remove its view from the scene first; a disposed target must not be
+  /// rendered into again.
+  @override
+  void dispose() {
+    _surface.dispose();
+    _latest = null;
+    _pending = null;
+    super.dispose();
+  }
+
   /// Publishes the frame written since [acquireNextTexture] and notifies
   /// consumers.
   @internal

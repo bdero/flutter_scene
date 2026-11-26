@@ -414,8 +414,16 @@ gpu.RenderPipeline? cachedRenderPipeline(
   gpu.Shader vertexShader,
   gpu.Shader fragmentShader,
   VertexLayoutDescriptor? vertexLayout,
-) =>
-    _cachedPipeline(vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
+) {
+  final pipeline = _cachedPipeline(
+    vertexShader,
+    fragmentShader,
+    vertexLayoutId(vertexLayout),
+  );
+  return _holdingUnready && pipeline != null
+      ? _holdIfUnready(pipeline)
+      : pipeline;
+}
 
 /// Pipeline keys the backend refused to build, so a rejected pairing is not
 /// retried every frame. Keyed exactly like [_pipelineCache] and evicted with
@@ -425,36 +433,99 @@ gpu.RenderPipeline? cachedRenderPipeline(
 final Set<(gpu.Shader, gpu.Shader, int)> _rejectedPipelines = {};
 
 // A sliced warm-up's build budget: while set, new pipelines stop building
-// once builds have taken this long, and the draws that need the rest are
-// skipped and counted, so the warm-up yields and tries them next slice.
+// once the slice has run this long, and the draws that need the rest are
+// skipped and counted, so the warm-up yields and tries them next slice. The
+// clock is wall time because a backend compiles a pipeline when a pass first
+// binds it, not when it is created.
 Duration? _buildBudget;
 final Stopwatch _buildClock = Stopwatch();
 int _deferredBuilds = 0;
+bool _builtThisSlice = false;
+// The last slice deferred before building anything (its other work used the
+// budget), so this one builds at least one pipeline.
+bool _starved = false;
 
-/// Runs [body] with new pipeline builds capped at [budget] of build time;
-/// draws past it are skipped and counted in [deferredPipelineBuilds].
+/// Runs [body] with new pipeline builds stopped once it has run for [budget];
+/// draws past it are skipped and counted in [deferredPipelineBuilds]. A slice
+/// after one that built nothing builds at least one.
 @internal
 T withPipelineBuildBudget<T>(Duration budget, T Function() body) {
   _buildBudget = budget;
   _buildClock
-    ..stop()
-    ..reset();
+    ..reset()
+    ..start();
   _deferredBuilds = 0;
+  _builtThisSlice = false;
   try {
     return body();
   } finally {
     _buildBudget = null;
+    _buildClock.stop();
+    _starved = _deferredBuilds > 0 && !_builtThisSlice;
   }
 }
 
-/// Draws the last [withPipelineBuildBudget] skipped for lack of budget.
+/// Draws the last [withPipelineBuildBudget] skipped for lack of budget, or
+/// because [withUnreadyPipelinesHeld] held their pipeline.
 @internal
 int get deferredPipelineBuilds => _deferredBuilds;
+
+// While set, a guarded draw whose pipeline is still compiling is skipped
+// rather than waiting on it, so a warm-up starts every compile before it
+// waits on any and the backend can run them in parallel.
+bool _holdingUnready = false;
+final Set<gpu.RenderPipeline> _heldPipelines = {};
+
+/// Runs [body] with draws skipped whose pipeline the backend is still
+/// compiling (see `gpu.isPipelineReady`), counting them in
+/// [deferredPipelineBuilds]. Returns the pipelines held, for
+/// [awaitPipelinesReady].
+///
+/// Only guarded draws ([cachedRenderPipeline], [tryResolvePipeline]) are
+/// held; a pass that binds [resolvePipeline] directly still waits.
+@internal
+Set<gpu.RenderPipeline> withUnreadyPipelinesHeld(void Function() body) {
+  _holdingUnready = true;
+  _heldPipelines.clear();
+  try {
+    body();
+  } finally {
+    _holdingUnready = false;
+  }
+  return Set.of(_heldPipelines);
+}
+
+gpu.RenderPipeline? _holdIfUnready(gpu.RenderPipeline pipeline) {
+  if (gpu.isPipelineReady(pipeline)) return pipeline;
+  _heldPipelines.add(pipeline);
+  _deferredBuilds++;
+  return null;
+}
+
+/// Completes once every pipeline in [pipelines] is ready, polling without
+/// blocking, or after [timeout] (the first draw then waits instead).
+@internal
+Future<void> awaitPipelinesReady(
+  Iterable<gpu.RenderPipeline> pipelines, {
+  Duration timeout = const Duration(seconds: 30),
+}) async {
+  final pending = pipelines.toList();
+  final clock = Stopwatch()..start();
+  while (pending.isNotEmpty && clock.elapsed < timeout) {
+    // The last issued usually finishes last, so most polls are one query.
+    while (pending.isNotEmpty && gpu.isPipelineReady(pending.last)) {
+      pending.removeLast();
+    }
+    if (pending.isEmpty) return;
+    await Future<void>.delayed(const Duration(milliseconds: 4));
+  }
+}
 
 bool _deferBuild((gpu.Shader, gpu.Shader, int) key) {
   final budget = _buildBudget;
   if (budget == null || _pipelineCache.containsKey(key)) return false;
   if (_buildClock.elapsed < budget) return false;
+  if (_starved && !_builtThisSlice) return false;
   _deferredBuilds++;
   return true;
 }
@@ -482,13 +553,12 @@ gpu.RenderPipeline resolvePipeline(
   final stopwatch = kDebugMode || profileRendering
       ? (Stopwatch()..start())
       : null;
-  if (_buildBudget != null) _buildClock.start();
+  if (_buildBudget != null) _builtThisSlice = true;
   final pipeline = gpu.gpuContext.createRenderPipeline(
     vertexShader,
     fragmentShader,
     vertexLayout: vertexLayout?.toGpuLayout(),
   );
-  _buildClock.stop();
   if (stopwatch != null) {
     stopwatch.stop();
     // A backend pipeline build is synchronous and lands mid-frame the first
@@ -572,9 +642,11 @@ gpu.RenderPipeline? tryResolvePipeline(
   String Function()? debugContext,
 }) {
   final layoutId = vertexLayoutId(vertexLayout);
-  // A built pipeline is never rejected or deferred.
+  // A built pipeline is never rejected or budget-deferred, only held.
   final cached = _cachedPipeline(vertexShader, fragmentShader, layoutId);
-  if (cached != null) return cached;
+  if (cached != null) {
+    return _holdingUnready ? _holdIfUnready(cached) : cached;
+  }
   final key = (vertexShader, fragmentShader, layoutId);
   if (_rejectedPipelines.contains(key)) return null;
   if (_deferBuild(key)) return null;
@@ -590,12 +662,13 @@ gpu.RenderPipeline? tryResolvePipeline(
     return null;
   }
   try {
-    return resolvePipeline(
+    final pipeline = resolvePipeline(
       vertexShader,
       fragmentShader,
       vertexLayout: vertexLayout,
       debugContext: debugContext,
     );
+    return _holdingUnready ? _holdIfUnready(pipeline) : pipeline;
   } on Exception catch (error) {
     _rejectedPipelines.add(key);
     debugPrint(
@@ -742,6 +815,7 @@ base class SceneEncoder {
     Matrix4? displayReferredCameraTransform,
     DebugViewFrame? debugView,
     bool primaryView = true,
+    Frustum? cullingFrustum,
   }) : _renderPass = renderPass,
        _transientsBuffer = transientsBuffer,
        _debugView = debugView,
@@ -756,7 +830,7 @@ base class SceneEncoder {
     _cameraTransform =
         cameraTransform ?? rasterViewTransformOf(_camera, _dimensions);
     _displayReferredCameraTransform = displayReferredCameraTransform;
-    frustum = cullingFrustumOf(_camera, _dimensions);
+    frustum = cullingFrustum ?? cullingFrustumOf(_camera, _dimensions);
     // A degenerate projection has no screen-size metric, so LOD nodes draw
     // their highest-detail level.
     final projection = ProjectionParams.of(_camera.projection, _dimensions);
@@ -890,6 +964,9 @@ base class SceneEncoder {
   gpu.RenderPipeline? _boundPipeline;
   Material? _boundMaterial;
   bool _boundMaterialFallback = false;
+  gpu.CullMode? _boundMaterialFaceCull;
+  // The faces one draw of a blended double-sided record keeps.
+  gpu.CullMode? _faceCull;
   gpu.Shader? _boundMaterialVertex;
   gpu.Shader? _boundFrameInfoShader;
   double _boundFrameInfoDepthBias = double.nan;
@@ -962,9 +1039,7 @@ base class SceneEncoder {
     // A material that cannot show the active debug view draws through the
     // engine's fallback debug fragment shader instead of its own.
     final fallback = _usesDebugFallback(item, material, geometry);
-    final materialVertex = material.materialVertexShader(
-      geometry.materialVertexVariant,
-    );
+    final materialVertex = material.vertexShaderForGeometry(geometry);
     final vertexShader = materialVertex ?? geometry.vertexShader;
     final fragmentShader = fallback
         ? _debugFallbackShader
@@ -1333,9 +1408,7 @@ base class SceneEncoder {
         !geometry.emitsStandardVaryings) {
       return null;
     }
-    final materialVertex = material.materialVertexShader(
-      geometry.materialVertexVariant,
-    );
+    final materialVertex = material.vertexShaderForGeometry(geometry);
     return tryResolvePipeline(
       materialVertex ?? geometry.vertexShader,
       _debugFallbackShader,
@@ -1462,6 +1535,7 @@ base class SceneEncoder {
     if (identical(_boundMaterial, material) &&
         identical(_boundMaterialVertex, materialVertex) &&
         _boundMaterialFallback == fallback &&
+        _boundMaterialFaceCull == _faceCull &&
         _boundMaterialFade == fade &&
         _boundMaterialLightOffset == lightOffset &&
         _boundMaterialLightCount == lightCount &&
@@ -1479,6 +1553,9 @@ base class SceneEncoder {
       material.lodFade = fade;
       material.bind(_renderPass, _transientsBuffer, _lighting);
     }
+    final faceCull = _faceCull;
+    if (faceCull != null) _renderPass.setCullMode(faceCull);
+    _boundMaterialFaceCull = faceCull;
     _boundWindingOrder = null;
     if (materialVertex != null) {
       material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
@@ -1744,9 +1821,7 @@ base class SceneEncoder {
     // A `vertex { }` material supplies its own vertex shader for this mesh
     // type; the geometry must bind FrameInfo (and skinned's joints texture)
     // against it, since its uniform slots can differ from the engine default.
-    final materialVertex = material.materialVertexShader(
-      geometry.materialVertexVariant,
-    );
+    final materialVertex = material.vertexShaderForGeometry(geometry);
     if (item != null) {
       _describeDraw(
         item,
@@ -1907,9 +1982,7 @@ base class SceneEncoder {
       _clearBindings();
     }
     _bindPipeline(pipeline);
-    final materialVertex = material.materialVertexShader(
-      geometry.materialVertexVariant,
-    );
+    final materialVertex = material.vertexShaderForGeometry(geometry);
     if (item != null) {
       _describeDraw(
         item,
@@ -2065,9 +2138,7 @@ base class SceneEncoder {
       _clearBindings();
     }
     _bindPipeline(pipeline);
-    final materialVertex = material.materialVertexShader(
-      geometry.materialVertexVariant,
-    );
+    final materialVertex = material.vertexShaderForGeometry(geometry);
     if (item != null) {
       _describeDraw(
         item,
@@ -2572,6 +2643,66 @@ base class SceneEncoder {
     );
   }
 
+  /// Encodes a blended [record]. A double-sided mesh that culls no face draws
+  /// its back faces and then its front faces, so its near side blends over its
+  /// far side.
+  void _encodeBlended(_TranslucentRecord record) {
+    if (!record.material.doubleSided ||
+        record.material.renderCullMode != gpu.CullMode.none) {
+      _encodeBlendedFaces(record);
+      return;
+    }
+    try {
+      _faceCull = gpu.CullMode.frontFace;
+      _encodeBlendedFaces(record);
+      _faceCull = gpu.CullMode.backFace;
+      _encodeBlendedFaces(record);
+    } finally {
+      _faceCull = null;
+    }
+  }
+
+  void _encodeBlendedFaces(_TranslucentRecord record) {
+    final instances = record.item.instanceTransforms;
+    if (instances != null) {
+      _encodeInstanced(
+        record.pipeline,
+        record.worldTransform,
+        record.geometry,
+        record.material,
+        instances,
+        record.item.instanceColors!,
+        record.windingFlipped,
+        record.fade,
+        instanceWindingFlipped: record.item.instanceWindingFlipped,
+        instanceIndices: record.item.visibleInstanceIndices,
+        sortBackToFrontFrom: record.item.sortTransparentInstances
+            ? _cameraPosition
+            : null,
+        packedWorldData: record.windingFlipped == record.item.windingFlipped
+            ? record.item.instanceWorldData
+            : null,
+        packedWorldWindingFlipped:
+            record.windingFlipped == record.item.windingFlipped
+            ? record.item.instanceWorldWindingFlipped
+            : null,
+        attributeData: record.item.instanceAttributeData,
+        attributeFloats: record.item.instanceAttributeFloats,
+        item: record.item,
+      );
+    } else {
+      _encode(
+        record.pipeline,
+        record.worldTransform,
+        record.geometry,
+        record.material,
+        record.windingFlipped,
+        record.fade,
+        item: record.item,
+      );
+    }
+  }
+
   void _flushTranslucentThrough(int end, {gpu.RenderPass? translucentPass}) {
     _prepareTranslucent();
     if (_translucentCursor >= _translucentRecords.length) return;
@@ -2625,44 +2756,7 @@ base class SceneEncoder {
         record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
       }
       record.item.applyMorphWeights(record.geometry);
-      final instances = record.item.instanceTransforms;
-      if (instances != null) {
-        _encodeInstanced(
-          record.pipeline,
-          record.worldTransform,
-          record.geometry,
-          record.material,
-          instances,
-          record.item.instanceColors!,
-          record.windingFlipped,
-          record.fade,
-          instanceWindingFlipped: record.item.instanceWindingFlipped,
-          instanceIndices: record.item.visibleInstanceIndices,
-          sortBackToFrontFrom: record.item.sortTransparentInstances
-              ? _cameraPosition
-              : null,
-          packedWorldData: record.windingFlipped == record.item.windingFlipped
-              ? record.item.instanceWorldData
-              : null,
-          packedWorldWindingFlipped:
-              record.windingFlipped == record.item.windingFlipped
-              ? record.item.instanceWorldWindingFlipped
-              : null,
-          attributeData: record.item.instanceAttributeData,
-          attributeFloats: record.item.instanceAttributeFloats,
-          item: record.item,
-        );
-      } else {
-        _encode(
-          record.pipeline,
-          record.worldTransform,
-          record.geometry,
-          record.material,
-          record.windingFlipped,
-          record.fade,
-          item: record.item,
-        );
-      }
+      _encodeBlended(record);
     }
     encodeWatch?.stop();
     _translucentEncodeMicros += encodeWatch?.elapsedMicroseconds ?? 0;
@@ -2755,44 +2849,7 @@ base class SceneEncoder {
         record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
       }
       record.item.applyMorphWeights(record.geometry);
-      final instances = record.item.instanceTransforms;
-      if (instances != null) {
-        _encodeInstanced(
-          record.pipeline,
-          record.worldTransform,
-          record.geometry,
-          record.material,
-          instances,
-          record.item.instanceColors!,
-          record.windingFlipped,
-          record.fade,
-          instanceWindingFlipped: record.item.instanceWindingFlipped,
-          instanceIndices: record.item.visibleInstanceIndices,
-          sortBackToFrontFrom: record.item.sortTransparentInstances
-              ? _cameraPosition
-              : null,
-          packedWorldData: record.windingFlipped == record.item.windingFlipped
-              ? record.item.instanceWorldData
-              : null,
-          packedWorldWindingFlipped:
-              record.windingFlipped == record.item.windingFlipped
-              ? record.item.instanceWorldWindingFlipped
-              : null,
-          attributeData: record.item.instanceAttributeData,
-          attributeFloats: record.item.instanceAttributeFloats,
-          item: record.item,
-        );
-      } else {
-        _encode(
-          record.pipeline,
-          record.worldTransform,
-          record.geometry,
-          record.material,
-          record.windingFlipped,
-          record.fade,
-          item: record.item,
-        );
-      }
+      _encodeBlended(record);
     }
 
     _drawTransformOverride = null;

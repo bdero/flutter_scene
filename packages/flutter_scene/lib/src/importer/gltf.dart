@@ -7,6 +7,7 @@
 library;
 
 export 'src/gltf/accessor.dart';
+export 'src/gltf/animation_pointer.dart';
 export 'src/gltf/coordinate_policy.dart';
 export 'src/gltf/extensions.dart';
 export 'src/gltf/glb.dart';

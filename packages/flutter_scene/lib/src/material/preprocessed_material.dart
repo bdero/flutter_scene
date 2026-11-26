@@ -578,6 +578,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
   );
 
+  static final Float32List _planarReflectionScratch = Float32List(20);
+  static final ByteData _planarReflectionBytes = ByteData.sublistView(
+    _planarReflectionScratch,
+  );
+
   // Binds the planar capture routed by this surface's reflector, or a black
   // placeholder with the gate off when none applies this draw (no reflector
   // routed one, or the draw is inside a capture, which must not recurse).
@@ -591,14 +596,14 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         ? null
         : planarReflectionFrame;
     // PlanarReflectionInfo: mat4 view_projection + vec4 params (x gate).
-    final info = Float32List(20);
+    final info = _planarReflectionScratch..fillRange(0, 20, 0);
     if (frame != null) {
       info.setAll(0, frame.viewProjection.storage);
       info[16] = 1.0;
     }
     pass.bindUniform(
       shader.cachedUniformSlot('PlanarReflectionInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(info)),
+      transientsBuffer.emplace(_planarReflectionBytes),
     );
     pass.bindTexture(
       shader.cachedUniformSlot('planar_reflection'),
@@ -622,6 +627,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     heightAddressMode: gpu.SamplerAddressMode.repeat,
   );
 
+  static final Float32List _depthMaskScratch = Float32List(12);
+  static final ByteData _depthMaskBytes = ByteData.sublistView(
+    _depthMaskScratch,
+  );
+
   @override
   @internal
   void bindDepthAlphaMask(
@@ -631,37 +641,39 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   ) {
     final transform = _depthMaskTransform;
     final rotation = transform.rotation;
-    final values = Float32List(12)
+    _depthMaskScratch
       ..[0] = _depthMaskCutoff
       ..[1] = _depthMaskAlpha
       ..[2] = 1.0
+      ..[3] = 0.0
       ..[4] = transform.offset.x
       ..[5] = transform.offset.y
       ..[6] = transform.scale.x
       ..[7] = transform.scale.y
       ..[8] = math.cos(rotation)
       ..[9] = math.sin(rotation)
-      ..[10] = _depthMaskTexCoord.toDouble();
+      ..[10] = _depthMaskTexCoord.toDouble()
+      ..[11] = 0.0;
     pass.bindUniform(
       shader.cachedUniformSlot('MaskInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(values)),
+      transientsBuffer.emplace(_depthMaskBytes),
     );
     final source = _depthMaskTexture;
+    final resolved = resolveTextureSource(source);
     pass.bindTexture(
       shader.cachedUniformSlot('mask_texture'),
-      Material.whitePlaceholder(resolveTextureSource(source)),
-      sampler: textureSourceSampler(source) ?? _depthMaskSampler,
+      Material.whitePlaceholder(resolved),
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(source) ?? _depthMaskSampler,
+      ),
     );
   }
 
   @override
   @internal
   gpu.CullMode get renderCullMode {
-    // Translucent double-sided surfaces keep one face per draw so depth
-    // sorting remains stable.
-    // TODO(translucent-sorting): emit and sort front/back surface draws
-    // independently, then disable culling for double-sided materials.
-    if (_culling == FmatCulling.back && doubleSided && isOpaque()) {
+    if (_culling == FmatCulling.back && doubleSided) {
       return gpu.CullMode.none;
     }
     return _cullMode(_culling);

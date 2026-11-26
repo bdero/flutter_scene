@@ -1,6 +1,7 @@
 // Covers when a frame may draw with the lean lit entries: only while every
 // feature they compile out is off, and never under the debug override.
 
+import 'package:flutter_scene/src/generated_assets/lighting_features.dart';
 import 'package:flutter_scene/src/light.dart'
     show debugDisableLeanLighting, leanLightingAllowed, shadingTierOverride;
 import 'package:flutter_test/flutter_test.dart';
@@ -11,12 +12,14 @@ bool _allowed({
   bool environmentBlending = false,
   bool ambientOcclusion = false,
   int pointShadowTileCount = 0,
+  Set<LightingFeature> compiledOut = const {},
 }) => leanLightingAllowed(
   irradianceField: irradianceField,
   rectAreaLightCount: rectAreaLightCount,
   environmentBlending: environmentBlending,
   ambientOcclusion: ambientOcclusion,
   pointShadowTileCount: pointShadowTileCount,
+  compiledOut: compiledOut,
 );
 
 void main() {
@@ -30,6 +33,24 @@ void main() {
     expect(_allowed(environmentBlending: true), isFalse);
     expect(_allowed(ambientOcclusion: true), isFalse);
     expect(_allowed(pointShadowTileCount: 2), isFalse);
+  });
+
+  test('a feature compiled out of the full entries no longer blocks lean', () {
+    expect(
+      _allowed(
+        irradianceField: true,
+        compiledOut: {LightingFeature.irradianceField},
+      ),
+      isTrue,
+    );
+    expect(
+      _allowed(
+        irradianceField: true,
+        ambientOcclusion: true,
+        compiledOut: {LightingFeature.irradianceField},
+      ),
+      isFalse,
+    );
   });
 
   test('the debug override forces the full entries', () {

@@ -19,6 +19,7 @@ void main(List<String> args) {
         'assets/noise_parity.fmat',
         'assets/planar_mirror.fmat',
         'assets/decal.fmat',
+        'assets/lit_cutout.fmat',
       ],
       assetMode: dataAssetsLane
           ? MaterialAssetMode.dataAssetsRequired

@@ -105,6 +105,17 @@ const String _webUint64 =
     'Builds fixture bundles with the generated flatbuffer builder, which writes uint64 fields that dart2js cannot.';
 
 void main() {
+  test('a parse copies no shader output until its bytes are read', () {
+    final bytes = _bundle();
+    final info = ShaderBundleInfo.parse(bytes);
+    final glsl = utf8.encode('// glsl');
+    final at = String.fromCharCodes(bytes).indexOf(String.fromCharCodes(glsl));
+    bytes.setAll(at, utf8.encode('// GLSL'));
+    final source = info['TestFragment']!.backends[ShaderBackend.openglEs]!;
+    expect(source.source.text, '// GLSL');
+    expect(identical(source.source.bytes, source.source.bytes), isTrue);
+  }, skip: kIsWeb ? _webUint64 : null);
+
   test('parses reflection and per-backend output', () {
     final info = ShaderBundleInfo.parse(_bundle());
     expect(info.formatVersion, 2);

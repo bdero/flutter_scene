@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/planar_reflection.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 // Two triangles of NDC positions covering the whole render target (6 vec2s).
@@ -146,7 +147,14 @@ void _bindFrameInfo(
 Matrix4 skyboxInverseViewProjection(Camera camera, ui.Size dimensions) {
   final viewRotation = camera.getViewMatrix().clone()
     ..setTranslationRaw(0.0, 0.0, 0.0);
-  final projection = camera.projection.getProjectionMatrix(
+  // The sky is at infinity, so a mirror's oblique near plane clips none of it.
+  // That plane gives each far corner a different w, which bends the
+  // interpolated view rays.
+  var skyProjection = camera.projection;
+  while (skyProjection is ObliqueNearClipProjection) {
+    skyProjection = skyProjection.base;
+  }
+  final projection = skyProjection.getProjectionMatrix(
     dimensions.width / dimensions.height,
   );
   final viewProjection = projection * viewRotation;

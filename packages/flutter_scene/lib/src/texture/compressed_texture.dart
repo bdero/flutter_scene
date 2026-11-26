@@ -1,5 +1,6 @@
 // Uploads a flutter_scene KTX2 texture to the GPU. The CPU-heavy transcode runs
-// off the main isolate; only the GPU calls stay on the main thread.
+// on a background isolate (in time slices on the web); only the GPU calls stay
+// on the main thread.
 //
 // The device may support a block-compressed family directly, in which case the
 // block payload is transcoded to that format and uploaded compressed (less
@@ -25,6 +26,7 @@ import 'package:flutter_scene/src/texture/block/transcode_bc3.dart';
 import 'package:flutter_scene/src/texture/block/transcode_etc2.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
+import 'package:flutter_scene/src/texture/web_time_slicer.dart';
 
 /// The order in which compressed families are preferred when the device
 /// supports more than one: ASTC (highest quality) > BC (desktop) > ETC2
@@ -51,13 +53,13 @@ const int _modeEtc2Rgba = 5;
 typedef _Prepared = ({List<Uint8List> levels, int mode, int width, int height});
 
 /// Reads a flutter_scene KTX2 file from [bytes], transcodes it on a background
-/// isolate, and uploads the result. Use this from async load paths so large
-/// textures do not block the UI.
+/// isolate (in time slices on the web), and uploads the result. Use this from
+/// async load paths so large textures do not block the UI.
 Future<gpu.Texture> gpuTextureFromKtx2Async(Uint8List bytes) async {
   _logFamiliesOnce();
   final mode = _selectMode();
   final mips = uploadableMipChains;
-  final prepared = await compute(_prepareFromBytes, (
+  final prepared = await computeOrSlice(_prepareFromBytes, (
     ktx2: bytes,
     mode: mode,
     mips: mips,
@@ -199,6 +201,6 @@ void _logFamiliesOnce() {
     'bc=${context.supportsTextureCompression(gpu.TextureCompressionFamily.bc)} '
     'etc2=${context.supportsTextureCompression(gpu.TextureCompressionFamily.etc2)} '
     'astc=${context.supportsTextureCompression(gpu.TextureCompressionFamily.astc)} '
-    '(transcode runs off the main isolate; rgba8 fallback otherwise)',
+    '(rgba8 fallback otherwise)',
   );
 }

@@ -8,6 +8,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:yaml/yaml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
@@ -93,13 +94,17 @@ T guardGeneratedWrite<T>(Uri target, T Function() write) {
 /// Two builds can share one generated tree (the same pub cache backs every
 /// project), so a file must never be visible half-written. The rename is
 /// last-writer-wins, and the loser's next build finds a stamp that does not
-/// match and rewrites it.
+/// match and rewrites it. The sibling's name is random as well as per process,
+/// since isolates of one process write concurrently too.
 void writeGeneratedBytes(Uri uri, List<int> bytes) =>
     guardGeneratedWrite(uri, () {
-      final temp = File.fromUri(Uri.file('${uri.toFilePath()}.$pid.tmp'))
+      final tag = '$pid.${_tempNames.nextInt(1 << 32).toRadixString(36)}';
+      final temp = File.fromUri(Uri.file('${uri.toFilePath()}.$tag.tmp'))
         ..writeAsBytesSync(bytes);
       temp.renameSync(uri.toFilePath());
     });
+
+final Random _tempNames = Random.secure();
 
 /// [writeGeneratedBytes] for text.
 void writeGeneratedString(Uri uri, String contents) =>
@@ -126,7 +131,8 @@ void createGeneratedAssetsDirectory(
       directory.resolve(generatedAssetsGitignoreFileName),
     );
     if (gitignore.existsSync() &&
-        gitignore.readAsStringSync() == generatedAssetsGitignore) {
+        gitignore.readAsStringSync().replaceAll('\r\n', '\n') ==
+            generatedAssetsGitignore.replaceAll('\r\n', '\n')) {
       continue;
     }
     writeGeneratedString(gitignore.uri, generatedAssetsGitignore);
@@ -205,6 +211,13 @@ final class GeneratedAssetTree {
   final String packageName;
   final GeneratedAssetManifest _manifest;
   final HookOptions options;
+
+  /// The entries this tree recorded or dropped since it was opened, the only
+  /// ones [save] writes over what another build saved in the meantime.
+  final Set<(GeneratedAssetFamily, String, String?)> _changed = {};
+
+  void _touch(GeneratedAssetEntry entry) =>
+      _changed.add((entry.family, entry.id, entry.target));
 
   Uri get _root => packageRoot.resolve('$generatedAssetsDirectory/');
 
@@ -300,8 +313,8 @@ final class GeneratedAssetTree {
     String? owner,
     String? source,
     String? target,
-  }) => _manifest.put(
-    GeneratedAssetEntry(
+  }) {
+    final entry = GeneratedAssetEntry(
       family: family,
       id: id,
       owner: owner ?? packageName,
@@ -311,8 +324,18 @@ final class GeneratedAssetTree {
       stamp: _digest(stamp),
       source: source,
       target: target,
-    ),
-  );
+    );
+    _touch(entry);
+    _manifest.put(entry);
+  }
+
+  /// Drops the [family]/[id] entry for [target] and deletes its output, for an
+  /// output a build stopped producing (a sidecar whose switch was turned off).
+  void drop(GeneratedAssetFamily family, String id, {String? target}) {
+    _changed.add((family, id, target));
+    final entry = _manifest.remove(family, id, target: target);
+    if (entry != null) _deleteIfPresent(_root.resolve(entry.file));
+  }
 
   /// Records the output at [uri] (which must be inside the generated tree).
   void recordFile({
@@ -358,6 +381,7 @@ final class GeneratedAssetTree {
       final source = entry.source;
       if (source == null || entry.owner != packageName) continue;
       if (File.fromUri(packageRoot.resolve(source)).existsSync()) continue;
+      _touch(entry);
       _manifest.entries.remove(entry);
       _deleteIfPresent(_root.resolve(entry.file));
       stdout.writeln(
@@ -374,6 +398,7 @@ final class GeneratedAssetTree {
     var dropped = 0;
     for (final entry in _manifest.ofFamily(family).toList()) {
       if (entry.owner != owner) continue;
+      _touch(entry);
       _manifest.entries.remove(entry);
       _deleteIfPresent(_root.resolve(entry.file));
       dropped++;
@@ -397,6 +422,7 @@ final class GeneratedAssetTree {
   /// is only weight in a directory that ships, survives `flutter clean`, and
   /// for a pub-cache consumer is shared with every project on the machine.
   void save() {
+    _mergeSavedSinceOpen();
     // Entry files are relative to the tree, so a target directory's outputs
     // carry the directory name.
     final referenced = {for (final entry in _manifest.entries) entry.file};
@@ -426,11 +452,21 @@ final class GeneratedAssetTree {
           if (!isGeneratedFileName(name)) continue;
           final relative = '$prefix$name';
           if (referenced.contains(relative)) continue;
-          if (variantsOfReferenced.contains(generatedNameWithoutTag(name)) &&
+          // A temporary file is another build's write in flight, unless it is
+          // old enough to be left by a build that died.
+          final inFlight = name.endsWith('.tmp');
+          if ((inFlight ||
+                  variantsOfReferenced.contains(
+                    generatedNameWithoutTag(name),
+                  )) &&
               file.statSync().modified.isAfter(keepAfter)) {
             continue;
           }
-          file.deleteSync();
+          try {
+            file.deleteSync();
+          } on PathNotFoundException {
+            // Another build's sweep got there first.
+          }
         }
       }
     }
@@ -447,6 +483,23 @@ final class GeneratedAssetTree {
       return;
     }
     writeGeneratedString(manifestFile.uri, contents);
+  }
+
+  /// Takes every entry this tree did not change from the manifest on disk, so
+  /// a build saving after another one that ran alongside it keeps that build's
+  /// entries rather than writing back what it read when it opened.
+  ///
+  /// TODO(generated-tree-lock): two saves landing in the same instant can still
+  /// lose one's entries until its next build. A lock beside the tree (never in
+  /// it, which ships) would close that window.
+  void _mergeSavedSinceOpen() {
+    final saved = _readManifest(packageRoot, packageName);
+    if (saved == null) return;
+    bool changed(GeneratedAssetEntry e) =>
+        _changed.contains((e.family, e.id, e.target));
+    _manifest.entries
+      ..removeWhere((entry) => !changed(entry))
+      ..addAll(saved.entries.where((entry) => !changed(entry)));
   }
 
   static String _digest(String stamp) => fnv1aHex(utf8.encode(stamp));

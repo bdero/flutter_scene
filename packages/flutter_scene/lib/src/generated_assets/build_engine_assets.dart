@@ -27,21 +27,36 @@
 ///     my_app:
 ///       flutter_scene_debug_views: true
 /// ```
+///
+/// `lighting_features` (`flutter_scene_lighting_features` for an app hook)
+/// compiles lit features a project never uses out of every lit shader, which
+/// shortens their first-draw compile (see [LightingFeature]):
+///
+/// ```yaml
+/// hooks:
+///   user_defines:
+///     flutter_scene:
+///       lighting_features:
+///         irradiance_field: false
+///         rect_area_lights: false
+/// ```
 library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:hooks/hooks.dart';
 
 import '../fmat/build_materials.dart'
     show MaterialAssetMode, buildBundledPhysicalMaterials;
+import '../fmat/framework_shaders.dart';
 import '../fmat/target_shader_bundle.dart';
 import '../importer/build_cache.dart';
 import 'engine_identity.dart';
 import 'generated_assets.dart';
 import 'generated_tree.dart';
+import 'lighting_features.dart';
+import 'wgsl_sidecar.dart' show wgslSidecarPathFor;
 
 /// The package flutter_scene's engine assets are recorded as belonging to.
 const String _engineOwner = 'flutter_scene';
@@ -54,7 +69,7 @@ const String _baseBundleManifest = 'shaders/base.shaderbundle.json';
 /// GL_EXT_shader_texture_lod, which software GL stacks (Mesa llvmpipe, Android
 /// emulators) reject at compile time. Sets the native GLES floor at OpenGL
 /// ES 3.0.
-const int _glesLanguageVersion = 300;
+const int engineGlesLanguageVersion = 300;
 
 /// Builds the engine's shaders from flutter_scene's own hook into its own
 /// generated tree.
@@ -70,7 +85,7 @@ Future<void> buildOwnEngineAssets({
 }) => _build(
   buildInput: buildInput,
   buildOutput: buildOutput,
-  debugViews: HookOptions.of(buildInput).debugViews,
+  options: HookOptions.of(buildInput),
 );
 
 /// Builds the engine's shaders into the app's generated tree, from the app's
@@ -90,20 +105,29 @@ Future<void> buildEngineAssets({
 }) => _build(
   buildInput: buildInput,
   buildOutput: buildOutput,
-  debugViews: debugViews ?? HookOptions.of(buildInput).debugViews,
+  options: HookOptions(
+    debugViews: debugViews ?? HookOptions.of(buildInput).debugViews,
+    compiledOutLightingFeatures: HookOptions.of(
+      buildInput,
+    ).compiledOutLightingFeatures,
+  ),
 );
 
 Future<void> _build({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-  required bool debugViews,
+  required HookOptions options,
 }) async {
-  final root = await _flutterSceneRoot();
+  final debugViews = options.debugViews;
+  final lightingOff = options.compiledOutLightingFeatures;
+  // flutter_scene's own root, the parent of its shader include directory.
+  final root = (await engineShaderIncludeDirectory(buildInput)).resolve('../');
   await _buildBaseShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
     sourceRoot: root,
     debugViews: debugViews,
+    lightingOff: lightingOff,
   );
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
@@ -114,21 +138,8 @@ Future<void> _build({
     // Engine-compiled like the base bundle, so its name separates engines too.
     fileVariant: await engineIdentity(),
     debugViews: debugViews,
+    compiledOutLightingFeatures: lightingOff,
   );
-}
-
-/// flutter_scene's package root. There is no top-level `flutter_scene.dart`
-/// library, so this resolves through `build_hooks.dart` (which always exists).
-Future<Uri> _flutterSceneRoot() async {
-  final lib = await Isolate.resolvePackageUri(
-    Uri.parse('package:flutter_scene/build_hooks.dart'),
-  );
-  if (lib == null) {
-    throw Exception(
-      'flutter_scene: could not resolve the flutter_scene package location.',
-    );
-  }
-  return lib.resolve('../');
 }
 
 Future<void> _buildBaseShaderBundle({
@@ -136,6 +147,7 @@ Future<void> _buildBaseShaderBundle({
   required BuildOutputBuilder buildOutput,
   required Uri sourceRoot,
   required bool debugViews,
+  required Set<LightingFeature> lightingOff,
 }) async {
   final shaders = sourceRoot.resolve('shaders/');
   final manifestFile = File.fromUri(sourceRoot.resolve(_baseBundleManifest));
@@ -162,7 +174,10 @@ Future<void> _buildBaseShaderBundle({
   final stampBuffer = StringBuffer(
     await shaderBundleStamp(
       buildInput,
-      'engine bundle=base debug_views=$debugViews',
+      // Names the views' layout, so a bundle with them compiled into every
+      // entry is rebuilt with twins.
+      'engine bundle=base debug_views=${debugViews ? 'twins' : false} '
+      'lighting_off=${describeCompiledOutLightingFeatures(lightingOff)}',
     ),
   );
   for (final file in sources) {
@@ -186,7 +201,8 @@ Future<void> _buildBaseShaderBundle({
   final target = shaderBundleTargetKey(buildInput);
   final variant =
       '${await engineIdentity()}'
-      '${debugViews ? debugViewsVariantSuffix : ''}';
+      '${debugViews ? debugViewsVariantSuffix : ''}'
+      '${lightingFeaturesVariantSuffix(lightingOff)}';
   final outputUri = tree.fileUri(
     GeneratedAssetFamily.shaderBundle,
     nameId: 'base',
@@ -194,60 +210,67 @@ Future<void> _buildBaseShaderBundle({
     variant: variant,
     target: target,
   );
+  final wgslUri = wgslSidecarsForBuild(buildInput)
+      ? Uri.file(wgslSidecarPathFor(outputUri.toFilePath()))
+      : null;
   if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
     outputUri,
+    ?wgslUri,
   ], target: target)) {
-    tree
-      ..recordFile(
-        family: GeneratedAssetFamily.shaderBundle,
+    tree.recordFile(
+      family: GeneratedAssetFamily.shaderBundle,
+      id: 'base',
+      uri: outputUri,
+      stamp: stamp,
+      owner: _engineOwner,
+      target: target,
+    );
+    // Recorded again too, or the sweep in save() deletes it; dropped when the
+    // switch is off, or a recorded sidecar outlives it.
+    if (wgslUri == null) {
+      tree.drop(GeneratedAssetFamily.wgsl, 'base', target: target);
+    } else if (File.fromUri(wgslUri).existsSync()) {
+      tree.recordFile(
+        family: GeneratedAssetFamily.wgsl,
         id: 'base',
-        uri: outputUri,
+        uri: wgslUri,
         stamp: stamp,
         owner: _engineOwner,
         target: target,
-      )
-      ..save();
+      );
+    }
+    tree.save();
     return;
   }
 
-  // The compiler resolves a manifest entry's `file` against its own working
-  // directory, the building package's root. That is flutter_scene's own root
-  // for its own hook; an app's hook building these needs the entries rebased to
-  // absolute paths first.
-  var manifestPath = _baseBundleManifest;
-  if (buildInput.packageRoot != sourceRoot || debugViews) {
-    var manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
-        .cast<String, Object?>();
-    if (buildInput.packageRoot != sourceRoot) {
-      manifest = rebaseShaderBundleManifest(
-        manifest,
-        sourceRoot,
-        packageRoot: buildInput.packageRoot,
-      );
-    }
-    if (debugViews) {
-      manifest = wrapDebugViewsManifest(manifest, buildInput.packageRoot);
-    }
-    manifestPath = 'build/flutter_scene_engine/base.shaderbundle.json';
-    final manifestOut = File.fromUri(
-      buildInput.packageRoot.resolve(manifestPath),
-    );
-    guardGeneratedWrite(manifestOut.uri, () {
-      manifestOut.parent.createSync(recursive: true);
-    });
-    writeGeneratedString(
-      manifestOut.uri,
-      const JsonEncoder.withIndent('  ').convert(manifest),
+  // The compiler resolves a manifest entry's `file` against its working
+  // directory, which it only reads: flutter_scene's own root, or the directory
+  // of the debug-view wrappers.
+  var manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
+      .cast<String, Object?>();
+  var entryRoot = sourceRoot;
+  if (debugViews || lightingOff.isNotEmpty) {
+    entryRoot = hookIntermediateDirectory(buildInput, 'engine_entries');
+    manifest = wrapEngineManifest(
+      manifest,
+      entryRoot,
+      shaders,
+      debugViews: debugViews,
+      lightingOff: lightingOff,
     );
   }
+  buildOutput.dependencies.add(manifestFile.uri);
 
   stdout.writeln('flutter_scene: compiling the engine shader bundle');
-  await buildTargetShaderBundleJson(
+  await buildTargetShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
-    manifestFileName: manifestPath,
+    bundleName: 'base',
+    manifest: manifest,
+    entryRoot: entryRoot,
+    manifestDirectory: shaders,
     includeDirectories: [shaders],
-    glesLanguageVersion: _glesLanguageVersion,
+    glesLanguageVersion: engineGlesLanguageVersion,
     assetMode: TargetShaderBundleAssetMode.generatedTree,
     owner: _engineOwner,
     stamp: stamp,
@@ -255,95 +278,87 @@ Future<void> _buildBaseShaderBundle({
   );
 }
 
-/// The directory, relative to the building package's root, holding the
-/// fragment wrappers that compile the debug views in.
-const String _debugViewsWrapperDir = 'build/flutter_scene_engine/debug_views/';
-
-/// Points every fragment entry of [manifest] at a wrapper that defines
-/// `FLUTTER_SCENE_DEBUG_VIEWS` and includes the original by name, written under
-/// [packageRoot]. The compiler takes no defines per bundle, and the original
-/// resolves through the shaders directory on the include path. A wrapper keeps
-/// a different name from its original, or the include would find the wrapper
-/// itself.
-Map<String, Object?> wrapDebugViewsManifest(
+/// Points every entry of [manifest] at a wrapper written into [directory],
+/// which entries then resolve against.
+///
+/// With [debugViews], adds a twin of each fragment entry that draws the
+/// surface debug views, named with [debugViewsEntrySuffix] and defining
+/// `FLUTTER_SCENE_DEBUG_VIEWS`. A material draws with the twin only while a
+/// view is active, so the views cost nothing to compile until then.
+///
+/// Every wrapper defines each feature in [lightingOff] out, and each one gets
+/// a marker entry ([LightingFeature.markerEntryName]) the runtime reads back.
+///
+/// Every wrapper includes its original by name, found through [shaders] on the
+/// include path, since the compiler takes no defines per bundle. A wrapper
+/// keeps a different name from its original, or the include would find the
+/// wrapper itself.
+Map<String, Object?> wrapEngineManifest(
   Map<String, Object?> manifest,
-  Uri packageRoot,
-) {
+  Uri directory,
+  Uri shaders, {
+  bool debugViews = false,
+  Set<LightingFeature> lightingOff = const {},
+}) {
+  final prefix = [
+    for (final f in LightingFeature.values)
+      if (lightingOff.contains(f)) '#define ${f.define}\n',
+  ].join();
   final wrapped = <String, Object?>{};
   for (final MapEntry(:key, :value) in manifest.entries) {
     final entry = (value as Map).cast<String, Object?>();
-    if (entry['type'] != 'fragment') {
-      wrapped[key] = entry;
-      continue;
-    }
     final original = (entry['file'] as String).split('/').last;
-    final stem = original.substring(0, original.lastIndexOf('.'));
-    final wrapperPath = '$_debugViewsWrapperDir${stem}_debug_views.frag';
-    final wrapper = File.fromUri(packageRoot.resolve(wrapperPath));
-    guardGeneratedWrite(wrapper.uri, () {
-      wrapper.parent.createSync(recursive: true);
-    });
-    writeGeneratedString(
-      wrapper.uri,
-      '#define FLUTTER_SCENE_DEBUG_VIEWS\n#include <$original>\n',
+    final dot = original.lastIndexOf('.');
+    String wrap(String suffix, String defines) {
+      final name =
+          '${original.substring(0, dot)}$suffix${original.substring(dot)}';
+      File.fromUri(
+        directory.resolve(name),
+      ).writeAsStringSync('$prefix$defines#include <$original>\n');
+      return name;
+    }
+
+    wrapped[key] = {...entry, 'file': wrap('_entry', '')};
+    if (debugViews &&
+        entry['type'] == 'fragment' &&
+        _includesDebugViews(File.fromUri(shaders.resolve(original)), shaders)) {
+      wrapped['$key$debugViewsEntrySuffix'] = {
+        ...entry,
+        'file': wrap('_debug_views', '#define FLUTTER_SCENE_DEBUG_VIEWS\n'),
+      };
+    }
+  }
+  for (final feature in lightingOff) {
+    final name = '${feature.markerEntryName}.frag';
+    File.fromUri(directory.resolve(name)).writeAsStringSync(
+      '// Records that ${feature.key} was compiled out. Never drawn.\n'
+      'precision mediump float;\n'
+      'out vec4 frag_color;\n'
+      'void main() {\n  frag_color = vec4(0.0);\n}\n',
     );
-    wrapped[key] = {...entry, 'file': wrapperPath};
+    wrapped[feature.markerEntryName] = {'type': 'fragment', 'file': name};
   }
   return wrapped;
 }
 
-/// Rewrites a shader-bundle manifest's `file` entries so they resolve from
-/// [packageRoot], for a hook whose working directory is a different package
-/// from the [sourceRoot] holding the sources.
-///
-/// Entries stay relative, because they have two consumers that want opposite
-/// things from an absolute path. The compiler opens the value as a path, so it
-/// would need the host's own separators, while `collectShaderBundleDependencies`
-/// feeds it to `Uri.resolve`, where a Windows path's drive letter parses as a
-/// scheme. A relative path with posix separators is correct for both on every
-/// platform. Falls back to a file URI when no relative path exists, which on
-/// Windows means the two roots are on different drives.
-Map<String, Object?> rebaseShaderBundleManifest(
-  Map<String, Object?> manifest,
-  Uri sourceRoot, {
-  required Uri packageRoot,
-}) => <String, Object?>{
-  for (final MapEntry(:key, :value) in manifest.entries)
-    key: {
-      ...(value as Map).cast<String, Object?>(),
-      'file': _relativeFile(
-        sourceRoot.resolve(value['file'] as String),
-        packageRoot,
-      ),
-    },
-};
+final RegExp _include = RegExp(
+  r'^\s*#\s*include\s*[<"]([^>"]+)[>"]',
+  multiLine: true,
+);
 
-String _relativeFile(Uri file, Uri from) {
-  final target = file.pathSegments;
-  final base = from.pathSegments.where((s) => s.isNotEmpty).toList();
-  // Only a genuinely different root has no relative path. Sharing no first
-  // directory is an ordinary posix layout (a workdir and a pub cache under
-  // different top-level directories) that walks up fine.
-  if (file.scheme != from.scheme || _drive(target) != _drive(base)) {
-    return file.toString();
+// Whether [file] includes the surface debug hook, directly or through its
+// includes, each resolved beside its includer and then in [shaders].
+bool _includesDebugViews(File file, Uri shaders, [Set<String>? seen]) {
+  seen ??= {};
+  if (!seen.add(file.absolute.path) || !file.existsSync()) return false;
+  for (final match in _include.allMatches(file.readAsStringSync())) {
+    final name = match.group(1)!;
+    if (name.split('/').last == 'material_debug.glsl') return true;
+    final beside = File.fromUri(file.uri.resolve(name));
+    final included = beside.existsSync()
+        ? beside
+        : File.fromUri(shaders.resolve(name));
+    if (_includesDebugViews(included, shaders, seen)) return true;
   }
-  var common = 0;
-  while (common < base.length &&
-      common < target.length - 1 &&
-      base[common] == target[common]) {
-    common++;
-  }
-  return [
-    ...List.filled(base.length - common, '..'),
-    ...target.sublist(common),
-  ].join('/');
-}
-
-/// The `C:` of a Windows file URI's segments, or null for a posix path.
-String? _drive(List<String> segments) {
-  final first = segments.where((s) => s.isNotEmpty).firstOrNull;
-  if (first == null || first.length != 2 || !first.endsWith(':')) return null;
-  final letter = first.codeUnitAt(0) | 0x20;
-  if (letter < 0x61 || letter > 0x7a) return null;
-  return String.fromCharCode(letter);
+  return false;
 }

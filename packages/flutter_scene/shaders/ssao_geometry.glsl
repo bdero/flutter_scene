@@ -2,10 +2,23 @@
 //
 // The including shader must declare the samplers `linear_depth` and
 // `depth_mip1`..`depth_mip3`, and define AO_INFO as the uniform block instance
-// whose `proj.xy` holds the projection scale and `proj_offset.xyz` the axis
-// offset and orthographic flag (see view_projection.glsl).
+// whose `proj.xy` holds the projection scale, `proj_offset.xyz` the axis
+// offset and orthographic flag (see view_projection.glsl), and `depth_uv` the
+// map from depth texture UV to the screen UV its texels were sampled at (xy
+// scale, zw offset).
 
 #include <view_projection.glsl>
+
+// The screen UV a depth texel at texture UV [uv] holds. Differs from [uv] when
+// the base level subsamples a full-resolution prepass.
+highp vec2 DepthSampleUv(highp vec2 uv) {
+  return uv * AO_INFO.depth_uv.xy + AO_INFO.depth_uv.zw;
+}
+
+// The depth texture UV holding screen UV [uv].
+highp vec2 DepthTextureUv(highp vec2 uv) {
+  return (uv - AO_INFO.depth_uv.zw) / AO_INFO.depth_uv.xy;
+}
 
 // Fetches the view-space depth at [uv] from level [level] of the depth chain.
 float DepthAtLevel(vec2 uv, int level) {
@@ -20,15 +33,15 @@ float DepthAtLevel(vec2 uv, int level) {
 // prepass writes), so the stored planar depth is the view-space Z and the
 // X/Y follow from the projection.
 vec3 ViewPositionAt(vec2 uv, int level) {
-  return ViewPositionFromUv(uv, DepthAtLevel(uv, level), AO_INFO.proj.xy,
-                            AO_INFO.proj_offset.xyz);
+  return ViewPositionFromUv(DepthSampleUv(uv), DepthAtLevel(uv, level),
+                            AO_INFO.proj.xy, AO_INFO.proj_offset.xyz);
 }
 
 vec3 ViewPositionBase(ivec2 coord) {
   ivec2 size = textureSize(linear_depth, 0);
   coord = clamp(coord, ivec2(0), size - ivec2(1));
   float z = texelFetch(linear_depth, coord, 0).r;
-  vec2 uv = (vec2(coord) + vec2(0.5)) / vec2(size);
+  vec2 uv = DepthSampleUv((vec2(coord) + vec2(0.5)) / vec2(size));
   return ViewPositionFromUv(uv, z, AO_INFO.proj.xy, AO_INFO.proj_offset.xyz);
 }
 

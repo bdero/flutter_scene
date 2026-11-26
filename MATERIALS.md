@@ -566,6 +566,13 @@ software compiler (a device emulator, some headless CI) can run out of memory
 on it; a material that uses one or two functions stays small. Bake to a
 texture when a single field would do.
 
+On Windows (native and WebGL2), ANGLE compiles each shader with Direct3D's
+`fxc` on its first draw, and indexing these tables inside a loop can stall
+that draw for seconds, longest on a `shading_model: lit` material.
+`NoiseValue*` and `NoiseHash*` use no tables. An effect material that needs
+no engine lighting should use `shading_model: unlit` or sample a
+`bakeNoiseTexture`.
+
 ---
 
 # Barycentric wireframes, `#include <wireframe.glsl>`
@@ -899,6 +906,13 @@ the end of any function that contains a loop. A mid-loop return compiles into
 a construct that crashes the Direct3D shader compiler outright, so the
 failure is an app crash on Windows, not an artifact. Accumulate into a local
 and return it once.
+
+**Keep table-indexed loops off `lit` shaders.** On Windows, a loop that
+indexes a constant array (the `<noise.glsl>` gradient and cellular tables)
+on top of the lit body can stall the first draw for seconds while `fxc`
+compiles it. Use `shading_model: unlit` for effect materials that shade
+themselves, and table-free noise (`NoiseValue*`, `NoiseHash*`) or a baked
+texture in loops.
 
 **Build bit masks with left shifts.** Right-shifting a uint whose high bit is
 set (`0xFFFFFFFFu >> n`) executes as a signed arithmetic shift on the

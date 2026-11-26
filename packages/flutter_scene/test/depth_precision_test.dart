@@ -604,6 +604,37 @@ void main() {
         isNull,
       );
     });
+
+    test('stays quiet on reversed float depth, whose precision is even', () {
+      expect(
+        nearPlaneAdvisory(
+          const NearPlaneFit(
+            authoredNear: 0.1,
+            fittedNear: 0.1,
+            visibleDepth: 900.0,
+            nearestNode: null,
+          ),
+          fitEnabled: false,
+          reversedFloatDepth: true,
+        ),
+        isNull,
+      );
+      expect(
+        nearPlaneAdvisory(
+          const NearPlaneFit(
+            authoredNear: 0.1,
+            fittedNear: 0.1,
+            visibleDepth: 0.0,
+            nearestNode: null,
+            nearestContainsEye: true,
+            nearestExtent: 800,
+          ),
+          fitEnabled: true,
+          reversedFloatDepth: true,
+        ),
+        isNull,
+      );
+    });
   });
 
   group('.fmat depth_layer', () {

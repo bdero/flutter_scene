@@ -118,6 +118,30 @@ engine.Animation? buildAnimation(
       ),
     );
   }
+  for (final channel in spec.pathChannels) {
+    final times = _floats(document.payload(channel.timeline)).toList();
+    final values = _floats(document.payload(channel.keyframes));
+    final name = nodes[channel.target]?.name ?? channel.targetName ?? '';
+    // Same trailing-float rule as weights.
+    final componentCount = times.isEmpty ? 0 : values.length ~/ times.length;
+    if (componentCount == 0) continue;
+    channels.add(
+      engine.AnimationChannel(
+        bindTarget: engine.BindKey(
+          nodeName: name,
+          property: engine.AnimationProperty.path,
+          path: channel.path,
+        ),
+        resolver: engine.PropertyResolver.makePathTimeline(
+          channel.path,
+          times,
+          Float32List.sublistView(values, 0, times.length * componentCount),
+          componentCount: componentCount,
+          step: channel.step,
+        ),
+      ),
+    );
+  }
   if (channels.isEmpty) return null;
   return engine.Animation(name: spec.name, channels: channels);
 }

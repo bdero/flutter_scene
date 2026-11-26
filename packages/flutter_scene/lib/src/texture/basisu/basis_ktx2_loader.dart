@@ -1,7 +1,7 @@
 // Loads standard KTX2 textures (glTF KHR_texture_basisu) to GPU textures.
-// The parse and decode run on one background isolate for a whole batch, so an
-// import with several KTX2 textures builds the transcoder's lookup tables
-// once; only the uploads run on the main thread.
+// The parse and decode run on one background isolate for a whole batch (in
+// time slices on the web), so an import with several KTX2 textures builds the
+// transcoder's lookup tables once; only the uploads run on the main thread.
 //
 // UASTC repacks to ASTC where supported. ETC1S transcodes to BC or ETC2, in
 // compressionFamilyPreference order. Everything else decodes to rgba8.
@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
 import 'package:flutter_scene/src/texture/mipmap.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
+import 'package:flutter_scene/src/texture/web_time_slicer.dart';
 
 /// One decode request: a standard KTX2 file plus the mip downsample content
 /// for a base-only file whose chain the engine generates.
@@ -98,18 +99,34 @@ typedef StandardKtx2Decoded = ({
   List<MipLevel> levels,
 });
 
-/// Decodes a batch of standard KTX2 files off the main isolate and uploads
-/// each to a GPU texture. A file that fails to decode yields null alongside a
+/// Decodes a batch of standard KTX2 files on a background isolate (in time
+/// slices on the web) and uploads each to a GPU texture. A file that fails to decode yields null alongside a
 /// debug message, so one bad texture cannot sink an import.
 Future<List<Texture2D?>> loadStandardKtx2Batch(
   List<StandardKtx2Request> requests,
 ) async {
   if (requests.isEmpty) return const [];
-  final decoded = await compute(_decodeBatch, (
-    requests: requests,
-    mips: uploadableMipChains,
-    support: currentCompressionSupport(),
-  ));
+  final mips = uploadableMipChains;
+  final support = currentCompressionSupport();
+  final List<StandardKtx2Decoded> decoded;
+  if (kIsWeb) {
+    decoded = [
+      for (final request in requests)
+        await webTimeSlicer.run(
+          () => decodeStandardKtx2ForUpload(
+            request,
+            mips: mips,
+            support: support,
+          ),
+        ),
+    ];
+  } else {
+    decoded = await compute(_decodeBatch, (
+      requests: requests,
+      mips: mips,
+      support: support,
+    ));
+  }
   final out = <Texture2D?>[];
   for (final result in decoded) {
     if (result.error != null) {
@@ -250,14 +267,14 @@ StandardKtx2Decoded decodeStandardKtx2ForUpload(
   }
 }
 
-/// Uploads any KTX2 payload, the engine's own or standard, decoding off the
-/// main isolate. Throws when it cannot be decoded.
+/// Uploads any KTX2 payload, the engine's own or standard, decoding on a
+/// background isolate (in time slices on the web). Throws when it cannot be decoded.
 Future<gpu.Texture> gpuTextureFromAnyKtx2Async(
   Uint8List bytes, {
   TextureContent content = TextureContent.color,
 }) async {
   if (isInternalKtx2(readKtx2(bytes))) return gpuTextureFromKtx2Async(bytes);
-  final decoded = await compute(_decodeBatch, (
+  final decoded = await computeOrSlice(_decodeBatch, (
     requests: [(bytes: bytes, content: content)],
     mips: uploadableMipChains,
     support: currentCompressionSupport(),

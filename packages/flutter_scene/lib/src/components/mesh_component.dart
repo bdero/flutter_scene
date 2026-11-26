@@ -52,6 +52,23 @@ class MeshComponent extends Component {
     return true;
   }
 
+  // A primitive's geometry and material are plain fields that cannot reach the
+  // items drawing them, so the pre-pass compares the two each frame.
+  void _applyPrimitiveAssignments() {
+    final primitives = _mesh.primitives;
+    var itemsMatch = _renderItems.length == primitives.length;
+    for (var i = 0; itemsMatch && i < primitives.length; i++) {
+      itemsMatch = identical(_renderItems[i].geometry, primitives[i].geometry);
+    }
+    if (itemsMatch) {
+      _refreshRetainedMaterials();
+      return;
+    }
+    _unregisterRenderItems();
+    _registerRenderItems();
+    node.markBoundsDirty();
+  }
+
   void _refreshRetainedMaterials() {
     if (_renderItems.length != _mesh.primitives.length) return;
     var staticShadowChanged = false;
@@ -161,6 +178,7 @@ class MeshComponent extends Component {
   @internal
   void refreshRenderItems() {
     if (_renderItems.isEmpty) return;
+    _applyPrimitiveAssignments();
     // The debug view override is a plain per-frame copy; it never touches the
     // shadow or bounds state below, and the walk is skipped while no node
     // anywhere sets one.

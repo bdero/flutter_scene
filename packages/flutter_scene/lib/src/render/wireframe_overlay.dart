@@ -144,8 +144,9 @@ class _WireframeEncoder {
     // Position-only where the geometry offers it; otherwise the full vertex
     // path, exactly as the selection mask draws.
     final depthVertex = geometry.depthOnlyVertex;
-    final materialVertex = material.materialVertexShader(
-      depthVertex != null ? 'depth' : geometry.materialVertexVariant,
+    final materialVertex = material.vertexShaderForGeometry(
+      geometry,
+      depth: depthVertex != null,
     );
     final activeVertex =
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;

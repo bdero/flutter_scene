@@ -211,6 +211,13 @@ class EditorController extends ChangeNotifier {
   // Editor selection-highlight color (linear RGBA), a warm orange.
   static final Vector4 _highlightColor = Vector4(1.0, 0.55, 0.1, 1.0);
 
+  /// A selected primitive like the Add menu's, drawn only in the viewport's
+  /// warm-up so adding the first one does not stall on its pipelines.
+  late final List<Node> warmUpNodes = [
+    Node(mesh: Mesh(CuboidGeometry(Vector3.all(1)), PhysicallyBasedMaterial()))
+      ..highlightColor = _highlightColor,
+  ];
+
   void _onSelectionChanged() {
     _syncHighlights();
     notifyListeners();
@@ -1835,9 +1842,12 @@ class EditorController extends ChangeNotifier {
     if (document.animations.isNotEmpty) {
       final restoredNames = restored.values.map((s) => s.name).toSet();
       for (final animation in document.animations.values) {
-        for (final channel in animation.channels) {
-          if (restored.containsKey(channel.target) ||
-              restoredNames.contains(channel.targetName)) {
+        for (final (target, targetName) in [
+          for (final c in animation.channels) (c.target, c.targetName),
+          for (final c in animation.pathChannels) (c.target, c.targetName),
+        ]) {
+          if (restored.containsKey(target) ||
+              restoredNames.contains(targetName)) {
             return false;
           }
         }

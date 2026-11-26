@@ -915,31 +915,14 @@ void bindInstanceTransforms(
   int slot = 1,
 }) {
   if (packed.isEmpty) return;
-  pass.bindVertexBuffer(
-    instanceTransients.emplace(_bytesOf(packed)),
-    slot: slot,
-  );
+  pass.bindVertexBuffer(instanceTransients.emplaceTyped(packed), slot: slot);
 }
 
 /// Uploads packed transform and color data to an instance-rate slot.
 void bindInstanceData(gpu.RenderPass pass, Float32List packed, {int slot = 1}) {
   if (packed.isEmpty) return;
-  pass.bindVertexBuffer(
-    instanceTransients.emplace(_bytesOf(packed)),
-    slot: slot,
-  );
+  pass.bindVertexBuffer(instanceTransients.emplaceTyped(packed), slot: slot);
 }
-
-// A byte view of [packed], memoized for the last list. Non-instanced draws
-// pack into one reused scratch list, so consecutive draws share the view.
-ByteData _bytesOf(Float32List packed) {
-  if (identical(packed, _lastPacked)) return _lastPackedBytes!;
-  _lastPacked = packed;
-  return _lastPackedBytes = ByteData.sublistView(packed);
-}
-
-Float32List? _lastPacked;
-ByteData? _lastPackedBytes;
 
 // Device-resident copies of cached instance records, keyed by the cached
 // list. An entry uploads only once the data has gone a frame unrefreshed, so

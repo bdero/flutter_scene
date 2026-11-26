@@ -1,6 +1,8 @@
 import 'dart:math' as math;
+import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/color_conversion.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/physical_material_variant.dart';
@@ -8,6 +10,7 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physical_material.dart';
+import 'package:flutter_scene/src/material/texture_transform_cache.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
@@ -49,12 +52,17 @@ class TextureTransform {
   /// Per-axis UV scale.
   Vector2 scale;
 
-  /// Counter-clockwise rotation in radians.
+  /// Rotation in radians, turning UVs counter-clockwise as glTF's
+  /// `KHR_texture_transform` does, so the texture turns clockwise.
   double rotation;
 
   /// Whether this transform leaves UV coordinates unchanged.
   bool get isIdentity =>
-      offset == Vector2.zero() && scale == Vector2.all(1.0) && rotation == 0.0;
+      offset.x == 0.0 &&
+      offset.y == 0.0 &&
+      scale.x == 1.0 &&
+      scale.y == 1.0 &&
+      rotation == 0.0;
 }
 
 /// A metallic-roughness physically based material with optional layered and
@@ -174,12 +182,17 @@ class PhysicallyBasedMaterial extends Material {
   /// Linear RGBA tint multiplied with [baseColorTexture]. Alpha controls
   /// translucency: values below `1` push the material into the depth-
   /// sorted translucent pass.
+  ///
+  /// Flutter colors are sRGB; set one with [setBaseColor].
   Vector4 get baseColorFactor => _baseColorFactor;
   Vector4 _baseColorFactor = Colors.white;
   set baseColorFactor(Vector4 value) {
     _baseColorFactor = value;
     _markMaterialDataDirty();
   }
+
+  /// Sets [baseColorFactor] from a Flutter [Color], decoding it from sRGB.
+  void setBaseColor(Color color) => baseColorFactor = color.toLinearRgba();
 
   /// How strongly per-vertex colors influence the final albedo. `0`
   /// disables vertex color contribution; `1` (the default) fully
@@ -283,13 +296,18 @@ class PhysicallyBasedMaterial extends Material {
   }
 
   /// Linear RGBA emissive tint. Alpha is unused; the default
-  /// `Vector4.zero()` disables emission.
+  /// `Vector4.zero()` disables emission. Flutter colors are sRGB; set one
+  /// with [setEmissiveColor].
   Vector4 get emissiveFactor => _emissiveFactor;
   Vector4 _emissiveFactor = Vector4.zero();
   set emissiveFactor(Vector4 value) {
     _emissiveFactor = value;
     _markMaterialDataDirty();
   }
+
+  /// Sets [emissiveFactor] from a Flutter [Color], decoding it from sRGB.
+  /// Scale it past `1` with [emissiveStrength].
+  void setEmissiveColor(Color color) => emissiveFactor = color.toLinearRgba();
 
   /// Multiplier for emissive radiance. Values above `1` produce HDR emission.
   double get emissiveStrength => _emissiveStrength;
@@ -1639,7 +1657,9 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[122] = roughnessFactor;
     fragInfo[123] = normalTexture != null ? 1.0 : 0.0;
     fragInfo[124] = normalScale;
-    fragInfo[125] = occlusionStrength;
+    // Without a texture the occlusion is 1 at any strength; 0 lets the shader
+    // skip the read.
+    fragInfo[125] = occlusionTexture != null ? occlusionStrength : 0.0;
     fragInfo[132] = alphaMode.index.toDouble();
     fragInfo[133] = alphaCutoff;
     fragInfo[138] = specularAntiAliasingVariance;
@@ -1666,57 +1686,22 @@ class PhysicallyBasedMaterial extends Material {
       shader.cachedUniformSlot("FragInfo"),
       transientsBuffer.emplace(_fragInfoBytes),
     );
-
-    final textureTransforms = _textureTransformsScratch;
-    _packTextureTransform(
-      textureTransforms,
-      0,
-      baseColorTextureTransform,
-      baseColorTextureTexCoord,
-    );
-    _packTextureTransform(
-      textureTransforms,
-      8,
-      metallicRoughnessTextureTransform,
-      metallicRoughnessTextureTexCoord,
-    );
-    _packTextureTransform(
-      textureTransforms,
-      16,
-      normalTextureTransform,
-      normalTextureTexCoord,
-    );
-    _packTextureTransform(
-      textureTransforms,
-      24,
-      emissiveTextureTransform,
-      emissiveTextureTexCoord,
-    );
-    _packTextureTransform(
-      textureTransforms,
-      32,
-      occlusionTextureTransform,
-      occlusionTextureTexCoord,
-    );
-    // The base record's padding float carries one flag the shader branches on
-    // to skip the five UV-transform evaluations, set when any record
-    // transforms its UVs or selects UV set 1. The identity transform
-    // reproduces the raw UV bit-exactly, so the flag only gates work.
-    final transformedUvs =
-        !baseColorTextureTransform.isIdentity ||
-        !metallicRoughnessTextureTransform.isIdentity ||
-        !normalTextureTransform.isIdentity ||
-        !emissiveTextureTransform.isIdentity ||
-        !occlusionTextureTransform.isIdentity ||
-        baseColorTextureTexCoord != 0 ||
-        metallicRoughnessTextureTexCoord != 0 ||
-        normalTextureTexCoord != 0 ||
-        emissiveTextureTexCoord != 0 ||
-        occlusionTextureTexCoord != 0;
-    textureTransforms[7] = transformedUvs ? 1.0 : 0.0;
     pass.bindUniform(
       shader.cachedUniformSlot('TextureTransforms'),
-      transientsBuffer.emplace(scratchBytesOf(textureTransforms)),
+      transientsBuffer.emplace(
+        _textureTransforms.packFive(
+          baseColorTextureTransform,
+          baseColorTextureTexCoord,
+          metallicRoughnessTextureTransform,
+          metallicRoughnessTextureTexCoord,
+          normalTextureTransform,
+          normalTextureTexCoord,
+          emissiveTextureTransform,
+          emissiveTextureTexCoord,
+          occlusionTextureTransform,
+          occlusionTextureTexCoord,
+        ),
+      ),
     );
 
     _bindSlot(pass, shader, 'base_color_texture', baseColorTexture);
@@ -1773,23 +1758,8 @@ class PhysicallyBasedMaterial extends Material {
   );
   static final ByteData _fragInfoBytes = ByteData.sublistView(_fragInfoScratch);
 
-  static final Float32List _textureTransformsScratch = Float32List(40);
-
-  static void _packTextureTransform(
-    Float32List target,
-    int offset,
-    TextureTransform transform,
-    int texCoord,
-  ) {
-    target[offset] = transform.offset.x;
-    target[offset + 1] = transform.offset.y;
-    target[offset + 2] = transform.scale.x;
-    target[offset + 3] = transform.scale.y;
-    target[offset + 4] = math.cos(transform.rotation);
-    target[offset + 5] = math.sin(transform.rotation);
-    target[offset + 6] = texCoord.clamp(0, 1).toDouble();
-    target[offset + 7] = 0.0;
-  }
+  final TextureTransformCache _textureTransforms =
+      TextureTransformCache.standardFive();
 
   static final gpu.SamplerOptions _repeatSampler = gpu.SamplerOptions(
     widthAddressMode: gpu.SamplerAddressMode.repeat,
@@ -1813,7 +1783,10 @@ class PhysicallyBasedMaterial extends Material {
       normal
           ? Material.normalPlaceholder(resolved)
           : Material.whitePlaceholder(resolved),
-      sampler: textureSourceSampler(source) ?? _repeatSampler,
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(source) ?? _repeatSampler,
+      ),
     );
   }
 
@@ -1842,6 +1815,9 @@ class PhysicallyBasedMaterial extends Material {
   @override
   bool get lodCrossFades => true;
 
+  static final Float32List _maskInfoScratch = Float32List(12);
+  static final ByteData _maskInfoBytes = ByteData.sublistView(_maskInfoScratch);
+
   @override
   void bindDepthAlphaMask(
     gpu.RenderPass pass,
@@ -1850,11 +1826,12 @@ class PhysicallyBasedMaterial extends Material {
   ) {
     // Mirrors the coverage the color pass tests in Surface():
     // texture.a * weighted vertex-color alpha * baseColorFactor alpha.
-    final params = Float32List(12)
+    final params = _maskInfoScratch
       ..[0] = alphaCutoff
       ..[1] = baseColorFactor.a
-      ..[2] = vertexColorWeight;
-    _packTextureTransform(
+      ..[2] = vertexColorWeight
+      ..[3] = 0.0;
+    packTextureTransformRecord(
       params,
       4,
       baseColorTextureTransform,
@@ -1862,12 +1839,16 @@ class PhysicallyBasedMaterial extends Material {
     );
     pass.bindUniform(
       shader.cachedUniformSlot('MaskInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(params)),
+      transientsBuffer.emplace(_maskInfoBytes),
     );
+    final resolved = resolveTextureSource(baseColorTexture);
     pass.bindTexture(
       shader.cachedUniformSlot('mask_texture'),
-      Material.whitePlaceholder(resolveTextureSource(baseColorTexture)),
-      sampler: textureSourceSampler(baseColorTexture) ?? _repeatSampler,
+      Material.whitePlaceholder(resolved),
+      sampler: samplerOrPlaceholder(
+        resolved,
+        textureSourceSampler(baseColorTexture) ?? _repeatSampler,
+      ),
     );
   }
 

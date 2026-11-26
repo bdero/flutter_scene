@@ -21,9 +21,15 @@ base class MeshPrimitive implements MeshDrawSource {
   MeshPrimitive(this.geometry, this.material);
 
   /// The vertex/index data drawn by this primitive.
+  ///
+  /// Assigning a new geometry while the owning node is in a scene takes effect
+  /// on the next frame.
   Geometry geometry;
 
   /// The shader and per-material parameters used to render [geometry].
+  ///
+  /// Assigning a new material while the owning node is in a scene takes effect
+  /// on the next frame.
   Material material;
 
   /// Whether this primitive draws in the opaque/translucent color passes.

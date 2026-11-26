@@ -4,12 +4,12 @@
 
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show compute;
-
 import 'mipmap.dart';
+import 'web_time_slicer.dart';
 
-/// Builds the mip chain for [pixels] on a background isolate, so a large
-/// texture does not block the caller while it downsamples.
+/// Builds the mip chain for [pixels] on a background isolate (in time slices on
+/// the web), so a large texture does not block the caller while it
+/// downsamples.
 ///
 /// The synchronous [generateMipChain] stays for the sync realize path, which
 /// cannot await.
@@ -18,7 +18,7 @@ Future<List<MipLevel>> generateMipChainAsync(
   int width,
   int height,
   TextureContent content,
-) => compute(_generateMipChain, (
+) => computeOrSlice(_generateMipChain, (
   pixels: pixels,
   width: width,
   height: height,

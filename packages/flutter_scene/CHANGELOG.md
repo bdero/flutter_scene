@@ -1,14 +1,132 @@
-## 0.24.4
+## 0.25.0
 
-* Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
-* Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
-* A billboard batch on a scaled node is no longer culled while still on screen.
+* A `PolylineGeometry` draws without the app calling `updateForCamera` each frame, which is deprecated and does nothing. Its strip is expanded in a vertex shader for whichever camera renders it, so every view of a scene sees it face on, and it follows its node's transform.
+* `Color.toLinearRgba()`/`toLinearRgb()` (`ColorToLinear`) and the `setBaseColor`, `setEmissiveColor`, and `setColor` setters convert a Flutter color, Display P3 included, to the engine's linear values.
+* BREAKING: A display-referred `UnlitMaterial` reads `baseColorFactor` and vertex colors as linear like every other path, so a non-white tint written as display values renders lighter. Set it with `setBaseColor` to keep the widget color.
+* BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
+* BREAKING: `SpotShadowInfo` drops the deprecated `firstTile`, `totalTiles`, and `tileResolution`, and `rects` is required.
+* A GLB's images referenced by relative URI load through `resolveUri` on `Node.fromGlbBytes`, `Node.fromGlbAsset`, and `importGlb`, instead of falling back to the placeholder.
+* Depth of field samples depth with nearest filtering, so it no longer reads zero depth on devices that cannot filter 32-bit float textures.
+* `GltfTextureResolver` (`resolveTexture` on the runtime importers) supplies the texture for a glTF's external image, so an app can share one texture across models.
+* God rays no longer misread the sun's shadow past a cascade's depth range or bleed across shadow atlas tiles.
+* Ambient occlusion's depth mip chain is single channel, using a quarter of the memory and bandwidth.
+* TAA's depth history is single-channel fp32, halving its memory and comparing disocclusion at full precision.
+* A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
+* Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
+* An R8 or RG8 texture whose size is not a multiple of 4 bytes uploads on WebGPU under dart2wasm instead of throwing a `RangeError`.
+* SMAA's edge pass skips writing pixels with no edge.
+* Half-resolution ground-truth ambient occlusion no longer stipples grazing walls and floors. Its blur follows sloped surfaces, and lit materials upsample it against their own depth.
+* Ambient occlusion shifts its sampling noise each frame under TAA, so the temporal resolve averages away more of its grain.
+* Ground-truth ambient occlusion no longer darkens grazing surfaces, since its blur runs in half float and clamps only at the end.
+* Screen-space indirect light no longer caps its red channel at 1.
+* `SceneView(webPresentation: ScenePresentation.domCanvas)` shows a web view's frames on a DOM canvas behind its Flutter content, skipping the per-frame copy into Flutter's renderer. Ancestor filters and shader masks do not apply to it, and widget captures miss it.
+* On WebGPU, `textureToPlatformImage` returns an `ImageBitmap` instead of null.
+* On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.
+* WebGL2 reuses its present framebuffer and skips redundant vertex array and uniform buffer calls per draw.
 * `Material.renderOrder` (`.fmat` `render_order:`) sorts a material's draws ahead of `Node.renderOrder`, so a whole class of translucent overlays (road paint, shadow decals, markers) is ordered in one place.
 * `.fscene` documents carry `Node.renderOrder` and `Material.renderOrder`, and the editor sets a node's order from the inspector and the `setNodeRenderOrder` command.
 * `.fscene` documents keep an `UnlitMaterial`'s `alphaMode`, so a translucent unlit material no longer reloads opaque.
 * Physical materials realized from a `.fscene` keep their `depthBias` and `depthLayer`.
 * Nodes added by a `.fscene` hot reload keep their shadow casting mode.
-* Update `flutter_scene-idioms` skill (v17) with render order and stacked translucent overlays.
+* Update `flutter_scene-idioms` skill (v23) with render order and stacked translucent overlays.
+
+## 0.24.6
+
+* A cutout `.fmat` whose lighting hook is declared `highp` (`highp vec4 Composite`), or calls helpers of its own, builds again. 0.24.5 broke both; its depth passes now keep only what `Surface()` reaches.
+* A `.fmat` whose own depth passes fail to build, or would drop draws on some backend, no longer fails the app build. The build warns and the material casts and writes depth through the engine's shaders.
+
+## 0.24.5
+
+* A `.fmat` with `alpha_to_coverage` casts its shadow and writes depth on Vulkan and WebGPU, and a lit one builds for WebGPU. Its depth passes no longer declare a sample mask or lighting resources they never write or read.
+
+## 0.24.4
+
+* A refreshing `SkyEnvironment` no longer hitches on the cube radiance layout. Its prefilter splits the heaviest roughness bands across frames, one cube face each.
+* `BloomSettings.levels` sets how many levels the bloom chain blurs through (3 to 6). Fewer levels take fewer passes and give a tighter glow at the same brightness.
+* Crossfading clips no longer dips a node's rotation toward its bind pose.
+* Shadow passes cull the instances of an `InstancedMesh` with `cullInstances` against each light's volume, instead of drawing them all.
+* A component that sets its node's `visible` in `update` shows or hides the node and its descendants that frame, not the next.
+* The sky in a planar reflection (`PlanarReflectionCamera`, or any camera with an oblique near plane) is no longer stretched.
+* `RenderStage.beforeScene` runs a `CustomRenderPass` before the view draws anything, so the same frame's materials can sample what it produces.
+* `Texture2DArray` uploads layered data textures, sampled in `.fmat` materials through `sampler2DArray` parameters. Arrays work on the web backends, and on Metal and Vulkan with Flutter 3.50 or newer (`Texture2DArray.isSupported`).
+* `Texture2D.fromData` builds a texture from raw texels in a `DataTextureFormat` (`r8`, `rg8`, `rgba8`, `r32Float`, `rgba16Float`, `rgba32Float`).
+* `r8` and `rg8` textures whose rows are not a multiple of four bytes upload correctly on WebGL2.
+* `OffAxisProjection` is a lens with four separate frustum edges (`fromAngles`, `fromMatrix`), the shape a headset gives for each eye.
+* `RenderViewGroup` and `Scene.renderViewGroups` render views together, culling once and fitting and rendering the shadows once, so both eyes of a stereo pair shade identically.
+* `RenderView.cullingFrustum` overrides the frustum a view culls against.
+* `Scene.renderViewsToTargets` renders views into caller-owned textures (`ExternalRenderTarget`) from any frame loop and returns a `FrameCompletion`. On the web, `wrapExternalColorTarget` wraps a WebGL framebuffer or texture from `nativeGraphicsContext`.
+* `ExternalRenderTarget.allocate` creates a target the package owns. On the web, `textureToPlatformImage` hands a texture to another WebGL context as an `ImageBitmap`.
+* `ExternalRenderTarget.surfaceFrame` leases an image from a `GpuSurface`. The scene presents it after the frame's last GPU work, or discards it when the frame is skipped or throws.
+* An `ExternalRenderTarget` in an sRGB format receives linear color so its image is encoded once, and `ExternalRenderTarget.backgroundColor` puts a color behind the scene.
+* `WidgetHost` keeps a scene's `WidgetComponent`s live when it renders without a `SceneView`.
+* On the web, `Texture.asImage()` after a pass that set a scissor no longer drops the pixels outside it.
+* Two views with temporal anti-aliasing no longer share one history and reproject each other's frames.
+* `SceneView.errorBuilder` shows a failed engine resource load (such as a shader bundle a web build could not fetch) with a `retry` callback, instead of leaving the view on its loading widget.
+* Placeholder textures always bind with a nearest sampler, so on OpenGL ES, which keeps sampler state on the texture, an untextured slot no longer reads slightly under white depending on bind order.
+* `Scene.warmUp` takes `extraNodes` (and `SceneView` takes `warmUpExtraNodes`), drawn only in the warm-up frames, so content added later compiles its pipelines before it first shows instead of stalling that frame.
+* A sliced `Scene.warmUp` (`sliceBudget`, and `SceneView(warmUp: true)`) yields between slow pipeline builds and after the first sky bake. Its budget timed only creating each pipeline, while the backend compiles one when a pass first binds it, so it built everything in its first slice and blocked for the whole compile.
+* With the `debug_views` hook user-define, the engine bundle keeps its plain fragment entries and adds twins built with the surface debug views, which materials draw with only while a view is active. Compiling the views in no longer slows every lit pipeline's first build; the bundle grows by the twins.
+* A shader library on the WebGPU web backend loads its WGSL sidecar alone, without downloading the shader bundle.
+* A shader library on the WebGPU web backend compiles each shader when it is first used, so a page no longer waits at load on shaders it never draws.
+* glTF imports read `EXT_texture_webp` textures, so a model whose textures are only WebP loads instead of failing.
+* The debug near-plane advisory no longer prints on reversed float depth (Metal and web), whose precision the near plane leaves alone.
+* A shader library on the WebGL2 web backend compiles each shader when it is first used, so a page no longer waits at load on shaders it never draws.
+* The WebGL2 web backend keeps every render target's framebuffer when a frame renders to more than 64 attachment combinations, instead of rebuilding and revalidating them each frame.
+* glTF imports honor `KHR_node_visibility`, so a node marked hidden imports hidden along with its subtree.
+* glTF imports play `KHR_animation_pointer` animations of node visibility, light color, intensity, range, and cone angles, material factors, and texture transforms. A pointer the engine can't drive warns and is skipped.
+* Normal maps on meshes without tangents no longer read their green channel inverted, and anisotropy directions on them are no longer mirrored. The tangent frame derived from screen-space derivatives now matches the one supplied tangents give.
+* `BloomSettings.referenceSize` measures the blur's spread against a shared render size, so views that each show part of one picture (a header and a taller overlay a character moves into) bloom alike.
+* Texture rotation (`KHR_texture_transform`, `TextureTransform.rotation`, and `ApplyMaterialUvTransform` in `.fmat` materials) turns the UVs counter-clockwise as the extension specifies. It turned the other way, so a rotation tuned by eye needs its sign flipped.
+* Rewriting an index buffer on the WebGL2 web backend no longer makes later draws fail with a `glDrawElements` "Insufficient buffer size" or "Vertex buffer is not big enough" error.
+* Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
+* Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
+* A billboard batch on a scaled node is no longer culled while still on screen.
+* Shadowed and punctual-lit materials no longer run every shadow cascade and filter for every pixel on Windows (ANGLE). A shadowed scene on a ROG Ally went from 93 ms to 41 ms a frame.
+* Lit materials compile about 60% faster on Windows (ANGLE), so the first frame that needs a new lit shader stalls for far less time. Warming up a shadowed scene with ambient occlusion went from 23.6 s to 9.5 s on a Radeon RX 580.
+* Lit materials with shadows and point or spot lights draw faster on mobile GPUs. Shadow filters only run their full kernel at shadow edges, lights that miss a pixel are skipped, and unused emissive and occlusion reads are dropped. A shadowed, point-lit scene on OpenGL ES on a Galaxy A16 went from 7.9 to 10.8 fps.
+* Lit materials on Windows (ANGLE) get their specular anti-aliasing back, and normal maps on meshes without tangents are no longer flattened.
+* Loading a shader library again under the same asset key keeps its shader reflection, so a later `ShaderMaterial` no longer re-parses the bundle or skips its first draws.
+* A widget test no longer fails with "A Timer is still pending" when it ends while a scene waits on the raster thread.
+* The `lighting_features` hook user-define compiles lit features a project never uses (`irradiance_field`, `rect_area_lights`, `environment_blending`, `parallax_reflection`, `ambient_occlusion`, `point_shadows`) out of the engine's and the bundled physical materials' shaders, so their first draw compiles faster. Dropping the irradiance field alone can halve the lit shader's first-draw compile on Windows (ANGLE). A scene that uses a compiled-out feature draws without it and warns once in debug builds.
+* A `RenderTexture` view no longer freezes while the GPU is a frame behind and a screen view renders anyway, such as after a resize.
+* The depth prepass writes a single-channel `r32Float` target when no pass needs normals, a quarter of the memory and bandwidth. `RenderPassContext.sceneDepthLinear` keeps four channels when normals are written.
+* Host-visible buffers on the WebGPU web backend upload far faster under dart2wasm. A frame sealing 248 KB of uniforms went from 19.4 ms to 3.7 ms.
+* The WebGPU web backend encodes draws without allocating or searching its bindings by name, reusing cached pipelines and bind groups across draws.
+* The WebGPU web backend waits on one queue fence for all the passes submitted in a turn instead of one per pass. Submitting a 12-pass frame went from 0.48 ms to 0.29 ms.
+* Ambient occlusion, screen-space reflections, depth of field, and SMAA reuse each other's intermediate textures within a frame, holding 28 to 48 MB less at 1080p.
+* The web backends keep two frames in flight, as Metal does. A 1080p PBR scene on WebGPU went from 11 to 55 fps.
+* WebGL2 asks for the high-performance GPU, as WebGPU does, so machines with two GPUs render on the faster one.
+* Sliced web texture loads yield with `scheduler.yield()` where the browser has it, so they no longer wait about 4 ms per yield.
+* WebGL reports GPU completion through fences, so a GPU-bound scene paces its frames instead of stalling the rest of the app.
+* WebGL skips render state calls that change nothing.
+* Transient buffers, light index textures, and `MeshGeometry` attribute updates (`updatePositions` and the rest) reuse their allocations rather than reallocating each frame.
+* A rate-limited `SceneView` whose ticker is running paints on its next vsync when a paced frame finishes, instead of repainting between ticks.
+* `Scene.warmUp` renders into a scratch surface at the view's aspect ratio, so warming up a live scene no longer evicts its render targets, disturbs TAA and SSGI history, or invalidates cached shadow cascades.
+* Shadow-casting spot and point lights each use their own `shadowMapResolution`, bias, and softness, instead of the first caster's or the directional light's.
+* The shadow atlas packs its tiles in two dimensions and stays within 8192 texels, so a 2048 `DirectionalLight` with a shadow-casting spot no longer fails on mobile and web.
+* God rays read the right cascades when spot or point lights also cast shadows.
+* `SpotShadowInfo` gives each spot's atlas tile in `rects`; `firstTile`, `totalTiles`, and `tileResolution` are deprecated and read 0. `RenderPassContext.shadowInfo` adds a `cascade_atlas` vec4 placing the cascades.
+* `Lighting.spotShadowDepthBias`, `spotShadowNormalBias`, and `spotShadowSoftness` are deprecated and unused.
+* `PhysicallyBasedMaterial` and `UnlitMaterial` repack their texture transforms only when one changes, including an edit in place such as `transform.offset.x += 0.1`.
+* On the web, a batch of KTX2 textures or mip chain builds yields to the browser between textures instead of freezing the page until the whole batch finishes. One large texture still blocks while it decodes.
+* The WebGL2 web backend compiles shaders in parallel and checks a program's link only when it is first drawn, and `Scene.warmUp` starts every pipeline's compile before drawing with any. A warm-up on Windows (ANGLE) takes about half as long and no longer freezes the page while it compiles.
+* Shader bundle reflection parses about 10x faster by copying each backend's output on its first read, so a `ShaderMaterial` on Apple platforms waits far less before its first draw.
+* Build hooks that `flutter test` calls in process (`buildMaterials`, `buildTargetShaderBundleJson`) find the engine's shader includes instead of throwing.
+* A skinned mesh imported offline is no longer culled while on screen in its rest pose, in one of several animations that move the same joint, or when its node sits apart from its skeleton.
+* A skinned mesh loaded at runtime is culled when off screen instead of always drawing.
+* Blended double-sided materials, such as glass, leaves, and cloth, show their back faces, and their near side draws over their far side.
+* A `ShaderMaterial` or `.fmat` material with a vertex shader no longer breaks the line segments, billboards, and Gaussian splats it draws.
+* Builds that share one flutter_scene in the pub cache (two projects, worktrees, or an app and its tests) no longer fail with `errno = 1224` on Windows or ship each other's half-written shaders. The build hook writes its intermediates into the building app's `.dart_tool/` and only its generated assets into the package.
+* Two builds for different platforms saving flutter_scene's generated assets at once no longer drop each other's manifest entries or delete each other's files mid-write.
+* Assigning `MeshPrimitive.material` or `MeshPrimitive.geometry` on a node already in a scene changes what it draws from the next frame. The assignment was ignored until the node left and rejoined a scene or got a new `Mesh`.
+* Instanced draws and billboards on the WebGL2 backend no longer copy their instance data byte by byte in WebAssembly builds.
+* `Scene.maxGpuFramesInFlight` defaults to 2 on iOS and macOS, so a scene the GPU has room for no longer drops to half its frame rate there. Other platforms keep 1, where a second frame slows the rest of the app.
+* A color texture's CPU mip chain builds in about a third less time, through sRGB lookup tables that give the same bytes.
+* `RenderTexture.dispose` releases the render targets it holds and clears `texture`; they stayed until the target was collected.
+* On native, the render targets of a scene or `RenderTexture` count toward the Dart VM's external memory, so a scene dropped without `dispose` is collected as its GPU memory piles up. The collector saw only small wrappers and could leave gigabytes of dropped targets alive.
+* Turning `SceneView.autoTick` off and back on continues the view's elapsed time from where it stopped. It threw in debug builds; in release builds the elapsed time started over, and a view with `maxFrameRate` stayed frozen until the new ticker passed the old deadline.
+* `Texture2D.fromImage` builds its mip chain on a background isolate, so loading a model's PNG and JPEG textures at runtime on native platforms no longer holds up frames while each one downsamples.
+* Shadow slots for spot and point lights go to the lights whose shadows can be seen. A light whose range misses every view no longer takes a slot or renders its depth passes, and when more remain than slots, the largest on screen win. `Scene.isShadowCasterDropped` names the in-view lights the budget left out.
 
 ## 0.24.3
 
@@ -34,6 +152,7 @@
 * Lit, unlit, and `.fmat` shaders build about twice as fast in browsers on Windows, close to 0.23, where a new material could stall its first frame for tens of seconds. Regressed in 0.24.0.
 * The surface debug views' material channels are compiled in only when the app sets `hooks: user_defines: flutter_scene: debug_views: true` (plus `flutter_scene_debug_views: true` under the app's name if its hook builds materials or engine assets). Without it a view shows the geometry and identity channels and prints how to turn the rest on.
 * `buildMaterials` and `buildEngineAssets` take `debugViews`.
+* Experimental WebGPU backend for web builds, enabled with `--dart-define=flutter_scene.webgpu=true` plus `flutter_scene_webgpu: true` under `hooks: user_defines:` for flutter_scene and the app. WebGL2 stays the default.
 
 ## 0.24.0
 

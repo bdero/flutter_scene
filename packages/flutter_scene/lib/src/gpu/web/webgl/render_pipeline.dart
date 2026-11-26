@@ -1,7 +1,15 @@
 part of '_webgl.dart';
 
+/// `COMPLETION_STATUS_KHR` from `KHR_parallel_shader_compile`.
+const int _completionStatusKhr = 0x91B1;
+
 /// A linked WebGL program built from a vertex + fragment shader pair, plus
 /// cached reflection state used by RenderPass when binding resources.
+///
+/// Construction only issues the link. Its result, the info logs, and the
+/// uniform caches are read at the first bind ([_ensureLinked]), so pipelines
+/// created together compile and link in parallel where the context supports
+/// `KHR_parallel_shader_compile`.
 final class WebGlRenderPipeline extends RenderPipeline {
   WebGlRenderPipeline._(
     this._gpuContext,
@@ -24,6 +32,8 @@ final class WebGlRenderPipeline extends RenderPipeline {
     if (vs == null || fs == null) {
       throw Exception('Shader objects were not compiled before linking');
     }
+    _linkedVertex = vs;
+    _linkedFragment = fs;
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
 
@@ -36,21 +46,14 @@ final class WebGlRenderPipeline extends RenderPipeline {
     }
 
     gl.linkProgram(program);
-    final ok =
-        (gl.getProgramParameter(program, web.WebGL2RenderingContext.LINK_STATUS)
-                as JSBoolean?)
-            ?.toDart ??
-        false;
-    if (!ok) {
-      final log = gl.getProgramInfoLog(program) ?? '<no info log>';
-      gl.deleteProgram(program);
-      throw Exception('Failed to link program: $log');
-    }
-
-    _buildUniformCaches();
   }
 
   final WebGlContext _gpuContext;
+  static int _nextId = 0;
+
+  /// Identifies this pipeline in VAO cache keys; never reused.
+  final int _id = ++_nextId;
+
   @override
   final WebGlShader vertexShader;
   @override
@@ -96,15 +99,82 @@ final class WebGlRenderPipeline extends RenderPipeline {
 
   web.WebGLProgram get glProgram => _program;
 
+  // The shader objects linked, kept for the failure report since a hot
+  // reload can replace a shader's object before the first bind.
+  late final web.WebGLShader _linkedVertex;
+  late final web.WebGLShader _linkedFragment;
+
+  bool _linkChecked = false;
+
+  /// Why the program failed to compile or link, once [_ensureLinked] has
+  /// found that it did. A render pass bound to it throws this at the draw,
+  /// where the renderer skips draws the backend refuses.
+  Exception? _linkError;
+
+  /// Whether the link has finished, so the first bind will not wait on it.
+  /// Always true without `KHR_parallel_shader_compile`, where the status
+  /// cannot be polled.
+  bool get isLinkComplete {
+    if (_linkChecked || !_gpuContext._parallelShaderCompile) return true;
+    return (_gpuContext._gl.getProgramParameter(_program, _completionStatusKhr)
+                as JSBoolean?)
+            ?.toDart ??
+        true;
+  }
+
+  /// Reads the link result on first use, waiting for it if it is still
+  /// running, then builds the uniform caches or records [_linkError].
+  void _ensureLinked() {
+    if (_linkChecked) return;
+    _linkChecked = true;
+    final gl = _gpuContext._gl;
+    final ok =
+        (gl.getProgramParameter(
+                  _program,
+                  web.WebGL2RenderingContext.LINK_STATUS,
+                )
+                as JSBoolean?)
+            ?.toDart ??
+        false;
+    if (ok) {
+      _buildUniformCaches();
+      return;
+    }
+    // A compile failure also fails the link; report the compile log, which
+    // names the cause, over the link log.
+    final message =
+        _compileErrorOf(gl, _linkedVertex, ShaderStage.vertex) ??
+        _compileErrorOf(gl, _linkedFragment, ShaderStage.fragment) ??
+        'Failed to link program: '
+            '${gl.getProgramInfoLog(_program) ?? '<no info log>'}';
+    _linkError = Exception(message);
+    gl.deleteProgram(_program);
+    // Sampler units come from reflection, so texture binds ahead of the
+    // refused draw still resolve rather than throw.
+    var nextUnit = 0;
+    for (final shader in [vertexShader, fragmentShader]) {
+      for (final tex in shader.textureBindings) {
+        _samplerUnits.putIfAbsent(tex.name, () => nextUnit++);
+      }
+    }
+  }
+
+  /// Internal: the clip-space Y flip uniform, or null when the program has
+  /// none (a shader with no vertex position output).
+  web.WebGLUniformLocation? _yFlipLocation;
+
   void _buildUniformCaches() {
     final gl = _gpuContext._gl;
     gl.useProgram(_program);
     final yFlipLocation = gl.getUniformLocation(_program, '_impeller_y_flip');
+    _yFlipLocation = yFlipLocation;
     if (yFlipLocation != null) {
       // Impeller's generated GLES shaders multiply gl_Position.y by this
       // backend uniform. The web shim does not use Impeller's runtime uniform
       // binding layer, so set the value that stores FBO render targets
-      // top-down, matching Flutter GPU's render-to-texture convention.
+      // top-down, matching Flutter GPU's render-to-texture convention. A
+      // pass drawing into an external, bottom-up target sets it to one
+      // for the duration of the pass (see WebGlRenderPass.bindPipeline).
       gl.uniform1f(yFlipLocation, -1.0);
     }
     var nextUnit = 0;

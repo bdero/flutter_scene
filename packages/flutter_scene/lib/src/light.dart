@@ -1,15 +1,20 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show internal;
+import 'package:flutter/foundation.dart' show debugPrint, internal, kDebugMode;
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/color_conversion.dart';
 import 'package:flutter_scene/src/fog.dart';
+import 'package:flutter_scene/src/generated_assets/lighting_features.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
+import 'package:flutter_scene/src/shaders.dart'
+    show compiledOutLightingFeatures;
 import 'package:flutter_scene/src/render/punctual_lights.dart'
     show FroxelLighting;
 
@@ -152,8 +157,13 @@ class DirectionalLight {
   /// +Z axis. Use [DirectionalLightComponent.aimed] for another local axis.
   Vector3 direction;
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color].
   double intensity;
@@ -609,8 +619,13 @@ class PointLight {
     this.shadowCasterChannelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the radiance at unit distance.
   double intensity;
@@ -640,12 +655,9 @@ class PointLight {
   /// expensive shadow type per light.
   bool castsShadow;
 
-  /// Pixel resolution this light asks for on each (square) cube face.
-  ///
-  /// The shared shadow atlas gives every tile one size, so this is only
-  /// honored when no directional cascade and no shadow-casting spot is
-  /// already setting it, and only for the first point caster. Otherwise the
-  /// faces render at half whatever tile size the atlas chose.
+  /// Pixel resolution of each (square) cube face. The faces render at this
+  /// size unless the frame's shadows overflow the shared atlas, which halves
+  /// every spot and point shadow until they fit.
   int shadowMapResolution;
 
   /// Near clip distance of each face's shadow frustum. Geometry closer to
@@ -770,8 +782,13 @@ class RectAreaLight {
     this.channelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the emitted radiance of the
   /// panel's surface. The received light also grows with the panel's area.
@@ -842,8 +859,13 @@ class SpotLight {
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the radiance at unit distance.
   double intensity;
@@ -875,11 +897,9 @@ class SpotLight {
   /// room (shadow-casting spots are limited; the rest shade unshadowed).
   bool castsShadow;
 
-  /// Pixel resolution this spot asks for on its (square) shadow map tile.
-  ///
-  /// The shared shadow atlas gives every tile one size, so this is only
-  /// honored when no directional cascade is already setting it, and only for
-  /// the first spot caster.
+  /// Pixel resolution of this spot's (square) shadow map. It renders at this
+  /// size unless the frame's shadows overflow the shared atlas, which halves
+  /// every spot and point shadow until they fit.
   int shadowMapResolution;
 
   /// Near clip distance of the shadow frustum. Geometry closer to the light
@@ -1014,7 +1034,9 @@ class ShadowCascade {
 bool debugDisableLeanLighting = false;
 
 /// Whether a frame with these features may draw with the lean lit entries:
-/// every feature `FLUTTER_SCENE_LEAN_LIGHTING` compiles out must be off.
+/// every feature `FLUTTER_SCENE_LEAN_LIGHTING` compiles out must be off, or
+/// compiled out of the full entries too ([compiledOut]), in which case both
+/// tiers draw the same thing.
 @internal
 bool leanLightingAllowed({
   required bool irradianceField,
@@ -1022,14 +1044,41 @@ bool leanLightingAllowed({
   required bool environmentBlending,
   required bool ambientOcclusion,
   required int pointShadowTileCount,
-}) =>
-    shadingTierOverride ??
-    (!debugDisableLeanLighting &&
-        !irradianceField &&
-        rectAreaLightCount == 0 &&
-        !environmentBlending &&
-        !ambientOcclusion &&
-        pointShadowTileCount == 0);
+  Set<LightingFeature> compiledOut = const {},
+}) {
+  bool on(LightingFeature feature, bool enabled) =>
+      enabled && !compiledOut.contains(feature);
+  return shadingTierOverride ??
+      (!debugDisableLeanLighting &&
+          !on(LightingFeature.irradianceField, irradianceField) &&
+          !on(LightingFeature.rectAreaLights, rectAreaLightCount > 0) &&
+          !on(LightingFeature.environmentBlending, environmentBlending) &&
+          !on(LightingFeature.ambientOcclusion, ambientOcclusion) &&
+          !on(LightingFeature.pointShadows, pointShadowTileCount > 0));
+}
+
+final Set<LightingFeature> _warnedCompiledOut = {};
+
+/// Prints once per feature, in debug builds, when [enabled] uses a feature
+/// in [compiledOut], which the scene then draws without.
+@internal
+void debugWarnCompiledOutLightingFeatures(
+  Set<LightingFeature> enabled,
+  Set<LightingFeature> compiledOut,
+) {
+  if (!kDebugMode) return;
+  for (final feature in enabled) {
+    if (!compiledOut.contains(feature) || !_warnedCompiledOut.add(feature)) {
+      continue;
+    }
+    debugPrint(
+      'flutter_scene: the scene uses ${feature.key}, which this build '
+      'compiled out of the lit shaders, so it draws without it. Remove '
+      '${feature.key}: false from lighting_features in the pubspec to '
+      'compile it back in.',
+    );
+  }
+}
 
 /// Forces every eligible draw onto the lean (true) or full (false) lit entries
 /// regardless of the frame's features, or null to decide per frame. Set only
@@ -1064,10 +1113,14 @@ class Lighting {
     this.spotShadowCount = 0,
     this.pointShadowTileCount = 0,
     this.rectAreaLightCount = 0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowDepthBias = 0.0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowNormalBias = 0.0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowSoftness = 0.0,
     this.shadowMap,
+    this.shadowAtlas,
     this.cascades = const [],
     this.ssaoMap,
     this.specularOcclusionMode = 0.0,
@@ -1092,6 +1145,7 @@ class Lighting {
     this.orthographic = false,
     this.time = 0.0,
     this.planarReflectionsSuppressed = false,
+    this.surfaceDebugViews = false,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity();
 
   /// The image-based-lighting environment in effect for this draw.
@@ -1116,7 +1170,23 @@ class Lighting {
     environmentBlending: environmentMapB != null && environmentBlend > 0.0,
     ambientOcclusion: ssaoMap != null || ssaoIndirectLight,
     pointShadowTileCount: pointShadowTileCount,
+    compiledOut: compiledOutLightingFeatures,
   );
+
+  /// The [LightingFeature]s this frame uses. A parallax box on a material's
+  /// own environment override is not counted.
+  @internal
+  Set<LightingFeature> get usedLightingFeatures => {
+    if (irradianceField != null) LightingFeature.irradianceField,
+    if (rectAreaLightCount > 0) LightingFeature.rectAreaLights,
+    if (environmentMapB != null && environmentBlend > 0.0)
+      LightingFeature.environmentBlending,
+    if (ssaoMap != null || ssaoIndirectLight) LightingFeature.ambientOcclusion,
+    if (pointShadowTileCount > 0) LightingFeature.pointShadows,
+    if (environmentMap.parallaxBoxCenter != null &&
+        environmentMap.parallaxBoxHalfExtents != null)
+      LightingFeature.parallaxReflection,
+  };
 
   /// A secondary environment cross-faded with [environmentMap] by
   /// [environmentBlend], or null when a single environment is in effect.
@@ -1184,25 +1254,37 @@ class Lighting {
   final int punctualIndexWidth;
   final int punctualIndexHeight;
 
-  /// Number of shadow-casting spots this frame; their tiles follow the
-  /// directional cascades in [shadowMap] and their matrices ride in
+  /// Number of shadow-casting spots this frame; their tiles are in
+  /// [shadowMap], and their matrices, tiles, and shadow parameters ride in
   /// [punctualParamsTexture]. Zero disables spot shadow sampling.
   final int spotShadowCount;
 
   /// Number of atlas tiles claimed by shadow-casting point lights this frame
-  /// (two per caster, each packing four quarter-tile cube faces); they follow
-  /// the spot tiles in [shadowMap]. Zero disables point shadow sampling.
+  /// (two per caster, each packing four quarter-tile cube faces) in
+  /// [shadowMap]. Zero disables point shadow sampling.
   final int pointShadowTileCount;
 
-  /// Shared spot-shadow sampling parameters.
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowDepthBias;
+
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowNormalBias;
+
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowSoftness;
 
-  /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
-  /// cascade tiles as a horizontal strip) for [directionalLight], or
-  /// null when shadows are off for this frame. Sampled with [cascades].
+  /// The shared shadow atlas (a depth-in-`.r` texture holding the cascade,
+  /// spot, and point light tiles) for [directionalLight] and the punctual
+  /// lights, or null when shadows are off for this frame. Sampled with
+  /// [cascades].
   final gpu.Texture? shadowMap;
+
+  /// Where the tiles of [shadowMap] are.
+  @internal
+  final ShadowAtlasLayout? shadowAtlas;
 
   /// The shadow cascades matching [shadowMap], near-to-far, or empty
   /// when there is no shadow map this frame.
@@ -1308,4 +1390,9 @@ class Lighting {
   /// materials bind no capture and fall back to their base look so captures
   /// never recurse.
   final bool planarReflectionsSuppressed;
+
+  /// Whether a surface debug view may show on this draw, so a material draws
+  /// with its shader built with the views (see [Material.fragmentShaderForLighting]).
+  @internal
+  final bool surfaceDebugViews;
 }

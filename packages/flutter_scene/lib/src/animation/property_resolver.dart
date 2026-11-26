@@ -2,9 +2,9 @@ part of '../animation.dart';
 
 /// Computes a per-property animated value from a timeline of keyframes.
 ///
-/// Subclasses cover the three [AnimationProperty] flavors with the
-/// correct interpolator: linear interpolation for translation and scale,
-/// spherical linear interpolation for rotation. Use the [PropertyResolver]
+/// Subclasses cover the [AnimationProperty] flavors with the correct
+/// interpolator, spherical linear interpolation for rotation and linear
+/// interpolation for the rest. Use the [PropertyResolver]
 /// factories to construct one rather than instantiating subclasses
 /// directly.
 abstract class PropertyResolver {
@@ -66,6 +66,19 @@ abstract class PropertyResolver {
     required int targetCount,
   }) {
     return MorphWeightsTimelineResolver._(times, values, targetCount);
+  }
+
+  /// Creates a resolver for the [AnimationProperty.path] property [path],
+  /// interpolating [componentCount] floats per keyframe linearly, or holding
+  /// each keyframe when [step] is set.
+  static PropertyResolver makePathTimeline(
+    String path,
+    List<double> times,
+    Float32List values, {
+    required int componentCount,
+    bool step = false,
+  }) {
+    return PathTimelineResolver._(path, times, values, componentCount, step);
   }
 }
 
@@ -147,8 +160,9 @@ class TranslationTimelineResolver extends TimelineResolver {
 }
 
 /// Resolves a rotation timeline with spherical linear interpolation,
-/// slerping the current animated rotation toward the keyframed rotation
-/// by the supplied weight.
+/// accumulating clip weights relative to the node's uncovered bind weight.
+/// Two fully covering clips interpolate directly between their poses. Three
+/// or more rotations use incremental weighted slerp in registration order.
 class RotationTimelineResolver extends TimelineResolver {
   final List<Quaternion> _values;
 
@@ -162,7 +176,7 @@ class RotationTimelineResolver extends TimelineResolver {
 
   @override
   void apply(AnimationTransforms target, double timeInSeconds, double weight) {
-    if (_values.isEmpty) {
+    if (_values.isEmpty || weight <= 0) {
       return;
     }
 
@@ -172,10 +186,14 @@ class RotationTimelineResolver extends TimelineResolver {
       value = _values[key.index - 1].slerp(value, key.lerp);
     }
 
+    final accumulated = target.rotationBlendWeight == null
+        ? null
+        : target.rotationBlendWeight! + weight;
     target.animatedPose.rotation = target.animatedPose.rotation.slerp(
       value,
-      weight,
+      accumulated == null ? weight : weight / accumulated,
     );
+    target.rotationBlendWeight = accumulated;
   }
 }
 
@@ -264,6 +282,58 @@ class MorphWeightsTimelineResolver extends TimelineResolver {
         value = a + (value - a) * key.lerp;
       }
       animated[i] += (value - bind[i]) * weight;
+    }
+  }
+}
+
+/// Resolves a path property timeline, blended into the path's
+/// [AnimatedPathState] as an offset from its rest value (matching the
+/// translation blend rule).
+class PathTimelineResolver extends TimelineResolver {
+  /// The property this drives, relative to the bound node.
+  final String path;
+
+  final Float32List _values;
+
+  /// Floats per keyframe.
+  final int componentCount;
+
+  /// Whether each keyframe holds until the next instead of interpolating.
+  final bool step;
+
+  /// The flattened keyframe values ([componentCount] per keyframe). Read by
+  /// the scene serializer.
+  Float32List get values => Float32List.fromList(_values);
+
+  PathTimelineResolver._(
+    this.path,
+    List<double> times,
+    this._values,
+    this.componentCount,
+    this.step,
+  ) : super._(times) {
+    assert(componentCount > 0);
+    assert(times.length * componentCount == _values.length);
+  }
+
+  @override
+  void apply(AnimationTransforms target, double timeInSeconds, double weight) {
+    final state = target.paths[path];
+    if (state == null || _values.isEmpty) return;
+    final key = _getTimelineKey(timeInSeconds);
+    // The key's index is the keyframe after the time, so a step holds the
+    // one before it.
+    final hold = step && key.lerp < 1;
+    final current = (hold ? key.index - 1 : key.index) * componentCount;
+    final previous = (key.index - 1) * componentCount;
+    final count = min(componentCount, state.animated.length);
+    for (var i = 0; i < count; i++) {
+      var value = _values[current + i];
+      if (!hold && key.lerp < 1) {
+        final a = _values[previous + i];
+        value = a + (value - a) * key.lerp;
+      }
+      state.animated[i] += (value - state.bind[i]) * weight;
     }
   }
 }

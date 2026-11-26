@@ -273,17 +273,34 @@ final class ShaderTextureInfo {
 /// The compiled output for one backend.
 /// {@category Debugging and profiling}
 final class ShaderSource {
-  const ShaderSource({required this.backend, required this.bytes});
+  const ShaderSource({required this.backend, required Uint8List bytes})
+    : _bytes = bytes,
+      _read = null;
+
+  // A parse keeps the bundle's list and copies it on the first read, as a
+  // copy of every backend's output costs the parse most of its time.
+  ShaderSource._reading({required this.backend, required List<int> read})
+    : _bytes = null,
+      _read = _SourceRead(read);
 
   final ShaderBackend backend;
+  final Uint8List? _bytes;
+  final _SourceRead? _read;
 
   /// The raw compiled bytes: UTF-8 source text for a textual backend, SPIR-V
   /// for Vulkan.
-  final Uint8List bytes;
+  Uint8List get bytes => _bytes ?? _read!.bytes;
 
   /// The source text, or null for a binary backend.
   String? get text =>
       backend.isTextual ? utf8.decode(bytes, allowMalformed: true) : null;
+}
+
+final class _SourceRead {
+  _SourceRead(this._list);
+
+  final List<int> _list;
+  late final Uint8List bytes = Uint8List.fromList(_list);
 }
 
 /// One shader as compiled for one backend.
@@ -360,7 +377,9 @@ final class ShaderInfo {
 final class ShaderBundleInfo {
   ShaderBundleInfo._({required this.formatVersion, required this.shaders});
 
-  /// Parses `.shaderbundle` [bytes].
+  /// Parses `.shaderbundle` [bytes]. Each backend's [ShaderSource] copies
+  /// its output out of [bytes] the first time its bytes are read, so [bytes]
+  /// must not change while the parse is held.
   factory ShaderBundleInfo.parse(Uint8List bytes) {
     final bundle = fb.ShaderBundle(bytes);
     final shaders = <ShaderInfo>[];
@@ -466,10 +485,9 @@ final class ShaderBundleInfo {
             binding: texture.binding,
           ),
       ],
-      source: ShaderSource(
-        backend: backend,
-        bytes: bytes == null ? Uint8List(0) : Uint8List.fromList(bytes),
-      ),
+      source: bytes == null
+          ? ShaderSource(backend: backend, bytes: Uint8List(0))
+          : ShaderSource._reading(backend: backend, read: bytes),
     );
   }
 }

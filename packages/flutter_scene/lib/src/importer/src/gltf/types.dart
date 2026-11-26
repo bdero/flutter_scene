@@ -171,6 +171,7 @@ class GltfNode {
     this.rotation,
     this.scale,
     this.weights,
+    this.visible = true,
   });
 
   final String? name;
@@ -190,6 +191,10 @@ class GltfNode {
   /// Per-instance morph target weights overriding [GltfMesh.weights], or
   /// null when the node keeps the mesh defaults.
   final List<double>? weights;
+
+  /// False when `KHR_node_visibility` hides this node and its subtree.
+  /// `KHR_animation_pointer` channels animate it through the `visible` path.
+  final bool visible;
 }
 
 /// The engine-side name for the glTF node at [index].
@@ -706,13 +711,20 @@ class GltfTextureTransform {
 }
 
 class GltfTexture {
-  GltfTexture({this.source, this.sampler, this.basisuSource});
+  GltfTexture({this.source, this.sampler, this.basisuSource, this.webpSource});
   final int? source;
   final int? sampler;
 
   /// KHR_texture_basisu image index (a KTX2 image), preferred over [source]
   /// when present.
   final int? basisuSource;
+
+  /// EXT_texture_webp image index, preferred over [source] when present.
+  final int? webpSource;
+
+  /// The image both importers load: a KTX2 image first, then a WebP one, then
+  /// the core [source].
+  int? get imageSource => basisuSource ?? webpSource ?? source;
 }
 
 class GltfImage {
@@ -764,12 +776,42 @@ class GltfAnimationChannel {
     required this.sampler,
     required this.targetNode,
     required this.targetPath,
+    this.pointer,
+    this.pathTargets = const [],
+    this.pathComponentCount = 0,
+    this.pointerLight,
   });
   final int sampler;
   final int? targetNode;
 
-  /// One of 'translation', 'rotation', 'scale', 'weights'.
+  /// One of 'translation', 'rotation', 'scale', 'weights', or 'pointer'.
   final String targetPath;
+
+  /// The `KHR_animation_pointer` JSON pointer, when the channel has one.
+  final String? pointer;
+
+  /// The engine properties a [pointer] drives when it isn't a node transform
+  /// or weights, which resolve to [targetNode] and [targetPath] instead.
+  final List<GltfAnimationPathTarget> pathTargets;
+
+  /// Floats per keyframe for [pathTargets].
+  final int pathComponentCount;
+
+  /// The light a light property [pointer] drives, whose static values its
+  /// keyframes convert against.
+  final int? pointerLight;
+}
+
+/// An engine property a `KHR_animation_pointer` channel drives on one node.
+class GltfAnimationPathTarget {
+  const GltfAnimationPathTarget(this.node, this.path);
+
+  /// The glTF node index.
+  final int node;
+
+  /// The property on [node], as the scene format's
+  /// `AnimationPathChannelSpec.path` names it.
+  final String path;
 }
 
 class GltfAnimationSampler {

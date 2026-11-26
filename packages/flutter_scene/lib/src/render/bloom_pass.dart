@@ -56,20 +56,24 @@ int bloomPrefilterScale(double footprint) =>
 ///
 /// Each intermediate mip is a weighted average of its inputs, so half-float
 /// storage cannot overflow at high scatter. The finest level scales back to
-/// the brightness of the equal-weight chain.
+/// the brightness of an equal-weight chain of [normalization] levels
+/// (default [levels]).
 @visibleForTesting
 ({double source, double base}) bloomUpsampleWeights(
   double levelWeight,
   int level,
-  int levels,
-) {
+  int levels, {
+  int? normalization,
+}) {
   // Combined weight of the coarser mips, relative to this level's.
   var coarser = 0.0;
   for (var j = levels - level - 2; j >= 0; j--) {
     coarser = 1.0 + levelWeight * coarser;
   }
   coarser *= levelWeight;
-  final scale = level == 0 ? levels / (1.0 + coarser) : 1.0 / (1.0 + coarser);
+  final scale = level == 0
+      ? (normalization ?? levels) / (1.0 + coarser)
+      : 1.0 / (1.0 + coarser);
   return (source: coarser * scale, base: scale);
 }
 
@@ -84,12 +88,17 @@ const double _kMaxBloomBaseSide = 256.0;
 
 const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
-// The first bloom mip's size: half the render resolution, scaled down so its
-// larger side is at most [_kMaxBloomBaseSide], preserving aspect.
-ui.Size _bloomBaseSize(ui.Size dimension) {
+/// The first bloom mip's size: half the render resolution, scaled down so the
+/// larger side of a [reference] render (the view's own by default) would be
+/// at most [_kMaxBloomBaseSide], preserving aspect. Views sharing a
+/// [reference] get the same render pixels per mip texel, so the same glow
+/// spreads alike in each.
+@visibleForTesting
+ui.Size bloomBaseSize(ui.Size dimension, {double? reference}) {
   var width = dimension.width / 2.0;
   var height = dimension.height / 2.0;
-  final larger = math.max(width, height);
+  final larger =
+      (reference ?? math.max(dimension.width, dimension.height)) / 2.0;
   if (larger > _kMaxBloomBaseSide) {
     final scale = _kMaxBloomBaseSide / larger;
     width *= scale;
@@ -152,12 +161,12 @@ class BloomPass extends RenderGraphPass {
     // Allocate the downsample chain at successively halved resolutions,
     // starting from a resolution-capped base so the bloom's on-screen spread
     // stays stable across device pixel ratios.
-    final base = _bloomBaseSize(_dimensions);
+    final base = bloomBaseSize(_dimensions, reference: _settings.referenceSize);
     final down = <gpu.Texture>[];
     final sizes = <ui.Size>[];
     var width = base.width.floor();
     var height = base.height.floor();
-    for (var i = 0; i < _kMipCount; i++) {
+    for (var i = 0; i < _settings.levels.clamp(3, _kMipCount); i++) {
       width = math.max(1, width);
       height = math.max(1, height);
       down.add(
@@ -216,7 +225,12 @@ class BloomPass extends RenderGraphPass {
         sourceSize: sizes[i + 1],
         base: down[i],
         target: target,
-        weights: bloomUpsampleWeights(levelWeight, i, down.length),
+        weights: bloomUpsampleWeights(
+          levelWeight,
+          i,
+          down.length,
+          normalization: _kMipCount,
+        ),
       );
       up[i] = target;
     }
@@ -225,8 +239,8 @@ class BloomPass extends RenderGraphPass {
 
     // Lens flares generate from a well-blurred mip (up[2]) and composite over
     // the finished bloom into another fresh cleared target, for the same
-    // write-once reason as the upsample. _kMipCount (>= 3) guarantees that
-    // source mip exists.
+    // write-once reason as the upsample. The chain's minimum of three levels
+    // guarantees that source mip exists.
     if (_settings.lensFlare.enabled) {
       final composite = context.texturePool.acquire(
         TransientTextureDescriptor.color(
@@ -236,10 +250,11 @@ class BloomPass extends RenderGraphPass {
           debugName: 'bloom_flare',
         ),
       );
-      // up[2] averages its levels; scale it to their equal-weight sum.
+      // up[2] averages its levels; scale it to the full chain's equal-weight
+      // sum, as the upsample does, so a shorter chain keeps the flare bright.
       _drawLensFlare(
         context,
-        sourceScale: (down.length - 2).toDouble(),
+        sourceScale: (_kMipCount - 2).toDouble(),
         source: up[2]!,
         base: result,
         target: composite,
