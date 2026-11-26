@@ -497,7 +497,8 @@ class SsaoBlurPass extends RenderGraphPass {
         ..[5] = axisY
         ..[6] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0
         ..[7] = _ambientOcclusionPacksDepth(_settings) ? 1.0 : 0.0
-        ..[8] = _orthographic ? 1.0 : 0.0;
+        ..[8] = _orthographic ? 1.0 : 0.0
+        ..[9] = ambientOcclusionCarriesIndirectLight(_settings) ? 1.0 : 0.0;
       renderPass.bindUniform(
         _fragmentShader.cachedUniformSlot('BlurInfo'),
         context.transientsBuffer.emplace(ByteData.sublistView(info)),

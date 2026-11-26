@@ -18,6 +18,7 @@
 * Half-resolution ground-truth ambient occlusion no longer stipples grazing walls and floors. Its blur follows sloped surfaces, and lit materials upsample it against their own depth.
 * Ambient occlusion shifts its sampling noise each frame under TAA, so the temporal resolve averages away more of its grain.
 * Ground-truth ambient occlusion no longer darkens and stipples grazing surfaces. Its raw output and blur intermediate are half float, so visibility above 1 averages out before the final clamp.
+* Screen-space indirect light no longer caps its red channel at 1.
 
 ## 0.24.6
 

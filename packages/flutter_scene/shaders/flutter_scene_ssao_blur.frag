@@ -24,7 +24,8 @@ uniform BlurInfo {
   // that must be renormalized after filtering. w: 1 when the final pass packs
   // the depth into ba for the material's upsample.
   vec4 axis;
-  // x: 1 for an orthographic camera. yzw: unused.
+  // x: 1 for an orthographic camera. y: 1 when rgb carries indirect light and
+  // a the visibility. zw: unused.
   vec4 params;
 }
 blur;
@@ -94,7 +95,6 @@ void main() {
 
   vec4 result = ao_sum / max(weight_sum, kEpsilon);
   if (blur.texel.w > 0.5) {
-    result.r += (InterleavedGradientNoise(gl_FragCoord.xy) - 0.5) / 255.0;
     if (blur.axis.z > 0.5) {
       // Filtering octahedral coordinates off-lattice skews the direction
       // slightly; a decode/encode round trip snaps it back to unit length.
@@ -103,8 +103,14 @@ void main() {
     if (blur.axis.w > 0.5) {
       result.ba = PackOcclusionDepth(center_depth);
     }
-    // Earlier passes keep overshoot above 1 so it averages unbiased.
-    result.r = clamp(result.r, 0.0, 1.0);
+    // Earlier passes keep overshoot above 1 so it averages unbiased. The
+    // indirect-light layout carries radiance in rgb and visibility in a.
+    float dither = (InterleavedGradientNoise(gl_FragCoord.xy) - 0.5) / 255.0;
+    if (blur.params.y > 0.5) {
+      result.a = clamp(result.a + dither, 0.0, 1.0);
+    } else {
+      result.r = clamp(result.r + dither, 0.0, 1.0);
+    }
   }
   frag_color = result;
 }
