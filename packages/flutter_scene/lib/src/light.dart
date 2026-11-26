@@ -127,6 +127,7 @@ class DirectionalLight {
     this.intensity = 3.0,
     this.priority = 0,
     this.castsShadow = false,
+    this.shadowStrength = 1.0,
     this.cacheStaticShadows = true,
     this.shadowFadeRange = 2.0,
     this.shadowSoftness = 0.08,
@@ -176,7 +177,22 @@ class DirectionalLight {
   int priority;
 
   /// Whether this light casts shadows (adds a shadow-map pass).
+  ///
+  /// [intensity] never pauses them, so a zero-intensity sun still renders its
+  /// cascades. Set [shadowStrength] to `0` to pause them while keeping the
+  /// static shadow cache, or this to false to drop the cache too.
   bool castsShadow;
+
+  /// How strongly the cast shadow darkens receivers, from `0.0` to `1.0`
+  /// (clamped). Fades every reader of the sun's shadow toward lit together:
+  /// lit surfaces, [shadowAmbientStrength], shadow catchers, and god rays.
+  ///
+  /// At `0` the cascades are not rendered and custom passes see no
+  /// directional shadow, as with [castsShadow] false, but the static shadow
+  /// cache and the shadowed shader variants are kept, so fading back in costs
+  /// no rebuild or compile. Ease this, not [intensity], to fade shadows out.
+  /// {@category Lighting and environment}
+  double shadowStrength;
 
   /// Whether nodes marked `shadowStatic` are cached across frames.
   ///
@@ -1086,6 +1102,30 @@ void debugWarnCompiledOutLightingFeatures(
 /// pipelines before the scene needs them.
 @internal
 bool? shadingTierOverride;
+
+/// What the primary directional light's shadow does this frame.
+@internal
+enum DirectionalShadowState {
+  /// No sun shadow, or [DirectionalLight.castsShadow] is false.
+  none,
+
+  /// [DirectionalLight.shadowStrength] is zero: no cascades render, but the
+  /// static shadow cache and the shadowed shader variants are kept.
+  paused,
+
+  /// The cascades render.
+  active,
+}
+
+/// The [DirectionalShadowState] of [light]. A frame decides it once and
+/// passes it to every view and capture, so their atlas plans agree.
+@internal
+DirectionalShadowState directionalShadowStateOf(DirectionalLight? light) {
+  if (light == null || !light.castsShadow) return DirectionalShadowState.none;
+  return light.shadowStrength > 0.0
+      ? DirectionalShadowState.active
+      : DirectionalShadowState.paused;
+}
 
 /// The lighting state handed to a [Material] when it binds for a draw.
 ///

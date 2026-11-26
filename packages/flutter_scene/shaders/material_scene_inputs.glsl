@@ -189,7 +189,8 @@ uniform FragInfo {
   // off-center). z: 1 for an orthographic camera, whose extents are then the
   // half width and height, 0 for perspective. w unused.
   highp vec4 view_projection;
-  // xyz: the camera's world-space position. w unused.
+  // xyz: the camera's world-space position. w: the directional light's
+  // shadowStrength (0 to 1), how far its cast shadow darkens toward unlit.
   highp vec4 camera_position;
 }
 frag_info;

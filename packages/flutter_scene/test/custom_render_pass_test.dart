@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/custom_render_pass.dart'
@@ -68,5 +70,25 @@ void main() {
     expect(f[72], closeTo(1.0, 1e-6));
     expect(f[73], closeTo(0.9, 1e-6));
     expect(f[74], closeTo(0.8, 1e-6));
+  });
+
+  test('packPostShadowInfo carries the shadow strength in cascade_atlas.w', () {
+    double strengthOf(ByteData bytes) =>
+        bytes.buffer.asFloat32List(bytes.offsetInBytes, 80)[79];
+    final direction = Vector3(0.0, -1.0, 0.0);
+    final color = Vector3.all(1.0);
+    expect(strengthOf(packPostShadowInfo(const [], direction, color)), 1.0);
+    expect(
+      strengthOf(
+        packPostShadowInfo(const [], direction, color, shadowStrength: 0.25),
+      ),
+      0.25,
+    );
+    expect(
+      strengthOf(
+        packPostShadowInfo(const [], direction, color, shadowStrength: 3.0),
+      ),
+      1.0,
+    );
   });
 }

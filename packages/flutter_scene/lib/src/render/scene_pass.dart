@@ -113,7 +113,9 @@ class ScenePass extends RenderGraphPass {
     Matrix4? displayReferredCameraTransform,
     DebugViewFrame? debugView,
     bool primaryView = false,
+    bool holdShadowVariant = false,
   }) : _debugView = debugView,
+       _holdShadowVariant = holdShadowVariant,
        _primaryView = primaryView,
        _cullingFrustum = cullingFrustum,
        _captureOpaqueColor = captureOpaqueColor,
@@ -173,6 +175,8 @@ class ScenePass extends RenderGraphPass {
   final PunctualLighting _punctualLighting;
   final int _layerMask;
   final List<ShadowCascade> _cascades;
+  // The sun's shadow is paused; see shadowMapForShading.
+  final bool _holdShadowVariant;
   final double _specularOcclusionMode;
   final double _ssaoDirectLightAffect;
   final double _ssaoMultiBounce;
@@ -314,7 +318,7 @@ class ScenePass extends RenderGraphPass {
       ),
     );
 
-    final shadowMap = context.blackboard.get<gpu.Texture>(
+    final shadowAtlasTexture = context.blackboard.get<gpu.Texture>(
       kShadowMapBlackboardKey,
     );
     final ssaoMap = context.blackboard.get<gpu.Texture>(
@@ -374,20 +378,23 @@ class ScenePass extends RenderGraphPass {
       froxels: froxels,
       // Spot and point shadows share the atlas, so only sample them when it
       // was produced.
-      spotShadowCount: shadowMap == null
+      spotShadowCount: shadowAtlasTexture == null
           ? 0
           : _punctualLighting.spotShadowCount,
-      pointShadowTileCount: shadowMap == null
+      pointShadowTileCount: shadowAtlasTexture == null
           ? 0
           : _punctualLighting.pointShadowTileCount,
       rectAreaLightCount: _punctualLighting.rectAreaLightCount,
-      shadowMap: shadowMap,
-      shadowAtlas: shadowMap == null
+      shadowMap: shadowMapForShading(
+        shadowAtlasTexture,
+        holdShadowVariant: _holdShadowVariant,
+      ),
+      shadowAtlas: shadowAtlasTexture == null
           ? null
           : context.blackboard.get<ShadowAtlasLayout>(
               kShadowAtlasLayoutBlackboardKey,
             ),
-      cascades: shadowMap == null ? const [] : _cascades,
+      cascades: shadowAtlasTexture == null ? const [] : _cascades,
       ssaoMap: ssaoMap,
       specularOcclusionMode: ssaoMap == null ? 0.0 : _specularOcclusionMode,
       ssaoDirectLightAffect: ssaoMap == null ? 0.0 : _ssaoDirectLightAffect,

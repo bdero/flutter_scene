@@ -35,7 +35,8 @@ cam;
 
 // Per-cascade world->light-clip matrices, view-space split distances, the light
 // travel direction (xyz) with the cascade count in w, the light color, and the
-// cascades' atlas placement (xy one tile's UV extent, z cascades per row).
+// cascades' atlas placement (xy one tile's UV extent, z cascades per row, w the
+// light's shadow strength).
 uniform PostShadowInfo {
   mat4 light_space_matrix[4];
   vec4 cascade_splits;
@@ -167,6 +168,9 @@ void main() {
   // from the IBL) has zero direct color, but its shafts should still show.
   // Additive single-scattering: adds light along the view path; coverage
   // (alpha) is unchanged. Premultiplied HDR, before tone mapping.
-  vec3 in_scatter = god.color.rgb * avg_lit * phase * density * god.params0.x;
+  // Shafts fade with the light's shadow strength, reaching none at 0, where
+  // the cascades stop rendering and this pass is skipped.
+  vec3 in_scatter = god.color.rgb * avg_lit * phase * density * god.params0.x *
+                    clamp(shadow.cascade_atlas.w, 0.0, 1.0);
   frag_color = vec4(scene.rgb + in_scatter, scene.a);
 }

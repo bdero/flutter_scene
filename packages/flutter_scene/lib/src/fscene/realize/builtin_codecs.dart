@@ -889,6 +889,15 @@ class DirectionalLightCodec
       get: (c) => c.light.castsShadow,
       set: (c, v) => c.light.castsShadow = v,
     ),
+    ComponentField.number(
+      'shadowStrength',
+      defaultValue: 1.0,
+      doc: 'How strongly the shadow darkens receivers; 0 pauses it.',
+      group: 'Shadows',
+      constraints: const [Range(0, 1), SoftRange(0, 1)],
+      get: (c) => c.light.shadowStrength,
+      set: (c, v) => c.light.shadowStrength = v,
+    ),
     ComponentField.boolean(
       'cacheStaticShadows',
       defaultValue: true,

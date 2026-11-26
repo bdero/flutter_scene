@@ -41,7 +41,9 @@ class ShadowCatcherBakePass extends RenderGraphPass {
     Vector3? directionalLightDirection,
     PunctualLighting punctualLighting = const PunctualLighting.empty(),
     List<ShadowCascade> cascades = const [],
+    bool holdShadowVariant = false,
   }) : _items = items,
+       _holdShadowVariant = holdShadowVariant,
        _environmentMap = environmentMap,
        _directionalLight = directionalLight,
        _directionalLightDirection = directionalLightDirection,
@@ -54,6 +56,8 @@ class ShadowCatcherBakePass extends RenderGraphPass {
   final Vector3? _directionalLightDirection;
   final PunctualLighting _punctualLighting;
   final List<ShadowCascade> _cascades;
+  // The sun's shadow is paused; see shadowMapForShading.
+  final bool _holdShadowVariant;
 
   /// The fixed separable-blur radius in cache texels; the bake resolution is
   /// chosen so this spans the catcher's softness in world units.
@@ -171,7 +175,10 @@ class ShadowCatcherBakePass extends RenderGraphPass {
       pointShadowTileCount: shadowMap == null
           ? 0
           : _punctualLighting.pointShadowTileCount,
-      shadowMap: shadowMap,
+      shadowMap: shadowMapForShading(
+        shadowMap,
+        holdShadowVariant: _holdShadowVariant,
+      ),
       shadowAtlas: shadowMap == null
           ? null
           : context.blackboard.get<ShadowAtlasLayout>(

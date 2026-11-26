@@ -12,6 +12,7 @@
 * Ambient occlusion's depth mip chain is single channel, using a quarter of the memory and bandwidth.
 * TAA's depth history is single-channel fp32, halving its memory and comparing disocclusion at full precision.
 * A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
+* `DirectionalLight.shadowStrength` fades the sun's shadow toward lit, catchers and god rays included. At `0` the cascades pause but keep their static cache and shader variants.
 * Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
 * An R8 or RG8 texture whose size is not a multiple of 4 bytes uploads on WebGPU under dart2wasm instead of throwing a `RangeError`.
 * SMAA's edge pass skips writing pixels with no edge.
