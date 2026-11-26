@@ -37,10 +37,17 @@ final class _WebGpuHost extends GpuHost {
     'The WebGPU backend cannot draw into external color targets yet.',
   );
 
-  // Only the WebGL2 path hands frames to another context. See the note on
-  // nativeGraphicsContext.
+  /// [texture] as an upright `ImageBitmap`, through the same blit that
+  /// presents it.
   @override
-  Object? textureToPlatformImage(Texture texture) => null;
+  Object? textureToPlatformImage(Texture texture) =>
+      _textureToBitmapSync(texture as _WebGpuTexture);
+
+  @override
+  void presentToCanvas(Texture texture, Object canvas) => presentBitmapToCanvas(
+    _textureToBitmapSync(texture as _WebGpuTexture),
+    canvas,
+  );
 
   @override
   ui.Image textureToImage(Texture texture) => texture.asImage();
@@ -70,6 +77,28 @@ final class _WebGpuHost extends GpuHost {
 /// Hands [texture] to Flutter as a `ui.Image`, synchronously, through the
 /// context's presenter canvas.
 ui.Image _textureToImageSync(_WebGpuTexture texture) {
+  _checkPresentable(texture);
+  return texture._context.presenter.blitToImageSync(
+    texture.attachmentView(0, 0),
+    texture.width,
+    texture.height,
+    srgb: texture._format.name.endsWith('-srgb'),
+  );
+}
+
+/// [texture] as an `ImageBitmap`, synchronously, through the context's
+/// presenter canvas.
+web.ImageBitmap _textureToBitmapSync(_WebGpuTexture texture) {
+  _checkPresentable(texture);
+  return texture._context.presenter.blitToBitmapSync(
+    texture.attachmentView(0, 0),
+    texture.width,
+    texture.height,
+    srgb: texture._format.name.endsWith('-srgb'),
+  );
+}
+
+void _checkPresentable(_WebGpuTexture texture) {
   if (!texture.enableShaderReadUsage) {
     throw Exception('Only shader-readable textures can be used as UI images');
   }
@@ -81,12 +110,6 @@ ui.Image _textureToImageSync(_WebGpuTexture texture) {
   if (texture._format.depthOrStencil) {
     throw UnsupportedError('A depth or stencil texture cannot be an image.');
   }
-  return texture._context.presenter.blitToImageSync(
-    texture.attachmentView(0, 0),
-    texture.width,
-    texture.height,
-    srgb: texture._format.name.endsWith('-srgb'),
-  );
 }
 
 /// An offscreen WebGPU canvas whose frames reach Flutter as images. Exists

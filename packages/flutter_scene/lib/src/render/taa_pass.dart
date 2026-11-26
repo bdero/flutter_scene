@@ -94,7 +94,7 @@ class TaaHistoryState {
       gpu.StorageMode.devicePrivate,
       width,
       height,
-      format: gpu.PixelFormat.r16g16b16a16Float,
+      format: gpu.PixelFormat.r32Float,
       enableRenderTargetUsage: true,
       enableShaderReadUsage: true,
     );

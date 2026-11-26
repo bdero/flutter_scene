@@ -2265,6 +2265,29 @@ base class Scene implements SceneGraph {
     );
   }
 
+  /// Renders [camera]'s view into a [viewport]-sized frame like [render],
+  /// handing the finished texture to [present] in place of drawing it on a
+  /// canvas. A frame held for GPU pacing or on-demand shaders presents
+  /// nothing, so the consumer keeps showing the previous one.
+  @internal
+  void renderToPresenter(
+    Camera camera,
+    void Function(gpu.Texture texture) present, {
+    required ui.Rect viewport,
+    double? pixelRatio,
+  }) {
+    _checkNotDisposed('renderToPresenter');
+    _renderViewGroupsInternal(
+      [
+        RenderViewGroup([RenderView(camera: camera)]),
+      ],
+      null,
+      region: viewport,
+      pixelRatio: pixelRatio,
+      present: present,
+    );
+  }
+
   /// Compiles the render pipelines and uploads the GPU resources this scene
   /// needs, by encoding one frame offscreen and discarding it, so the first
   /// visible frame does not stall while shaders compile or textures upload.
@@ -2506,6 +2529,7 @@ base class Scene implements SceneGraph {
     ui.Rect? region,
     double? pixelRatio,
     Surface? surfaceOverride,
+    void Function(gpu.Texture texture)? present,
   }) {
     final views = <RenderView>[for (final group in groups) ...group.views];
     renderScene.recordRenderedViews(views);
@@ -2647,6 +2671,7 @@ base class Scene implements SceneGraph {
         capturePlanarReflections: identical(view, planarCaptureView),
         groupShared: shared[view],
         surfaceOverride: surfaceOverride,
+        present: present,
       );
     }
 
@@ -3603,6 +3628,7 @@ base class Scene implements SceneGraph {
     bool capturePlanarReflections = false,
     _GroupShared? groupShared,
     Surface? surfaceOverride,
+    void Function(gpu.Texture texture)? present,
   }) {
     final activeSurface = surfaceOverride ?? surface;
     // Allocate the offscreen render target at physical-pixel resolution so
@@ -3691,6 +3717,10 @@ base class Scene implements SceneGraph {
       );
     }
 
+    if (present != null) {
+      present(swapchainColor);
+      return;
+    }
     if (canvas == null) {
       return;
     }
@@ -4607,10 +4637,15 @@ base class Scene implements SceneGraph {
                 : 0.0,
             sceneRadiance: wantIndirectLight ? _ssgiHistoryColor : null,
             ssgiReprojection: ssgiReprojection,
+            temporalNoiseFrame: taaState?.frameIndex ?? 0,
           ),
         );
         graph.addPass(
-          SsaoBlurPass(dimensions: pixelSize, settings: ambientOcclusion),
+          SsaoBlurPass(
+            dimensions: pixelSize,
+            settings: ambientOcclusion,
+            orthographic: projection.orthographic,
+          ),
         );
       }
       if (wantIrradianceField) {

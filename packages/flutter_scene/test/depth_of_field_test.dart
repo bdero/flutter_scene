@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 
+import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/dof_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -91,6 +94,16 @@ void main() {
       expect(identical(a, dof.gatherInfoBlock(960, 540)), isTrue);
       dof.bladeCount = 6;
       expect(identical(a, dof.gatherInfoBlock(960, 540)), isFalse);
+    });
+  });
+
+  group('DofPass', () {
+    test('uses a nearest clamp-to-edge sampler for linear depth', () {
+      final sampler = DofPass.depthSampler;
+      expect(sampler.minFilter, gpu.MinMagFilter.nearest);
+      expect(sampler.magFilter, gpu.MinMagFilter.nearest);
+      expect(sampler.widthAddressMode, gpu.SamplerAddressMode.clampToEdge);
+      expect(sampler.heightAddressMode, gpu.SamplerAddressMode.clampToEdge);
     });
   });
 }

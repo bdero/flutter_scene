@@ -6,11 +6,24 @@
 * BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
 * BREAKING: `SpotShadowInfo` drops the deprecated `firstTile`, `totalTiles`, and `tileResolution`, and `rects` is required.
 * A GLB's images referenced by relative URI load through `resolveUri` on `Node.fromGlbBytes`, `Node.fromGlbAsset`, and `importGlb`, instead of falling back to the placeholder.
+* Depth of field samples depth with nearest filtering, so it no longer reads zero depth on devices that cannot filter 32-bit float textures.
 * `GltfTextureResolver` (`resolveTexture` on the runtime importers) supplies the texture for a glTF's external image, so an app can share one texture across models.
 * God rays no longer misread the sun's shadow past a cascade's depth range or bleed across shadow atlas tiles.
+* Ambient occlusion's depth mip chain is single channel, using a quarter of the memory and bandwidth.
+* TAA's depth history is single-channel fp32, halving its memory and comparing disocclusion at full precision.
 * A `SceneView` with `maxFrameRate` on web sleeps between paced frames instead of waking every vsync, cutting main-thread CPU on high-refresh displays.
 * Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
 * Temporal anti-aliasing no longer tints pixels beside very bright highlights blue or magenta. It clips history toward the neighborhood mean in tone-mapped color, and sharpens luminance only, within the neighborhood's range.
+* An R8 or RG8 texture whose size is not a multiple of 4 bytes uploads on WebGPU under dart2wasm instead of throwing a `RangeError`.
+* SMAA's edge pass skips writing pixels with no edge.
+* Half-resolution ground-truth ambient occlusion no longer stipples grazing walls and floors. Its blur follows sloped surfaces, and lit materials upsample it against their own depth.
+* Ambient occlusion shifts its sampling noise each frame under TAA, so the temporal resolve averages away more of its grain.
+* Ground-truth ambient occlusion no longer darkens grazing surfaces, since its blur runs in half float and clamps only at the end.
+* Screen-space indirect light no longer caps its red channel at 1.
+* `SceneView(webPresentation: ScenePresentation.domCanvas)` shows a web view's frames on a DOM canvas behind its Flutter content, skipping the per-frame copy into Flutter's renderer. Ancestor filters and shader masks do not apply to it, and widget captures miss it.
+* On WebGPU, `textureToPlatformImage` returns an `ImageBitmap` instead of null.
+* On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.
+* WebGL2 reuses its present framebuffer and skips redundant vertex array and uniform buffer calls per draw.
 
 ## 0.24.6
 
