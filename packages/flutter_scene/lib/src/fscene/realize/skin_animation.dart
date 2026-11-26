@@ -75,68 +75,64 @@ engine.Animation? buildAnimation(
   final channels = <engine.AnimationChannel>[];
   for (final channel in spec.channels) {
     final times = _floats(document.payload(channel.timeline)).toList();
-    final floats = _floats(document.payload(channel.keyframes));
+    final values = _floats(document.payload(channel.keyframes));
     final name = nodes[channel.target]?.name ?? channel.targetName ?? '';
-    final interpolation = _interpolation(channel.interpolation);
+    _Curve curve(int length) => _curve(
+      document,
+      channel.interpolation,
+      channel.inTangents,
+      channel.outTangents,
+      length,
+    );
 
     final engine.AnimationProperty property;
     final engine.PropertyResolver resolver;
     switch (channel.property) {
       case AnimationProperty.translation:
-        final keyframes = _keyframes(floats, 3, channel.interpolation);
+        final c = curve(values.length);
         property = engine.AnimationProperty.translation;
         resolver = engine.PropertyResolver.makeTranslationTimeline(
           times,
-          _vec3List(keyframes.values),
-          interpolation: interpolation,
-          inTangents: _vec3ListOrNull(keyframes.inTangents),
-          outTangents: _vec3ListOrNull(keyframes.outTangents),
+          _vec3List(values),
+          interpolation: c.interpolation,
+          inTangents: _vec3ListOrNull(c.inTangents),
+          outTangents: _vec3ListOrNull(c.outTangents),
         );
       case AnimationProperty.rotation:
-        final keyframes = _keyframes(floats, 4, channel.interpolation);
+        final c = curve(values.length);
         property = engine.AnimationProperty.rotation;
         resolver = engine.PropertyResolver.makeRotationTimeline(
           times,
-          _quaternionList(keyframes.values),
-          interpolation: interpolation,
-          inTangents: _quaternionListOrNull(keyframes.inTangents),
-          outTangents: _quaternionListOrNull(keyframes.outTangents),
+          _quaternionList(values),
+          interpolation: c.interpolation,
+          inTangents: _quaternionListOrNull(c.inTangents),
+          outTangents: _quaternionListOrNull(c.outTangents),
         );
       case AnimationProperty.scale:
-        final keyframes = _keyframes(floats, 3, channel.interpolation);
+        final c = curve(values.length);
         property = engine.AnimationProperty.scale;
         resolver = engine.PropertyResolver.makeScaleTimeline(
           times,
-          _vec3List(keyframes.values),
-          interpolation: interpolation,
-          inTangents: _vec3ListOrNull(keyframes.inTangents),
-          outTangents: _vec3ListOrNull(keyframes.outTangents),
+          _vec3List(values),
+          interpolation: c.interpolation,
+          inTangents: _vec3ListOrNull(c.inTangents),
+          outTangents: _vec3ListOrNull(c.outTangents),
         );
       case AnimationProperty.weights:
         // The keyframes payload is the flattened glTF shape, one weight per
         // target per keyframe. Trailing floats past a whole keyframe are
         // dropped rather than trusted.
-        final width = _floatsPerComponent(channel.interpolation);
-        final targetCount = times.isEmpty
-            ? 0
-            : floats.length ~/ (times.length * width);
-        final keyframes = _keyframes(
-          Float32List.sublistView(
-            floats,
-            0,
-            times.length * targetCount * width,
-          ),
-          targetCount,
-          channel.interpolation,
-        );
+        final targetCount = times.isEmpty ? 0 : values.length ~/ times.length;
+        final length = times.length * targetCount;
+        final c = curve(length);
         property = engine.AnimationProperty.weights;
         resolver = engine.PropertyResolver.makeMorphWeightsTimeline(
           times,
-          keyframes.values,
+          Float32List.sublistView(values, 0, length),
           targetCount: targetCount,
-          interpolation: interpolation,
-          inTangents: keyframes.inTangents,
-          outTangents: keyframes.outTangents,
+          interpolation: c.interpolation,
+          inTangents: c.inTangents,
+          outTangents: c.outTangents,
         );
     }
     channels.add(
@@ -148,18 +144,18 @@ engine.Animation? buildAnimation(
   }
   for (final channel in spec.pathChannels) {
     final times = _floats(document.payload(channel.timeline)).toList();
-    final floats = _floats(document.payload(channel.keyframes));
+    final values = _floats(document.payload(channel.keyframes));
     final name = nodes[channel.target]?.name ?? channel.targetName ?? '';
     // Same trailing-float rule as weights.
-    final width = _floatsPerComponent(channel.interpolation);
-    final componentCount = times.isEmpty
-        ? 0
-        : floats.length ~/ (times.length * width);
+    final componentCount = times.isEmpty ? 0 : values.length ~/ times.length;
     if (componentCount == 0) continue;
-    final keyframes = _keyframes(
-      Float32List.sublistView(floats, 0, times.length * componentCount * width),
-      componentCount,
+    final length = times.length * componentCount;
+    final c = _curve(
+      document,
       channel.interpolation,
+      channel.inTangents,
+      channel.outTangents,
+      length,
     );
     channels.add(
       engine.AnimationChannel(
@@ -171,11 +167,11 @@ engine.Animation? buildAnimation(
         resolver: engine.PropertyResolver.makePathTimeline(
           channel.path,
           times,
-          keyframes.values,
+          Float32List.sublistView(values, 0, length),
           componentCount: componentCount,
-          interpolation: _interpolation(channel.interpolation),
-          inTangents: keyframes.inTangents,
-          outTangents: keyframes.outTangents,
+          interpolation: c.interpolation,
+          inTangents: c.inTangents,
+          outTangents: c.outTangents,
         ),
       ),
     );
@@ -184,50 +180,38 @@ engine.Animation? buildAnimation(
   return engine.Animation(name: spec.name, channels: channels);
 }
 
-engine.AnimationInterpolation _interpolation(
+typedef _Curve = ({
   AnimationInterpolation interpolation,
-) => switch (interpolation) {
-  AnimationInterpolation.step => engine.AnimationInterpolation.step,
-  AnimationInterpolation.linear => engine.AnimationInterpolation.linear,
-  AnimationInterpolation.cubicSpline =>
-    engine.AnimationInterpolation.cubicSpline,
-};
-
-// The floats a keyframe holds per component: a cubic spline's in-tangent,
-// value, and out-tangent, or the value alone.
-int _floatsPerComponent(AnimationInterpolation interpolation) =>
-    interpolation == AnimationInterpolation.cubicSpline ? 3 : 1;
-
-typedef _Keyframes = ({
-  Float32List values,
   Float32List? inTangents,
   Float32List? outTangents,
 });
 
-// Splits a channel's keyframe floats, [componentCount] per value. A cubic
-// spline's tangents sit on either side of each value, as glTF lays them out.
-_Keyframes _keyframes(
-  Float32List floats,
-  int componentCount,
+// A channel's interpolation with its tangents cut to [length] floats each. A
+// cubic spline whose tangents are missing or short plays linear.
+_Curve _curve(
+  SceneDocument document,
   AnimationInterpolation interpolation,
+  LocalId? inTangents,
+  LocalId? outTangents,
+  int length,
 ) {
+  const linear = (
+    interpolation: AnimationInterpolation.linear,
+    inTangents: null,
+    outTangents: null,
+  );
   if (interpolation != AnimationInterpolation.cubicSpline) {
-    return (values: floats, inTangents: null, outTangents: null);
+    return (interpolation: interpolation, inTangents: null, outTangents: null);
   }
-  final stride = componentCount * 3;
-  final count = stride <= 0 ? 0 : floats.length ~/ stride;
-  final values = Float32List(count * componentCount);
-  final inTangents = Float32List(count * componentCount);
-  final outTangents = Float32List(count * componentCount);
-  for (var keyframe = 0; keyframe < count; keyframe++) {
-    final from = keyframe * stride;
-    final to = keyframe * componentCount;
-    final end = to + componentCount;
-    inTangents.setRange(to, end, floats, from);
-    values.setRange(to, end, floats, from + componentCount);
-    outTangents.setRange(to, end, floats, from + componentCount * 2);
-  }
-  return (values: values, inTangents: inTangents, outTangents: outTangents);
+  if (inTangents == null || outTangents == null) return linear;
+  final inFloats = _floats(document.payload(inTangents));
+  final outFloats = _floats(document.payload(outTangents));
+  if (inFloats.length < length || outFloats.length < length) return linear;
+  return (
+    interpolation: interpolation,
+    inTangents: Float32List.sublistView(inFloats, 0, length),
+    outTangents: Float32List.sublistView(outFloats, 0, length),
+  );
 }
 
 List<Matrix4> _matrices(PayloadSpec? payload) {

@@ -351,6 +351,18 @@ bool _animationsChanged(
           !_payloadsEqual(
             oldDocument.payload(oldChannel.keyframes),
             newDocument.payload(newChannel.keyframes),
+          ) ||
+          !_optionalPayloadsEqual(
+            oldDocument,
+            oldChannel.inTangents,
+            newDocument,
+            newChannel.inTangents,
+          ) ||
+          !_optionalPayloadsEqual(
+            oldDocument,
+            oldChannel.outTangents,
+            newDocument,
+            newChannel.outTangents,
           )) {
         return true;
       }
@@ -372,6 +384,18 @@ bool _animationsChanged(
           !_payloadsEqual(
             oldDocument.payload(oldChannel.keyframes),
             newDocument.payload(newChannel.keyframes),
+          ) ||
+          !_optionalPayloadsEqual(
+            oldDocument,
+            oldChannel.inTangents,
+            newDocument,
+            newChannel.inTangents,
+          ) ||
+          !_optionalPayloadsEqual(
+            oldDocument,
+            oldChannel.outTangents,
+            newDocument,
+            newChannel.outTangents,
           )) {
         return true;
       }
@@ -379,6 +403,19 @@ bool _animationsChanged(
   }
   return false;
 }
+
+bool _optionalPayloadsEqual(
+  SceneDocument oldDocument,
+  LocalId? oldId,
+  SceneDocument newDocument,
+  LocalId? newId,
+) =>
+    (oldId == null) == (newId == null) &&
+    (oldId == null ||
+        _payloadsEqual(
+          oldDocument.payload(oldId),
+          newDocument.payload(newId!),
+        ));
 
 bool _payloadsEqual(PayloadSpec? a, PayloadSpec? b) {
   final aBytes = a?.bytes;

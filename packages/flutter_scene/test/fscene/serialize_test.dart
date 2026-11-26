@@ -131,16 +131,15 @@ void main() {
     const times = LocalId(5, 2);
     const translations = LocalId(5, 3);
     const visibility = LocalId(5, 4);
-    // Two keyframes, each an in-tangent, a value, and an out-tangent.
-    const keyframes = <double>[
-      0, 0, 0, 0, 0, 0, 0, 1, 0, //
-      0, 0, 0, 0, 2, 0, 0, 0, 0, //
-    ];
+    const inTangents = LocalId(5, 6);
+    const outTangents = LocalId(5, 7);
     final doc = SceneDocument();
     doc.addNode(NodeSpec(id: node, name: 'cube'), root: true);
     for (final (id, floats) in [
       (times, const <double>[0, 2]),
-      (translations, keyframes),
+      (translations, const <double>[0, 0, 0, 0, 2, 0]),
+      (inTangents, const <double>[0, 0, 0, 0, 0, 0]),
+      (outTangents, const <double>[0, 1, 0, 0, 0, 0]),
       (visibility, const <double>[1, 0]),
     ]) {
       doc.addPayload(
@@ -163,6 +162,8 @@ void main() {
             timeline: times,
             keyframes: translations,
             interpolation: AnimationInterpolation.cubicSpline,
+            inTangents: inTangents,
+            outTangents: outTangents,
           ),
         ],
         pathChannels: [
@@ -182,10 +183,21 @@ void main() {
     final animation = restored.animations.values.single;
     final channel = animation.channels.single;
     expect(channel.interpolation, AnimationInterpolation.cubicSpline);
-    // The tangents come back on either side of each value.
-    expect(restored.payload(channel.keyframes)!.bytes, _floatBytes(keyframes));
+    expect(
+      restored.payload(channel.keyframes)!.bytes,
+      _floatBytes([0, 0, 0, 0, 2, 0]),
+    );
+    expect(
+      restored.payload(channel.inTangents!)!.bytes,
+      _floatBytes([0, 0, 0, 0, 0, 0]),
+    );
+    expect(
+      restored.payload(channel.outTangents!)!.bytes,
+      _floatBytes([0, 1, 0, 0, 0, 0]),
+    );
     final path = animation.pathChannels.single;
     expect(path.interpolation, AnimationInterpolation.step);
+    expect(path.inTangents, isNull);
     expect(restored.payload(path.keyframes)!.bytes, _floatBytes([1, 0]));
   });
 

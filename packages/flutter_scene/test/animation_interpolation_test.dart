@@ -11,11 +11,7 @@ import 'package:flutter_scene/scene.dart';
 // The channel/resolver data model is internal; tests reach it directly.
 // ignore: implementation_imports
 import 'package:flutter_scene/src/animation.dart'
-    show
-        AnimationInterpolation,
-        AnimationTransforms,
-        DecomposedTransform,
-        PropertyResolver;
+    show AnimationTransforms, DecomposedTransform, PropertyResolver;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 // ignore: implementation_imports
@@ -28,7 +24,12 @@ import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scene/scene.dart'
-    show LocalId, SceneDocument, readFsceneb, writeFsceneb;
+    show
+        AnimationInterpolation,
+        LocalId,
+        SceneDocument,
+        readFsceneb,
+        writeFsceneb;
 import 'package:vector_math/vector_math.dart';
 
 // A node's animation state at rest, with its rotation fully covered as an
@@ -378,10 +379,17 @@ void main() {
       Float32List floatsOf(LocalId payload) => Uint8List.fromList(
         document.payload(payload)!.bytes!,
       ).buffer.asFloat32List();
-      // A cubic spline keeps glTF's in-tangent, value, and out-tangent per
-      // keyframe.
-      expect(floatsOf(animation.channels[2].keyframes), _accessors[2].$2);
-      expect(floatsOf(animation.pathChannels.single.keyframes), hasLength(6));
+      // A cubic spline keeps its values in keyframes and its tangents apart.
+      final cubic = animation.channels[2];
+      expect(floatsOf(cubic.keyframes), [0, 0, 0, 0, 2, 0]);
+      expect(floatsOf(cubic.inTangents!), [0, 0, 0, 0, 0, 0]);
+      expect(floatsOf(cubic.outTangents!), [0, 1, 0, 0, 0, 0]);
+      final light = animation.pathChannels.single;
+      expect(floatsOf(light.keyframes), hasLength(2));
+      expect(floatsOf(light.inTangents!), hasLength(2));
+      expect(floatsOf(light.outTangents!), hasLength(2));
+      expect(animation.channels[0].inTangents, isNull);
+      expect(animation.channels[1].outTangents, isNull);
     });
   });
 

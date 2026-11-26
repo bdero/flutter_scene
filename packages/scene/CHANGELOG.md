@@ -2,7 +2,7 @@
 
 ## 0.4.3
 
-- `AnimationChannelSpec.interpolation` and `AnimationPathChannelSpec.interpolation` (`AnimationInterpolation`, one of `step`, `linear`, or `cubicSpline`) carry how a channel moves between keyframes, delta-serialized, and a change to one sets `SceneDiff.animationsChanged`. A cubic spline's keyframes payload holds an in-tangent, a value, and an out-tangent per keyframe, as glTF lays them out.
+- `AnimationChannelSpec.interpolation` and `AnimationPathChannelSpec.interpolation` (`AnimationInterpolation`, one of `step`, `linear`, or `cubicSpline`) carry how a channel moves between keyframes, delta-serialized, and a change to one sets `SceneDiff.animationsChanged`. A cubic spline keeps its tangents in separate `inTangents` and `outTangents` payloads, so `keyframes` always holds values and an older reader plays the channel as linear.
 - `AnimationPathChannelSpec.step` is deprecated in favor of `interpolation`. Documents that wrote `step` still read as stepped.
 - `NodeSpec.renderOrder` carries a node's render order, delta-serialized, reported by `diffScene` (`NodeChange.renderOrder`), and overridable on prefab instances through the `renderOrder` path. An instance at the default order takes its prefab root's.
 - Prefab expansion keeps member nodes' `shadowCastingMode`.

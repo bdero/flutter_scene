@@ -952,6 +952,8 @@ Map<String, dynamic> _encodeAnimation(
         'keyframes': idKey(ch.keyframes),
         if (ch.interpolation != AnimationInterpolation.linear)
           'interpolation': ch.interpolation.name,
+        if (ch.inTangents != null) 'inTangents': idKey(ch.inTangents!),
+        if (ch.outTangents != null) 'outTangents': idKey(ch.outTangents!),
         ...ch.unknown,
       },
   ],
@@ -966,6 +968,8 @@ Map<String, dynamic> _encodeAnimation(
           'keyframes': idKey(ch.keyframes),
           if (ch.interpolation != AnimationInterpolation.linear)
             'interpolation': ch.interpolation.name,
+          if (ch.inTangents != null) 'inTangents': idKey(ch.inTangents!),
+          if (ch.outTangents != null) 'outTangents': idKey(ch.outTangents!),
           ...ch.unknown,
         },
     ],
@@ -1924,6 +1928,8 @@ AnimationChannelSpec _decodeChannel(Map<String, dynamic> json) =>
       timeline: LocalId.parse(json['timeline'] as String),
       keyframes: LocalId.parse(json['keyframes'] as String),
       interpolation: _decodeInterpolation(json['interpolation']),
+      inTangents: _decodeOptionalId(json['inTangents']),
+      outTangents: _decodeOptionalId(json['outTangents']),
       unknown: _rest(json, const {
         'target',
         'targetName',
@@ -1931,6 +1937,8 @@ AnimationChannelSpec _decodeChannel(Map<String, dynamic> json) =>
         'timeline',
         'keyframes',
         'interpolation',
+        'inTangents',
+        'outTangents',
       }),
     );
 
@@ -1945,6 +1953,8 @@ AnimationPathChannelSpec _decodePathChannel(Map<String, dynamic> json) =>
       interpolation: _decodeInterpolation(
         json['interpolation'] ?? (json['step'] == true ? 'step' : null),
       ),
+      inTangents: _decodeOptionalId(json['inTangents']),
+      outTangents: _decodeOptionalId(json['outTangents']),
       unknown: _rest(json, const {
         'target',
         'targetName',
@@ -1952,9 +1962,14 @@ AnimationPathChannelSpec _decodePathChannel(Map<String, dynamic> json) =>
         'timeline',
         'keyframes',
         'interpolation',
+        'inTangents',
+        'outTangents',
         'step',
       }),
     );
+
+LocalId? _decodeOptionalId(Object? key) =>
+    key == null ? null : LocalId.parse(key as String);
 
 // A channel's interpolation, linear when the document leaves it out.
 AnimationInterpolation _decodeInterpolation(Object? name) => name == null

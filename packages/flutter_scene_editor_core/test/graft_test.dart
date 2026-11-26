@@ -215,9 +215,10 @@ void main() {
               targetName: 'Lamp',
               property: AnimationProperty.translation,
               timeline: times,
-              // Each keyframe an in-tangent, a value, and an out-tangent.
-              keyframes: floats(List<double>.filled(18, 0)),
+              keyframes: floats(List<double>.filled(6, 0)),
               interpolation: AnimationInterpolation.cubicSpline,
+              inTangents: floats(List<double>.filled(6, 0)),
+              outTangents: floats(List<double>.filled(6, 1)),
             ),
           ],
           pathChannels: [
@@ -245,6 +246,7 @@ void main() {
         animation.channels.single.interpolation,
         AnimationInterpolation.cubicSpline,
       );
+      expect(animation.channels.single.outTangents, isNotNull);
       expect(
         animation.pathChannels.single.interpolation,
         AnimationInterpolation.step,
@@ -324,6 +326,10 @@ void _expectNoDanglingRefs(SceneDocument doc) {
       expect(node(ch.target), isTrue, reason: 'anim target missing');
       expect(payload(ch.timeline), isTrue, reason: 'timeline missing');
       expect(payload(ch.keyframes), isTrue, reason: 'keyframes missing');
+      for (final tangents in [ch.inTangents, ch.outTangents]) {
+        if (tangents == null) continue;
+        expect(payload(tangents), isTrue, reason: 'tangents missing');
+      }
     }
   }
 }
