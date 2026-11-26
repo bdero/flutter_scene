@@ -6,6 +6,8 @@ import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
+import 'package:flutter_scene/src/render/lod.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 
 import 'dart:ui' as ui;
@@ -44,6 +46,12 @@ const String kLinearDepthBlackboardKey = 'linear_depth';
 /// translucent surfaces against the opaque scene.
 const String kPrepassDepthStencilBlackboardKey = 'prepass_depth_stencil';
 
+/// Render-graph blackboard key under which [DepthPrepass] publishes whether
+/// every surface it drew wrote the depth the color pass will draw it at, so
+/// the scene pass may depth-test against it (see `Scene.depthPriming`).
+const String kPrepassDepthMatchesColorBlackboardKey =
+    'prepass_depth_matches_color';
+
 /// Renders the opaque scene's depth from the camera into a linear-depth
 /// color target and publishes it on the render-graph blackboard.
 ///
@@ -66,6 +74,7 @@ class DepthPrepass extends RenderGraphPass {
     int layerMask = kRenderLayerAll,
     bool writeNormals = false,
     bool keepDepthStencil = false,
+    bool depthStencilShaderRead = false,
     Vector3? cameraRight,
     Vector3? cameraUp,
     List<Plane> cullingPlanes = const [],
@@ -83,6 +92,7 @@ class DepthPrepass extends RenderGraphPass {
        _cullingPlanes = cullingPlanes,
        _writeNormals = writeNormals,
        _keepDepthStencil = keepDepthStencil,
+       _depthStencilShaderRead = depthStencilShaderRead,
        _cameraRight = cameraRight ?? Vector3.zero(),
        _cameraUp = cameraUp ?? Vector3.zero(),
        _cameraTransform = cameraTransform;
@@ -107,10 +117,15 @@ class DepthPrepass extends RenderGraphPass {
   final bool _writeNormals;
 
   // When set, the depth-stencil attachment is stored (instead of the default
-  // discard) and published, so [TranslucentDepthPatchPass] can test against
-  // it later in the frame. Off unless a patch will actually run; the extra
-  // store costs bandwidth on tiled GPUs.
+  // discard) and published, so later passes (the scene pass when priming
+  // depth, the velocity pass, [TranslucentDepthPatchPass]) can test against
+  // it. Off unless one will actually run; the extra store costs bandwidth on
+  // tiled GPUs.
   final bool _keepDepthStencil;
+
+  // The kept depth-stencil is also sampled, as the scene pass's depth is when
+  // it captures scene color and that depth is the primed one.
+  final bool _depthStencilShaderRead;
   final Vector3 _cameraRight;
   final Vector3 _cameraUp;
 
@@ -148,7 +163,7 @@ class DepthPrepass extends RenderGraphPass {
               width: width,
               height: height,
               format: depthRasterOf(_camera).depthStencilFormat,
-              enableShaderReadUsage: false,
+              enableShaderReadUsage: _depthStencilShaderRead,
               debugName: 'depth_prepass_depth',
             )
           : TransientTextureDescriptor.depth(
@@ -190,6 +205,9 @@ class DepthPrepass extends RenderGraphPass {
       cameraRight: _cameraRight,
       cameraUp: _cameraUp,
       primaryView: _primaryView,
+      lodProjection: lodProjectionOf(
+        ProjectionParams.of(_camera.projection, _dimensions),
+      ),
     );
     _renderScene.cull(
       encoder.frustum,
@@ -202,6 +220,10 @@ class DepthPrepass extends RenderGraphPass {
     context.blackboard.set(kLinearDepthBlackboardKey, linearDepth);
     if (_keepDepthStencil) {
       context.blackboard.set(kPrepassDepthStencilBlackboardKey, depth);
+      context.blackboard.set(
+        kPrepassDepthMatchesColorBlackboardKey,
+        encoder.depthMatchesColor,
+      );
     }
   }
 }
@@ -319,6 +341,9 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
       cameraUp: Vector3.zero(),
       translucentPatch: true,
       primaryView: _primaryView,
+      lodProjection: lodProjectionOf(
+        ProjectionParams.of(_camera.projection, dimensions),
+      ),
     );
     for (final item in records) {
       encoder.submit(item);
@@ -351,9 +376,11 @@ class _DepthPrepassEncoder {
     required Vector3 cameraUp,
     bool translucentPatch = false,
     bool primaryView = false,
+    ProjectionParams? lodProjection,
   }) : _writeNormals = writeNormals,
        _translucentPatch = translucentPatch,
-       _primaryView = primaryView {
+       _primaryView = primaryView,
+       _lodProjection = lodProjection {
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
     _renderPass.setDepthCompareOperation(_raster.nearerOrEqual);
@@ -401,6 +428,15 @@ class _DepthPrepassEncoder {
   // Whether this encodes a screen view's camera, for [MeshDrawSelector]s.
   final bool _primaryView;
 
+  // The level-of-detail metric, so an LOD node draws the level the color
+  // pass draws.
+  final ProjectionParams? _lodProjection;
+
+  /// False once a draw wrote depth through a vertex shader other than the one
+  /// its color draw runs (a raw `ShaderMaterial` with no depth variant), so
+  /// the color pass must not trust this depth to reject its fragments.
+  bool depthMatchesColor = true;
+
   // Flips the item filter from the prepass's opaque set to the translucent
   // depth-carrying set drawn by [TranslucentDepthPatchPass].
   final bool _translucentPatch;
@@ -437,7 +473,10 @@ class _DepthPrepassEncoder {
   /// first draw. `clearBindings` leaves the pipeline in place, so
   /// consecutive objects that share one only bind it once.
   gpu.RenderPipeline? _boundPipeline;
-  final List<RenderItem> _records = [];
+  final List<_DepthRecord> _records = [];
+  // Shared by every encoder (each flushes before the next records), so
+  // recording allocates nothing once warm.
+  static final List<_DepthRecord> _recordPool = [];
   // See SceneEncoder._batchPool: refilled per group, read-only downstream.
   final InstanceDataBatchPool _batchPool = InstanceDataBatchPool();
 
@@ -448,14 +487,49 @@ class _DepthPrepassEncoder {
   void submit(RenderItem item) {
     if (!item.drawsColor) return;
     if ((item.layers & _layerMask) == 0) return;
-    if (_translucentPatch
-        ? (item.material.isOpaque() || !item.material.translucentEffectsDepth)
-        : !item.material.depthPrepassParticipates) {
-      return;
-    }
+    if (!_participates(item.material) && item.lod == null) return;
     if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;
-    _records.add(item);
+    var geometry = item.geometry;
+    var material = item.material;
+    final lod = item.lod;
+    if (lod != null) {
+      final selections = resolveLodForView(
+        lod,
+        item.worldBounds,
+        _lodProjection,
+        _cameraPosition,
+      );
+      // A fading level dithers in the color pass's coverage pre-draw, which
+      // this pass does not reproduce, so it leaves fading levels to it.
+      if (selections.length != 1 || selections.first.fade != 1.0) return;
+      final level = lod.levels[selections.first.level];
+      geometry = level.geometry;
+      material = level.material;
+      if (!_participates(material)) return;
+    }
+    final _DepthRecord record;
+    if (_records.length < _recordPool.length) {
+      record = _recordPool[_records.length];
+    } else {
+      record = _DepthRecord();
+      _recordPool.add(record);
+    }
+    record
+      ..item = item
+      ..geometry = geometry
+      ..material = material
+      ..geometryIdentity = identical(geometry, item.geometry)
+          ? item.geometryIdentity
+          : identityHashCode(geometry)
+      ..materialIdentity = identical(material, item.material)
+          ? item.materialIdentity
+          : identityHashCode(material);
+    _records.add(record);
   }
+
+  bool _participates(Material material) => _translucentPatch
+      ? !material.isOpaque() && material.translucentEffectsDepth
+      : material.depthPrepassParticipates;
 
   void flush() {
     _records.sort((a, b) {
@@ -466,11 +540,11 @@ class _DepthPrepassEncoder {
     var index = 0;
     while (index < _records.length) {
       final first = _records[index];
-      final end = depthBatchEnd(_records, index);
+      final end = _batchEnd(index);
       if (end > index + 1) {
         _batchPool.reset();
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
-          final item = _records[batchIndex];
+          final item = _records[batchIndex].item;
           _batchPool.addFor(item, indices: item.visibleInstanceIndices);
         }
         final batches = _batchPool.batches;
@@ -481,15 +555,46 @@ class _DepthPrepassEncoder {
       _encode(first);
       index++;
     }
+    // Drop the references, so the pool keeps no removed item alive.
+    for (final record in _records) {
+      record.clear();
+    }
     _records.clear();
   }
 
-  void _encode(RenderItem item, {List<InstanceDataBatch>? batches}) {
+  // [depthBatchEnd] over the resolved geometry and material.
+  int _batchEnd(int start) {
+    final first = _records[start];
+    final firstItem = first.item;
+    if (first.geometry.instancedVertexLayout == null ||
+        firstItem.jointsTexture != null ||
+        firstItem.morphWeights != null ||
+        hasMeshDrawSelector(firstItem)) {
+      return start + 1;
+    }
+    var end = start + 1;
+    while (end < _records.length) {
+      final next = _records[end];
+      final nextItem = next.item;
+      if (!identical(first.geometry, next.geometry) ||
+          !identical(first.material, next.material) ||
+          nextItem.jointsTexture != null ||
+          nextItem.morphWeights != null ||
+          hasMeshDrawSelector(nextItem)) {
+        break;
+      }
+      end++;
+    }
+    return end;
+  }
+
+  void _encode(_DepthRecord record, {List<InstanceDataBatch>? batches}) {
     if (batches != null) {
-      _encodeBody(item, batches: batches);
+      _encodeBody(record, batches: batches);
       return;
     }
-    final geometry = item.geometry;
+    final item = record.item;
+    final geometry = record.geometry;
     final selection = beginMeshDraw(
       item,
       geometry,
@@ -499,22 +604,24 @@ class _DepthPrepassEncoder {
     );
     try {
       if (selection.instanceCount == 0) return;
-      _encodeBody(item, instanceLimit: selection.instanceCount);
+      _encodeBody(record, instanceLimit: selection.instanceCount);
     } finally {
       endMeshDraw(geometry);
     }
   }
 
   void _encodeBody(
-    RenderItem item, {
+    _DepthRecord record, {
     List<InstanceDataBatch>? batches,
     int? instanceLimit,
   }) {
+    final item = record.item;
+    final material = record.material;
     // Cull the same faces as the color pass; a double-sided (culling: none)
     // material must stay double-sided here, or its camera-facing back faces are
     // absent from the prepass and SSAO/SSR read the farther surface behind them.
-    _renderPass.setCullMode(item.material.renderCullMode);
-    final geometry = item.geometry;
+    _renderPass.setCullMode(material.renderCullMode);
+    final geometry = record.geometry;
     // Skinned items draw through the full bind path below; apply this item's
     // skeleton to the (possibly shared) geometry first.
     item.applyJointsTexture(geometry);
@@ -523,14 +630,14 @@ class _DepthPrepassEncoder {
     // alpha. That and an alpha-masked material both read the full-vertex
     // varyings, so they skip the position-only path.
     // An explicitly configured mask wins over the automatic surface variant.
-    final surfaceShader = item.material.depthAlphaMasked
+    final surfaceShader = material.depthAlphaMasked
         ? null
-        : item.material.depthSurfaceShader(
+        : material.depthSurfaceShader(
             _writeNormals
                 ? DepthSurfaceKind.linearDepthNormal
                 : DepthSurfaceKind.linearDepth,
           );
-    final masked = surfaceShader != null || item.material.depthAlphaMasked;
+    final masked = surfaceShader != null || material.depthAlphaMasked;
     final fragmentShader = surfaceShader ?? _fragmentShaderFor(masked);
     // Unskinned geometry draws depth through a position-only shader and layout
     // (fetching only position); skinned geometry has no such variant, so it
@@ -538,9 +645,7 @@ class _DepthPrepassEncoder {
     // always uses the full vertex shader, since the position-only path
     // carries no normal.
     final depthVertex =
-        (_writeNormals ||
-            masked ||
-            item.material.needsFullVertexForDepth(geometry))
+        (_writeNormals || masked || material.needsFullVertexForDepth(geometry))
         ? null
         : geometry.depthOnlyVertex;
     // A `vertex { }` material displaces geometry in the color pass, so the
@@ -550,23 +655,33 @@ class _DepthPrepassEncoder {
     // its FrameInfo and MaterialParams against it below. This pass binds the
     // real camera transform and position, so a camera-relative displacement is
     // correct here.
-    final materialVertex = item.material.vertexShaderForGeometry(
+    final materialVertex = material.vertexShaderForGeometry(
       geometry,
       depth: depthVertex != null,
     );
     final activeVertex =
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
+    // A material whose own vertex shader moves the geometry but has no
+    // position-only variant draws depth through the engine's, undisplaced.
+    if (materialVertex == null &&
+        depthVertex != null &&
+        material.vertexShaderForGeometry(geometry) != null) {
+      // TODO(depth-priming): draw such a material through its color vertex
+      // shader once a mismatched varyings interface fails safely on every
+      // supported engine, so its depth matches and priming keeps working.
+      depthMatchesColor = false;
+    }
     // Without a position-only path this pass runs the material's color vertex
     // variant, which declares its per-instance attribute inputs, so the
     // instance record has to be as wide here as in the color pass.
     final instanceSchema = depthVertex == null
-        ? item.material.instanceAttributes
+        ? material.instanceAttributes
         : null;
     final attributeFloats = instanceSchema?.floatCount ?? 0;
     // The full-vertex path supplies the custom attributes its vertex shader
     // reads; the position-only path fetches none.
     final attributes = depthVertex == null
-        ? item.material.vertexAttributesFor(materialVertex)
+        ? material.vertexAttributesFor(materialVertex)
         : VertexAttributeSchema.none;
     geometry.useVertexAttributes(attributes);
     final vertexLayout =
@@ -588,7 +703,7 @@ class _DepthPrepassEncoder {
         phase: DrawPhase.depth,
         item: item,
         geometry: geometry,
-        material: item.material,
+        material: material,
         vertexShader: activeVertex,
         fragmentShader: fragmentShader,
         pipeline: pipeline,
@@ -600,9 +715,8 @@ class _DepthPrepassEncoder {
       // on rough surfaces. camera_forward.w holds the roughness factor; the
       // map (a white placeholder when the material has none) supplies the
       // per-pixel roughness in its green channel.
-      _depthInfo[3] = item.material.reflectionRoughnessFactor;
-      final roughnessTransform =
-          item.material.reflectionRoughnessTextureTransform;
+      _depthInfo[3] = material.reflectionRoughnessFactor;
+      final roughnessTransform = material.reflectionRoughnessTextureTransform;
       _depthInfo
         ..[12] = roughnessTransform.offset.x
         ..[13] = roughnessTransform.offset.y
@@ -610,19 +724,18 @@ class _DepthPrepassEncoder {
         ..[15] = roughnessTransform.scale.y
         ..[16] = math.cos(roughnessTransform.rotation)
         ..[17] = math.sin(roughnessTransform.rotation)
-        ..[18] = item.material.reflectionRoughnessTextureTexCoord
+        ..[18] = material.reflectionRoughnessTextureTexCoord
             .clamp(0, 1)
             .toDouble();
       // A surface fragment takes its roughness from Surface() instead.
       if (surfaceShader == null) {
-        final roughness = item.material.reflectionRoughnessTexture;
+        final roughness = material.reflectionRoughnessTexture;
         _renderPass.bindTexture(
           fragmentShader.cachedUniformSlot('metallic_roughness_texture'),
           Material.whitePlaceholder(roughness),
           sampler: samplerOrPlaceholder(
             roughness,
-            item.material.reflectionRoughnessTextureSampler ??
-                _roughnessSampler,
+            material.reflectionRoughnessTextureSampler ?? _roughnessSampler,
           ),
         );
       }
@@ -632,7 +745,7 @@ class _DepthPrepassEncoder {
       _transientsBuffer.emplace(scratchBytesOf(_depthInfo)),
     );
     if (surfaceShader != null) {
-      item.material.bindDepthSurface(
+      material.bindDepthSurface(
         _renderPass,
         fragmentShader,
         _transientsBuffer,
@@ -641,7 +754,7 @@ class _DepthPrepassEncoder {
         orthographic: _orthographic,
       );
     } else if (masked) {
-      item.material.bindDepthAlphaMask(
+      material.bindDepthAlphaMask(
         _renderPass,
         fragmentShader,
         _transientsBuffer,
@@ -654,10 +767,10 @@ class _DepthPrepassEncoder {
     // transform passed here, since skinned uses joint matrices).
     setCurrentDrawDepthOffset(
       _raster,
-      item.material.depthLayer,
-      item.material.tieBreakRank,
+      material.depthLayer,
+      material.tieBreakRank,
     );
-    _drawItem = item;
+    _drawMaterial = material;
     _drawGeometry = geometry;
     _drawDepthPath = depthVertex != null;
     _drawVertex = activeVertex;
@@ -817,7 +930,7 @@ class _DepthPrepassEncoder {
 
   // Per-draw state for [_bindDraw], set by the encode path. Fields rather
   // than a local closure, which would allocate on every draw.
-  RenderItem? _drawItem;
+  Material? _drawMaterial;
   Geometry? _drawGeometry;
   bool _drawDepthPath = false;
   gpu.Shader? _drawVertex;
@@ -825,7 +938,7 @@ class _DepthPrepassEncoder {
 
   // Binds the vertex/index buffers and the per-frame uniforms for one draw.
   void _bindDraw(Matrix4 worldTransform) {
-    final item = _drawItem!;
+    final material = _drawMaterial!;
     final geometry = _drawGeometry!;
     final activeVertex = _drawVertex!;
     final materialVertex = _drawMaterialVertex;
@@ -837,7 +950,7 @@ class _DepthPrepassEncoder {
         activeVertex,
         _cameraTransform,
         _cameraPosition,
-        depthBias: item.material.depthBias,
+        depthBias: material.depthBias,
       );
     } else {
       geometry.bind(
@@ -847,17 +960,13 @@ class _DepthPrepassEncoder {
         _cameraTransform,
         _cameraPosition,
         shaderOverride: materialVertex,
-        depthBias: item.material.depthBias,
+        depthBias: material.depthBias,
       );
     }
     // Feed the material's parameters to its vertex variant so the same
     // displacement runs here as in the color pass.
     if (materialVertex != null) {
-      item.material.bindVertexStage(
-        _renderPass,
-        materialVertex,
-        _transientsBuffer,
-      );
+      material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
     }
   }
 
@@ -909,5 +1018,28 @@ class _DepthPrepassEncoder {
         instanceCount: packed.cwCount,
       );
     }
+  }
+}
+
+// One draw the prepass encodes: the item with the geometry and material its
+// level of detail resolved to.
+final class _DepthRecord {
+  RenderItem? _item;
+  Geometry? _geometry;
+  Material? _material;
+  int geometryIdentity = 0;
+  int materialIdentity = 0;
+
+  RenderItem get item => _item!;
+  set item(RenderItem value) => _item = value;
+  Geometry get geometry => _geometry!;
+  set geometry(Geometry value) => _geometry = value;
+  Material get material => _material!;
+  set material(Material value) => _material = value;
+
+  void clear() {
+    _item = null;
+    _geometry = null;
+    _material = null;
   }
 }

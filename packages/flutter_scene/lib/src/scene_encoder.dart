@@ -833,8 +833,9 @@ base class SceneEncoder {
     frustum = cullingFrustum ?? cullingFrustumOf(_camera, _dimensions);
     // A degenerate projection has no screen-size metric, so LOD nodes draw
     // their highest-detail level.
-    final projection = ProjectionParams.of(_camera.projection, _dimensions);
-    _lodProjection = projection.scaleY > 0.0 ? projection : null;
+    _lodProjection = lodProjectionOf(
+      ProjectionParams.of(_camera.projection, _dimensions),
+    );
 
     // Begin the opaque phase.
     _renderPass.setDepthWriteEnable(true);
@@ -1282,34 +1283,11 @@ base class SceneEncoder {
     );
   }
 
-  // The level(s) of detail to draw for [lod] from the item's [worldBounds],
-  // each with a fade coverage; empty to cull. Falls back to the highest detail
-  // when no screen-size metric is available (no bounds, or a degenerate
-  // projection).
+  // The level(s) of detail to draw for [lod]; see [resolveLodForView].
   List<({int level, double fade})> _resolveLod(
     LodSelection lod,
     Aabb3? worldBounds,
-  ) {
-    final projection = _lodProjection;
-    if (worldBounds == null || projection == null) {
-      return const [(level: 0, fade: 1.0)];
-    }
-    // The circumscribed sphere of the world AABB (conservative, so detail is
-    // kept slightly longer than a tight sphere would).
-    final radius = worldBounds.max.distanceTo(worldBounds.min) * 0.5;
-    final size = projection.orthographic
-        ? lodScreenSizeOrthographic(
-            radius: radius,
-            halfHeight: projection.scaleY,
-          )
-        : lodScreenSize(
-            center: worldBounds.center,
-            radius: radius,
-            cameraPosition: _cameraPosition,
-            fovRadiansY: 2.0 * math.atan(projection.scaleY),
-          );
-    return lod.resolve(size);
-  }
+  ) => resolveLodForView(lod, worldBounds, _lodProjection, _cameraPosition);
 
   double _depthOf(Matrix4 worldTransform, [Geometry? geometry]) {
     return sceneSortDepth(

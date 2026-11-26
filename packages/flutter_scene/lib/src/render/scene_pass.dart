@@ -114,8 +114,12 @@ class ScenePass extends RenderGraphPass {
     DebugViewFrame? debugView,
     bool primaryView = false,
     bool holdShadowVariant = false,
+    bool primeDepth = false,
+    bool storePrimedDepth = false,
   }) : _debugView = debugView,
        _holdShadowVariant = holdShadowVariant,
+       _primeDepth = primeDepth,
+       _storePrimedDepth = storePrimedDepth,
        _primaryView = primaryView,
        _cullingFrustum = cullingFrustum,
        _captureOpaqueColor = captureOpaqueColor,
@@ -212,6 +216,15 @@ class ScenePass extends RenderGraphPass {
   final Frustum? _cullingFrustum;
   final bool _includeOffscreen;
 
+  // Depth-tests against the depth prepass's kept depth-stencil instead of a
+  // cleared one, so a hidden fragment is rejected before it is shaded. Needs a
+  // prepass at this pass's size without MSAA; see Scene.depthPriming.
+  final bool _primeDepth;
+
+  // A later pass (the translucent depth patch) loads the primed depth again,
+  // so this pass must store it.
+  final bool _storePrimedDepth;
+
   static const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
   @override
@@ -225,6 +238,10 @@ class ScenePass extends RenderGraphPass {
   /// The node-layer mask this pass draws.
   @visibleForTesting
   int get debugLayerMask => _layerMask;
+
+  /// How many scene passes have depth-tested against the depth prepass.
+  @visibleForTesting
+  static int debugPrimedPassCount = 0;
 
   @override
   void execute(RenderGraphContext context) {
@@ -258,19 +275,35 @@ class ScenePass extends RenderGraphPass {
     // Shader-read usage is a separate question and only the capture path
     // samples it.
     final keepDepth = capture || _displayReferredLayer;
-    final depth = context.texturePool.acquire(
-      TransientTextureDescriptor(
-        width: width,
-        height: height,
-        format: depthRasterOf(_camera).depthStencilFormat,
-        sampleCount: _enableMsaa ? 4 : 1,
-        storageMode: keepDepth
-            ? gpu.StorageMode.devicePrivate
-            : gpu.StorageMode.deviceTransient,
-        enableShaderReadUsage: capture,
-        debugName: 'scene_depth',
-      ),
-    );
+    // The prepass drew the same opaque geometry with the same transform, so
+    // its depth already holds the nearest opaque surface per pixel.
+    // Unless a surface wrote depth its color draw will not reproduce.
+    final prepassMatches =
+        context.blackboard.get<bool>(kPrepassDepthMatchesColorBlackboardKey) ??
+        false;
+    final primedDepth = _primeDepth && !_enableMsaa && prepassMatches
+        ? context.blackboard.get<gpu.Texture>(kPrepassDepthStencilBlackboardKey)
+        : null;
+    final primed =
+        primedDepth != null &&
+        primedDepth.width == width &&
+        primedDepth.height == height;
+    if (primed) debugPrimedPassCount++;
+    final depth = primed
+        ? primedDepth
+        : context.texturePool.acquire(
+            TransientTextureDescriptor(
+              width: width,
+              height: height,
+              format: depthRasterOf(_camera).depthStencilFormat,
+              sampleCount: _enableMsaa ? 4 : 1,
+              storageMode: keepDepth
+                  ? gpu.StorageMode.devicePrivate
+                  : gpu.StorageMode.deviceTransient,
+              enableShaderReadUsage: capture,
+              debugName: 'scene_depth',
+            ),
+          );
     // Screen-reading translucent batches alternate between these targets so
     // each batch can sample the fully composed color behind it.
     final alternateColor = capture
@@ -311,8 +344,9 @@ class ScenePass extends RenderGraphPass {
       colorAttachment,
       depthStencilAttachment: gpu.DepthStencilAttachment(
         texture: depth,
+        depthLoadAction: primed ? gpu.LoadAction.load : gpu.LoadAction.clear,
         depthClearValue: depthRasterOf(_camera).clearDepth,
-        depthStoreAction: keepDepth
+        depthStoreAction: keepDepth || (primed && _storePrimedDepth)
             ? gpu.StoreAction.store
             : gpu.StoreAction.dontCare,
       ),

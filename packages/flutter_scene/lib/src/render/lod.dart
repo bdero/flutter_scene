@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 
 /// The projected on-screen size of a world-space bounding sphere, as a
 /// fraction of the viewport height.
@@ -232,3 +233,36 @@ class LodSelection {
     return _currentLevel < 0 ? const [] : [(level: _currentLevel, fade: 1.0)];
   }
 }
+
+/// The level(s) of [lod] to draw for an item with [worldBounds] seen from
+/// [cameraPosition] through [projection], each with a fade coverage; empty to
+/// cull. Without a screen-size metric (no bounds, or a null [projection]) it
+/// draws the highest detail. Every pass that draws an item resolves it here,
+/// so they agree on the level.
+List<({int level, double fade})> resolveLodForView(
+  LodSelection lod,
+  Aabb3? worldBounds,
+  ProjectionParams? projection,
+  Vector3 cameraPosition,
+) {
+  if (worldBounds == null || projection == null) {
+    return const [(level: 0, fade: 1.0)];
+  }
+  // The circumscribed sphere of the world AABB (conservative, so detail is
+  // kept slightly longer than a tight sphere would).
+  final radius = worldBounds.max.distanceTo(worldBounds.min) * 0.5;
+  final size = projection.orthographic
+      ? lodScreenSizeOrthographic(radius: radius, halfHeight: projection.scaleY)
+      : lodScreenSize(
+          center: worldBounds.center,
+          radius: radius,
+          cameraPosition: cameraPosition,
+          fovRadiansY: 2.0 * math.atan(projection.scaleY),
+        );
+  return lod.resolve(size);
+}
+
+/// [projection] as [resolveLodForView] takes it, or null when it is
+/// degenerate and has no screen-size metric.
+ProjectionParams? lodProjectionOf(ProjectionParams projection) =>
+    projection.scaleY > 0.0 ? projection : null;

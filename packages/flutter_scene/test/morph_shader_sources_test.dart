@@ -122,6 +122,9 @@ void main() {
             '--include=${Directory.current.uri.resolve('shaders/').toFilePath()}',
             '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
             if (backend == 'opengl-es') '--gles-language-version=300',
+            // Bundle builds define the target; a lone compile must say so.
+            if (backend == 'metal-desktop') '--define=IMPELLER_TARGET_METAL',
+            if (backend == 'vulkan') '--define=IMPELLER_TARGET_VULKAN',
           ]);
           expect(
             result.exitCode,

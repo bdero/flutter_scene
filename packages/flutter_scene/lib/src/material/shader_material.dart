@@ -102,6 +102,10 @@ class ShaderInstanceAttribute {
 /// material declaring attributes supplies its own `vertexShader` (and a
 /// skinned or depth variant for the meshes it draws in those passes).
 ///
+/// A `vertexShader` that moves vertices needs a depth variant that moves them
+/// alike. Without one the depth passes draw the undisplaced mesh, and a frame
+/// containing it skips `Scene.depthPriming`.
+///
 /// TODO(shader-instance-attributes): fail the draw when a material declares
 /// attributes with no vertex shader to read them, the way the `.fmat` parser
 /// rejects the same pairing.

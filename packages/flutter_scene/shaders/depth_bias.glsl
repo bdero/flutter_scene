@@ -3,6 +3,15 @@
 
 #include <view_vector.glsl>
 
+// Every vertex stage that projects geometry includes this file, so the
+// passes that test against another pass's depth (depth priming, motion
+// vectors) get bit-equal positions from different programs.
+// TODO(depth-invariance): declare it on Metal too once impellerc's MSL output
+// accepts it (it aborts today) and Impeller compiles with preserveInvariance.
+#ifndef IMPELLER_TARGET_METAL
+invariant gl_Position;
+#endif
+
 vec3 ApplyDepthBias(vec3 world_position, mat4 camera_transform,
                     vec3 camera_position, float depth_bias) {
   if (depth_bias <= 0.0) {
