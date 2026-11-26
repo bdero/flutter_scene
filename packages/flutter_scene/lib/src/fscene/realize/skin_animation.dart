@@ -137,7 +137,9 @@ engine.Animation? buildAnimation(
           times,
           Float32List.sublistView(values, 0, times.length * componentCount),
           componentCount: componentCount,
-          step: channel.step,
+          interpolation: channel.step
+              ? engine.AnimationInterpolation.step
+              : engine.AnimationInterpolation.linear,
         ),
       ),
     );
