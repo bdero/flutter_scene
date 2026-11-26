@@ -191,6 +191,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_depth_downsample.frag"
   },
+  "ContactShadowsFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_contact_shadows.frag"
+  },
   "SsaoBlurFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_ssao_blur.frag"

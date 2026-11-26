@@ -1,7 +1,9 @@
-// View-space reconstruction shared by the screen-space occlusion shaders.
+// View-space reconstruction shared by the screen-space occlusion and contact
+// shadow shaders.
 //
-// The including shader must declare the samplers `linear_depth` and
-// `depth_mip1`..`depth_mip3`, and define AO_INFO as the uniform block instance
+// The including shader must declare the samplers `linear_depth` and, unless
+// it defines SSAO_GEOMETRY_BASE_LEVEL_ONLY, `depth_mip1`..`depth_mip3`, and
+// define AO_INFO as the uniform block instance
 // whose `proj.xy` holds the projection scale, `proj_offset.xyz` the axis
 // offset and orthographic flag (see view_projection.glsl), and `depth_uv` the
 // map from depth texture UV to the screen UV its texels were sampled at (xy
@@ -20,6 +22,7 @@ highp vec2 DepthTextureUv(highp vec2 uv) {
   return (uv - AO_INFO.depth_uv.zw) / AO_INFO.depth_uv.xy;
 }
 
+#ifndef SSAO_GEOMETRY_BASE_LEVEL_ONLY
 // Fetches the view-space depth at [uv] from level [level] of the depth chain.
 float DepthAtLevel(vec2 uv, int level) {
   if (level <= 0) return texture(linear_depth, uv).r;
@@ -36,6 +39,7 @@ vec3 ViewPositionAt(vec2 uv, int level) {
   return ViewPositionFromUv(DepthSampleUv(uv), DepthAtLevel(uv, level),
                             AO_INFO.proj.xy, AO_INFO.proj_offset.xyz);
 }
+#endif
 
 vec3 ViewPositionBase(ivec2 coord) {
   ivec2 size = textureSize(linear_depth, 0);

@@ -8,6 +8,9 @@
 
 #include <material_scene_inputs.glsl>
 
+// Lets includes that follow know the engine lighting samplers are declared.
+#define FLUTTER_SCENE_ENGINE_LIGHTING_DECLARED
+
 // The per-draw model scale (see FragInfo.model_scale).
 highp vec3 GetModelScale() { return frag_info.model_scale.xyz; }
 
@@ -30,6 +33,12 @@ uniform sampler2D brdf_lut;
 // and llvmpipe honor.
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
 uniform highp sampler2D shadow_map;
+// The screen-space contact shadow mask: per pixel, the primary directional
+// light's contact visibility in r and up to three more lights' in g, b, and
+// a (each punctual row names its channel). frag_info.ssao_lighting.w says
+// how this draw reads it; a white placeholder is bound when no light has
+// contact shadows.
+uniform highp sampler2D screen_space_shadows;
 #endif
 #if !defined(FLUTTER_SCENE_SHADOW_CATCHER) && !defined(FLUTTER_SCENE_CUSTOM_AMBIENT)
 // The environment's diffuse SH coefficients and, when the world-space

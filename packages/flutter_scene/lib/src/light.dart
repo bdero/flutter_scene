@@ -292,10 +292,11 @@ class DirectionalLight {
   DirectionalShadowFilter shadowFilter;
 
   /// Marches the camera depth buffer toward the light for small-scale
-  /// contact shadowing that shadow-map resolution and bias miss. Runs on the
-  /// screen-space occlusion chain (enabling this adds those passes even with
-  /// ambient occlusion off) and needs a perspective camera. Applies whether
-  /// or not [castsShadow] is set.
+  /// contact shadowing that shadow-map resolution and bias miss. Adds a
+  /// depth prepass and a full-screen pass when on, shaped by
+  /// `Scene.contactShadows`. Applies whether or not [castsShadow] is set.
+  /// The primary directional light always gets its contact shadow; up to
+  /// three other lights with this set share the rest each frame.
   bool contactShadows;
 
   /// How far the contact-shadow march reaches, in world units. Short
@@ -633,6 +634,8 @@ class PointLight {
     this.shadowCasterFaces = ShadowCasterFaces.front,
     this.channelMask = 0xFF,
     this.shadowCasterChannelMask = 0xFF,
+    this.contactShadows = false,
+    this.contactShadowDistance = 0.3,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
   /// Linear RGB color of the light. Flutter colors are sRGB; set one with
@@ -719,6 +722,17 @@ class PointLight {
   /// Deliberately independent of [channelMask], the same way a spot's is.
   /// {@category Lighting and environment}
   int shadowCasterChannelMask;
+
+  /// Marches the camera depth buffer toward this light for small-scale
+  /// contact shadowing that shadow-map resolution and bias miss, whether or
+  /// not [castsShadow] is set. Shaped by `Scene.contactShadows`. Up to three
+  /// lights besides the primary directional light get contact shadows each
+  /// frame, picked by how large their reach appears on screen.
+  bool contactShadows;
+
+  /// How far the contact-shadow march reaches toward the light, in world
+  /// units. Short distances keep the effect to tight contacts.
+  double contactShadowDistance;
 
   /// The far plane of the shadow faces: the light's [range], or a default
   /// reach when the range is infinite (mirrors [SpotLight]).
@@ -872,6 +886,8 @@ class SpotLight {
     this.shadowCasterFaces = ShadowCasterFaces.front,
     this.channelMask = 0xFF,
     this.shadowCasterChannelMask = 0xFF,
+    this.contactShadows = false,
+    this.contactShadowDistance = 0.3,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
@@ -970,6 +986,17 @@ class SpotLight {
   /// from a spot takes clearing it here as well.
   /// {@category Lighting and environment}
   int shadowCasterChannelMask;
+
+  /// Marches the camera depth buffer toward this light for small-scale
+  /// contact shadowing that shadow-map resolution and bias miss, whether or
+  /// not [castsShadow] is set. Shaped by `Scene.contactShadows`. Up to three
+  /// lights besides the primary directional light get contact shadows each
+  /// frame, picked by how large their reach appears on screen.
+  bool contactShadows;
+
+  /// How far the contact-shadow march reaches toward the light, in world
+  /// units. Short distances keep the effect to tight contacts.
+  double contactShadowDistance;
 
   /// The world -> clip matrix that renders and samples this spot's perspective
   /// shadow map, for a light at [worldPosition] aimed along [worldDirection]
@@ -1169,8 +1196,11 @@ class Lighting {
     this.ssaoDirectLightAffect = 0.0,
     this.ssaoMultiBounce = 0.0,
     this.ssaoBentNormals = false,
+    @Deprecated('Contact shadows ride screenSpaceShadowMask.')
     this.ssaoContactShadows = false,
     this.ssaoIndirectLight = false,
+    this.screenSpaceShadowMask,
+    this.screenSpaceShadowMaskPacksDepth = false,
     this.viewportSize = ui.Size.zero,
     this.fog,
     this.sceneDepthLinear,
@@ -1354,8 +1384,21 @@ class Lighting {
   /// Whether [ssaoMap]'s gba channels carry a packed view-space bent normal.
   final bool ssaoBentNormals;
 
-  /// Whether [ssaoMap]'s g channel carries the sun contact-shadow term.
+  /// Unused. Contact shadows ride [screenSpaceShadowMask].
+  @Deprecated('Contact shadows ride screenSpaceShadowMask.')
   final bool ssaoContactShadows;
+
+  /// The screen-space shadow mask: each opted-in light's contact visibility
+  /// (1 lit) in one channel, r for the primary directional light and g, b,
+  /// and a for the lights whose punctual rows name them. Null when no light
+  /// has contact shadows this frame. Opaque materials read it; it covers the
+  /// render target, at full or reduced resolution.
+  final gpu.Texture? screenSpaceShadowMask;
+
+  /// Whether [screenSpaceShadowMask] carries only the primary directional
+  /// light in r with each texel's packed view depth in ba, for a
+  /// reduced-resolution mask the material upsamples against its own depth.
+  final bool screenSpaceShadowMaskPacksDepth;
 
   /// Whether [ssaoMap] carries gathered indirect radiance in rgb with the
   /// visibility in a (instead of visibility in r).

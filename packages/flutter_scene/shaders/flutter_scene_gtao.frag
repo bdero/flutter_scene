@@ -21,8 +21,7 @@
 // In horizon mode the pass can also accumulate the bent normal (the mean
 // unoccluded direction), octahedrally packed view-space into the output's ba
 // channels; the material shader samples irradiance along it and derives cone
-// specular occlusion. The g channel is reserved for the screen-space
-// contact-shadow term and holds 1 (unshadowed) here.
+// specular occlusion. The g channel is unused and holds 1.
 
 uniform sampler2D linear_depth;
 
@@ -56,9 +55,6 @@ uniform GtaoInfo {
   // indirect-light intensity (bitmask mode; 0 disables the gather and >0
   // switches the output to radiance in rgb with visibility in a).
   vec4 params3;
-  // xyz: view-space direction toward the sun. w: the contact-shadow march
-  // distance in world units, 0 when contact shadows are off.
-  vec4 contact;
   // Maps view-space positions to the radiance history's clip space (last
   // frame's view-projection times the current view-to-world), so the
   // indirect-light gather reads each tap where it sat when the history was
@@ -92,7 +88,6 @@ const uint kSectorCount = 32u;
 #define AO_INFO gtao
 #include <ssao_geometry.glsl>
 #include <octahedral.glsl>
-#include <contact_shadow.glsl>
 
 // Closed-form integral of cosine-weighted visibility over the arc from the
 // slice-plane normal angle [gamma] up to the horizon angle [h].
@@ -223,11 +218,6 @@ void main() {
   float offset_noise = fract(
       InterleavedGradientNoise(gl_FragCoord.xy + vec2(47.0, 17.0)) +
       temporal.y);
-
-  float contact_visibility = 1.0;
-  if (gtao.contact.w > 0.0) {
-    contact_visibility = MarchContactShadow(origin, offset_noise);
-  }
 
   float inv_radius2 = 1.0 / max(radius * radius, kNumericEpsilon);
   float gi_intensity = gtao.params3.w;
@@ -368,8 +358,8 @@ void main() {
     // Nudged toward the view direction so a fully occluded pixel still
     // normalizes to a valid direction.
     vec3 bent = normalize(bent_sum + view_dir * kNumericEpsilon);
-    frag_color = vec4(ao, contact_visibility, OctEncode(bent));
+    frag_color = vec4(ao, 1.0, OctEncode(bent));
     return;
   }
-  frag_color = vec4(ao, contact_visibility, ao, 1.0);
+  frag_color = vec4(ao, 1.0, ao, 1.0);
 }

@@ -35,6 +35,7 @@ import 'package:vector_math/vector_math.dart'
     show Frustum, Matrix3, Matrix4, Plane, Ray, Vector2, Vector3, Vector4;
 
 import 'ambient_occlusion.dart';
+import 'contact_shadows.dart';
 import 'global_illumination.dart';
 import 'audio/audio_engine.dart';
 import 'auto_exposure.dart';
@@ -103,6 +104,8 @@ import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
 import 'render/shadow_caster_selection.dart';
+import 'render/contact_shadow_channels.dart';
+import 'render/contact_shadow_pass.dart';
 import 'render/punctual_lights.dart';
 import 'render/point_shadow.dart';
 import 'render/spot_shadow.dart';
@@ -756,6 +759,10 @@ base class Scene implements SceneGraph {
   // the caster selection; empty until the first frame renders.
   final Set<Object> _grantedShadowCasters = Set.identity();
   final Set<Object> _droppedShadowCasters = Set.identity();
+
+  // Which lights besides the primary directional light hold a contact
+  // shadow mask channel this frame.
+  final ContactShadowChannels _contactChannels = ContactShadowChannels();
 
   /// How many lights asked to cast a shadow last frame but got no slot in the
   /// shared shadow atlas, which caps shadow-casting spots and point lights
@@ -2021,6 +2028,11 @@ base class Scene implements SceneGraph {
   /// and orthographic cameras.
   final AmbientOcclusionSettings ambientOcclusion = AmbientOcclusionSettings();
 
+  /// Screen-space contact shadow quality. Contact shadows are opted into per
+  /// light (`DirectionalLight.contactShadows`); these settings shape every
+  /// opted-in light's march. Works with perspective and orthographic cameras.
+  final ContactShadowSettings contactShadows = ContactShadowSettings();
+
   /// Screen-space reflection settings. Off by default; set
   /// [ScreenSpaceReflectionsSettings.enabled] to turn it on. Works with
   /// perspective and orthographic cameras.
@@ -2912,11 +2924,26 @@ base class Scene implements SceneGraph {
     // Select this frame's shadow-casting spots and point lights. Every view
     // shares the selection, so it favors lights any of them can see.
     // Built only when a light asks, so scenes without local shadows skip it.
+    final wantsContactChannels =
+        visibleDirectionals.any(
+          (light) =>
+              !identical(light, lightComponent) && light.light.contactShadows,
+        ) ||
+        visiblePoints.any((point) => point.light.contactShadows) ||
+        visibleSpots.any((spot) => spot.light.contactShadows);
     final shadowViews =
-        visibleSpots.any((spot) => spot.light.castsShadow) ||
+        wantsContactChannels ||
+            visibleSpots.any((spot) => spot.light.castsShadow) ||
             visiblePoints.any((point) => point.light.castsShadow)
         ? _shadowViewVolumes(views, viewSizeOf)
         : null;
+    _contactChannels.update(
+      directionals: visibleDirectionals,
+      primary: lightComponent,
+      points: visiblePoints,
+      spots: visibleSpots,
+      views: shadowViews,
+    );
     final spotShadowFrame = collectSpotShadows(
       visibleSpots,
       views: shadowViews,
@@ -2981,6 +3008,7 @@ base class Scene implements SceneGraph {
       pointShadows: pointShadowFrame,
       shadowAtlas: shadowAtlas,
       enableFroxels: punctualLightClustering,
+      contactChannelOf: _contactChannels.channelOf,
     );
 
     // Pending reflection-probe captures render before any view. The frame's
@@ -4615,15 +4643,42 @@ base class Scene implements SceneGraph {
     }
     final wantSceneColorHistory =
         wantIndirectLight || wantScreenSpaceIrradiance;
-    // The occlusion texture's channels carry radiance while indirect light
-    // is on, so the contact-shadow term has nowhere to ride.
-    // TODO(sampler-budget): lift this exclusivity with a dedicated sampler
-    // once flutter/flutter#189332 raises the practical fragment budget.
-    final wantContactShadows =
-        !wantIndirectLight &&
-        light != null &&
-        light.contactShadows &&
-        (lightDirection ?? light.direction).length2 > 0.0;
+    // The contact shadow mask's channels for this view: the primary
+    // directional light in r, then the frame's other holders. The low tier
+    // marches the primary alone at half resolution, its depth packed into
+    // the mask's ba for the material's depth-aware upsample.
+    final contactShadowLowTier =
+        effectiveRenderQualityTier == RenderQualityTier.low;
+    final contactShadowLights = <ContactShadowLight?>[];
+    if (!captureLinearColor && projectionValid) {
+      final forward = camera.forward;
+      final right = camera.up.cross(forward)..normalize();
+      final up = forward.cross(right)..normalize();
+      final sunDirection = light == null || !light.contactShadows
+          ? null
+          : (lightDirection ?? light.direction);
+      contactShadowLights.add(
+        sunDirection == null || sunDirection.length2 <= 0.0
+            ? null
+            : ContactShadowLight.directional(
+                viewDirection(-sunDirection, right, up, forward),
+                light!.contactShadowDistance,
+              ),
+      );
+      for (final holder in _contactChannels.holders) {
+        if (contactShadowLowTier) break;
+        contactShadowLights.add(
+          contactShadowLightInView(
+            holder,
+            eye: camera.position,
+            right: right,
+            up: up,
+            forward: forward,
+          ),
+        );
+      }
+    }
+    final wantContactShadows = contactShadowLights.any((l) => l != null);
     final wantDepthPrepass =
         bindSceneDepth ||
         wantCustomNormals ||
@@ -4635,10 +4690,7 @@ base class Scene implements SceneGraph {
         wantCustomDepth;
     IrradianceFieldBinding? irradianceBinding;
     if (projectionValid) {
-      // The occlusion chain also carries the sun contact-shadow term, so it
-      // runs (with occlusion sampling zeroed) when only contact shadows ask
-      // for it.
-      final wantAo = ambientOcclusion.enabled || wantContactShadows;
+      final wantAo = ambientOcclusion.enabled;
       final cameraForward = camera.forward;
       final cameraRight = camera.up.cross(cameraForward)..normalize();
       final cameraUp = cameraForward.cross(cameraRight)..normalize();
@@ -4653,9 +4705,11 @@ base class Scene implements SceneGraph {
         // full-resolution base, so it also renders the prepass full size. A
         // material sampling scene depth reads it as an image, so it also gets
         // full resolution; a reduced prepass stair-steps every depth-driven
-        // edge it draws.
+        // edge it draws. Contact shadows march at the prepass's resolution,
+        // so above the low tier they want it full size too.
         final depthDimensions =
             (wantAo &&
+                (!wantContactShadows || contactShadowLowTier) &&
                 !ambientOcclusion.depthMipChain &&
                 !enableTaa &&
                 !wantSsr &&
@@ -4715,16 +4769,20 @@ base class Scene implements SceneGraph {
           ),
         );
       }
+      if (wantContactShadows) {
+        graph.addPass(
+          ContactShadowPass(
+            projection: projection,
+            settings: contactShadows,
+            steps: contactShadows.stepsFor(effectiveRenderQualityTier),
+            channels: contactShadowLights,
+            temporalNoiseFrame: taaState?.frameIndex ?? 0,
+            packDepth: contactShadowLowTier,
+            halfResolution: contactShadowLowTier,
+          ),
+        );
+      }
       if (wantAo) {
-        Vector3? contactDirectionView;
-        if (wantContactShadows) {
-          final toLight = -(lightDirection ?? light.direction).normalized();
-          contactDirectionView = Vector3(
-            toLight.dot(cameraRight),
-            toLight.dot(cameraUp),
-            toLight.dot(cameraForward),
-          );
-        }
         Matrix4? ssgiReprojection;
         if (wantIndirectLight) {
           // Maps the gather's view-space positions (the camera basis above,
@@ -4760,10 +4818,6 @@ base class Scene implements SceneGraph {
             dimensions: pixelSize,
             settings: ambientOcclusion,
             projection: projection,
-            contactDirectionView: contactDirectionView,
-            contactDistance: wantContactShadows
-                ? light.contactShadowDistance
-                : 0.0,
             sceneRadiance: wantIndirectLight ? _ssgiHistoryColor : null,
             ssgiReprojection: ssgiReprojection,
             temporalNoiseFrame: taaState?.frameIndex ?? 0,
@@ -4821,7 +4875,8 @@ base class Scene implements SceneGraph {
         ssaoDirectLightAffect: ambientOcclusion.directLightAffect,
         ssaoMultiBounce: ambientOcclusion.multiBounce,
         ssaoBentNormals: ambientOcclusionCarriesBentNormals(ambientOcclusion),
-        ssaoContactShadows: wantContactShadows && projectionValid,
+        screenSpaceShadows: wantContactShadows,
+        screenSpaceShadowsPackDepth: contactShadowLowTier,
         ssaoIndirectLight: wantIndirectLight && projectionValid,
         irradianceField: irradianceBinding,
         layerMask: view.layerMask,

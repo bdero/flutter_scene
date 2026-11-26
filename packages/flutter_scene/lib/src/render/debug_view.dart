@@ -135,6 +135,17 @@ enum SurfaceDebugChannel {
   /// emitters or lower it for bright ones.
   emissive(26, 'emissive', 'Emissive', SurfaceDebugGroup.surface),
 
+  /// The screen-space contact shadow mask under the surface: black where the
+  /// primary directional light's contact shadow falls, and red, green, and
+  /// blue tints for the other lights holding mask channels. White where no
+  /// light casts a contact shadow or the surface does not receive them.
+  contactShadows(
+    27,
+    'contact_shadows',
+    'Contact shadows',
+    SurfaceDebugGroup.surface,
+  ),
+
   clearcoat(40, 'clearcoat', 'Clearcoat', SurfaceDebugGroup.physical),
   clearcoatRoughness(
     41,

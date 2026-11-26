@@ -118,7 +118,6 @@ List<String> discoverFmatMaterials(
 /// inside these are not tracked until `impellerc --depfile` is consumed in
 /// `--shader-bundle` mode (bdero/flutter_gpu_shaders#15).
 const _frameworkShaderFiles = <String>[
-  'contact_shadow.glsl',
   'depth_bias.glsl',
   'depth_mask.glsl',
   'diffuse_sh.glsl',

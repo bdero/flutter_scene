@@ -101,9 +101,19 @@ void main() {
       uniforms,
       contains(
         '#ifndef FLUTTER_SCENE_SKIP_SHADOWS\n'
-        'uniform highp sampler2D shadow_map;\n'
-        '#endif',
+        'uniform highp sampler2D shadow_map;\n',
       ),
+    );
+    // The contact shadow mask shares the shadow map's guard.
+    expect(
+      RegExp(
+        r'#ifndef FLUTTER_SCENE_SKIP_SHADOWS\n'
+        r'uniform highp sampler2D shadow_map;\n'
+        r'(//[^\n]*\n)*'
+        r'uniform highp sampler2D screen_space_shadows;\n'
+        r'#endif',
+      ).hasMatch(uniforms),
+      isTrue,
     );
   });
 
@@ -205,9 +215,10 @@ void main() {
       }
       // Pinned so a new engine sampler shows up as a failure here rather than
       // as a rejected skinned draw on a minimum-spec driver. The irradiance
-      // field left this untouched because it rides the coefficient texture,
-      // and the light-index entries share the punctual lights' texture.
-      expect(worst, 13);
+      // field left this untouched because it rides the coefficient texture.
+      // The contact shadow mask took the unit the light-index entries freed
+      // when they moved into the punctual lights' texture.
+      expect(worst, 14);
     } finally {
       temp.deleteSync(recursive: true);
     }

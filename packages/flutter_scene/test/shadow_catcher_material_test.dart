@@ -151,6 +151,7 @@ void main() {
             'shadow_map',
             'ssao_texture',
             'punctual_lights',
+            'screen_space_shadows',
             'baked_shadow_texture',
           }),
         );

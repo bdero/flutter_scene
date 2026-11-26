@@ -73,6 +73,7 @@ vec2 debug_active_range;
 #define DEBUG_CHANNEL_SPECULAR 24.0
 #define DEBUG_CHANNEL_OCCLUSION 25.0
 #define DEBUG_CHANNEL_EMISSIVE 26.0
+#define DEBUG_CHANNEL_CONTACT_SHADOWS 27.0
 // Physical.
 #define DEBUG_CHANNEL_CLEARCOAT 40.0
 #define DEBUG_CHANNEL_CLEARCOAT_ROUGHNESS 41.0
@@ -356,6 +357,32 @@ vec3 DebugPhysical(MaterialInputs material, float channel) {
   return DebugUnavailable();
 }
 
+// The contact shadow mask under this fragment: the primary directional light
+// darkens toward black, the lights in g, b, and a tint red, green, and blue.
+vec3 DebugContactShadows() {
+#if defined(FLUTTER_SCENE_ENGINE_LIGHTING_DECLARED) && \
+    !defined(FLUTTER_SCENE_SKIP_SHADOWS)
+  if (frag_info.ssao_lighting.w < 0.5) {
+    return vec3(1.0);
+  }
+  ivec2 size = textureSize(screen_space_shadows, 0);
+  ivec2 coord = clamp(ivec2(gl_FragCoord.xy * frag_info.ssao_params.zw *
+                            vec2(size)),
+                      ivec2(0), size - ivec2(1));
+  vec4 mask = texelFetch(screen_space_shadows, coord, 0);
+  vec3 color = vec3(mask.r);
+  // A reduced-resolution mask carries depth in gba.
+  if (frag_info.ssao_lighting.w < 1.5) {
+    color *= mix(vec3(1.0, 0.15, 0.15), vec3(1.0), mask.g);
+    color *= mix(vec3(0.15, 1.0, 0.15), vec3(1.0), mask.b);
+    color *= mix(vec3(0.15, 0.15, 1.0), vec3(1.0), mask.a);
+  }
+  return color;
+#else
+  return DebugUnavailable();
+#endif
+}
+
 // The display-referred color for the active channel. Alpha is always 1: a
 // view replaces the surface, it never blends with what is behind it.
 vec4 DebugSurfaceOutputFor(MaterialInputs material) {
@@ -425,6 +452,8 @@ vec4 DebugSurfaceOutputFor(MaterialInputs material) {
       out_color = DebugScalar(material.occlusion);
     } else if (channel == DEBUG_CHANNEL_EMISSIVE) {
       out_color = DebugColor(material.emissive);
+    } else if (channel == DEBUG_CHANNEL_CONTACT_SHADOWS) {
+      out_color = DebugContactShadows();
     } else {
       out_color = DebugUnavailable();
     }

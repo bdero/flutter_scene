@@ -46,6 +46,8 @@ const int kMaxFroxelLights = 255;
 //          extent zw), or a point light's two tiles' top-left corners.
 //   col 9: a spot's depth bias, normal bias, softness, and inverse tile
 //          resolution, or a point light's tile extent in xy.
+//   col 10: x the screen-space shadow mask channel the light's contact
+//          shadow rides (1 g, 2 b, 3 a; 0 none). yzw unused.
 // The shader fetches these texels directly, sidestepping the GLSL ES 1.00 ban
 // on dynamically indexing a uniform array in a fragment shader. The shadow
 // data rides here rather than in its own texture so no extra sampler is
@@ -289,6 +291,9 @@ class PunctualLightBuffer {
     // Where the shadow tiles went. Required when either frame is set.
     ShadowAtlasLayout? shadowAtlas,
     bool enableFroxels = true,
+    // The screen-space shadow mask channel each light's contact shadow
+    // rides, 0 for none. Null gives every light none.
+    int Function(Object light)? contactChannelOf,
   }) {
     // One build per frame, so this is where the rings roll over.
     _froxelRing.beginFrame();
@@ -298,6 +303,7 @@ class PunctualLightBuffer {
       spots,
       areas,
       primaryDirectional: primaryDirectional,
+      contactChannelOf: contactChannelOf,
     );
     final count = packed.count;
     if (count == 0) {
@@ -866,6 +872,7 @@ class PunctualLightBuffer {
     required List<PointLightComponent> points,
     required List<SpotLightComponent> spots,
     List<RectAreaLightComponent> areas = const [],
+    int Function(Object light)? contactChannelOf,
   }) {
     final packed = _packLights(
       directionals,
@@ -875,6 +882,7 @@ class PunctualLightBuffer {
       primaryDirectional:
           primaryDirectional ??
           (directionals.isEmpty ? null : directionals.first),
+      contactChannelOf: contactChannelOf,
     );
     return (packed.params, packed.count);
   }
@@ -885,6 +893,7 @@ class PunctualLightBuffer {
     List<SpotLightComponent> spots,
     List<RectAreaLightComponent> areas, {
     DirectionalLightComponent? primaryDirectional,
+    int Function(Object light)? contactChannelOf,
   }) {
     final additionalDirectionalCount = directionals
         .where((d) => !identical(d, primaryDirectional))
@@ -913,6 +922,7 @@ class PunctualLightBuffer {
       floats[base + 4] = light.color.x * light.intensity;
       floats[base + 5] = light.color.y * light.intensity;
       floats[base + 6] = light.color.z * light.intensity;
+      floats[base + 40] = (contactChannelOf?.call(component) ?? 0).toDouble();
       cullables.add(CullableLight(row, null, channelMask: light.channelMask));
       row++;
     }
@@ -934,6 +944,7 @@ class PunctualLightBuffer {
       floats[base + 13] = -1.0;
       floats[base + 14] = math.max(light.falloffExponent, 0.0);
       floats[base + 15] = math.max(light.radius, 0.0);
+      floats[base + 40] = (contactChannelOf?.call(component) ?? 0).toDouble();
       cullables.add(
         CullableLight(
           row,
@@ -972,6 +983,7 @@ class PunctualLightBuffer {
       floats[base + 13] = -1.0;
       floats[base + 14] = math.max(light.falloffExponent, 0.0);
       floats[base + 15] = math.max(light.radius, 0.0);
+      floats[base + 40] = (contactChannelOf?.call(component) ?? 0).toDouble();
       cullables.add(
         CullableLight(
           row,

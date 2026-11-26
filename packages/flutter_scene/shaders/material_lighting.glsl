@@ -420,51 +420,16 @@ highp vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
 #if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
     !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
 // Upsamples a reduced-resolution occlusion texture whose ba carry each texel's
-// packed depth. Bilinear weights are scaled by how close each texel's depth
-// lies to this surface's plane, predicted from [view_depth] and its screen
-// derivative [depth_slope]. When no texel lies on the plane, the one closest
-// in depth is used.
+// packed depth (see DepthAwareBlend).
 vec4 SampleOcclusionBilateral(highp vec2 screen_uv, highp float view_depth,
                               highp vec2 depth_slope) {
   ivec2 size = textureSize(ssao_texture, 0);
   highp vec2 position = screen_uv * vec2(size) - 0.5;
-  highp vec2 base = floor(position);
-  highp vec2 fraction = position - base;
-  highp vec2 pixels_per_texel = 1.0 / (vec2(size) * frag_info.ssao_params.zw);
-  bool orthographic = frag_info.view_projection.z > 0.5;
-  // A plane is linear in reciprocal depth under perspective.
-  highp float inverse_depth = 1.0 / max(view_depth, 1e-6);
-  highp vec2 inverse_slope = -depth_slope * inverse_depth * inverse_depth;
-  // Half a pixel of slope covers the gap between a texel's center and the
-  // pixel its depth was taken from.
-  highp float tolerance = 0.02 * abs(view_depth) +
-                          0.5 * (abs(depth_slope.x) + abs(depth_slope.y)) +
-                          1e-4;
-  vec4 sum = vec4(0.0);
-  float weight_sum = 0.0;
-  vec4 closest = vec4(1.0);
-  highp float closest_delta = 1e30;
+  vec4 texels[4];
   for (int i = 0; i < 4; i++) {
-    ivec2 corner = ivec2(i - (i / 2) * 2, i / 2);
-    ivec2 coord = clamp(ivec2(base) + corner, ivec2(0), size - ivec2(1));
-    vec4 texel = texelFetch(ssao_texture, coord, 0);
-    highp vec2 offset = (vec2(coord) - position) * pixels_per_texel;
-    highp float expected =
-        orthographic
-            ? view_depth + dot(depth_slope, offset)
-            : 1.0 / max(inverse_depth + dot(inverse_slope, offset), 1e-12);
-    highp float delta = abs(UnpackOcclusionDepth(texel.ba) - expected);
-    vec2 bilinear = mix(1.0 - fraction, fraction, vec2(corner));
-    float weight = bilinear.x * bilinear.y *
-                   clamp(1.0 - delta / tolerance, 0.0, 1.0);
-    sum += texel * weight;
-    weight_sum += weight;
-    if (delta < closest_delta) {
-      closest_delta = delta;
-      closest = texel;
-    }
+    texels[i] = texelFetch(ssao_texture, DepthAwareCorner(position, i, size), 0);
   }
-  return weight_sum > 1e-4 ? sum / weight_sum : closest;
+  return DepthAwareBlend(texels, position, size, view_depth, depth_slope);
 }
 #endif
 
@@ -503,6 +468,13 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   highp float occlusion_view_depth = GetFragmentViewDepth();
   highp vec2 occlusion_depth_slope =
       vec2(dFdx(occlusion_view_depth), dFdy(occlusion_view_depth));
+#endif
+#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && \
+    !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
+  // For upsampling a reduced-resolution contact shadow mask.
+  highp float contact_view_depth = GetFragmentViewDepth();
+  highp vec2 contact_depth_slope =
+      vec2(dFdx(contact_view_depth), dFdy(contact_view_depth));
 #endif
 #if defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION) && \
     !defined(FLUTTER_SCENE_SKIP_SSAO)
@@ -589,15 +561,13 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
           ? SampleShadow(v_position, GetWorldNormal())
           : 1.0;
 #endif
-#if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
-    !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION) && \
+#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && \
     !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
-  // Screen-space contact shadow for the sun, marched by the occlusion pass.
-  // Applies whether or not a shadow map is active, grounding small contacts
-  // that shadow-map resolution and bias miss.
-  if (frag_info.ssao_lighting.w > 0.5 && frag_info.camera_up.w < 0.5) {
-    shadow = min(shadow, ssao_sample.g);
-  }
+  // The sun's screen-space contact shadow. Applies whether or not a shadow
+  // map is active, grounding small contacts that shadow-map resolution and
+  // bias miss.
+  shadow = min(shadow, SampleScreenSpaceSunShadow(contact_view_depth,
+                                                  contact_depth_slope));
 #endif
 #ifdef FLUTTER_SCENE_PARALLAX_OCCLUSION
   // Parallax self-shadowing, the relief's own occlusion of the sun.
@@ -816,6 +786,8 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     light_context.shadow = 1.0;
     light_context.direction = vec3(0.0);
 #endif
+    // The light's shadow-map visibility, joined below by its contact shadow.
+    float light_shadow = 1.0;
     if (type < 0.5) {
       // Directional: the travel direction is in texel 2; no attenuation.
       punctual_light_vector = -normalize(FetchPunctualTexel(light_row, 2).xyz);
@@ -883,12 +855,8 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
         if (cone > 0.0 && l3.y > -0.5 &&
             frag_info.shadow_atlas_params.x > 0.5) {
-          float spot_shadow =
+          light_shadow =
               SampleSpotShadow(light_row, v_position, GetWorldNormal());
-          radiance *= spot_shadow;
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-          light_context.shadow = spot_shadow;
-#endif
         }
 #endif
       }
@@ -897,16 +865,29 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                frag_info.shadow_atlas_params.x > 0.5) {
         // Point shadow, when this light's cube faces ride the shared atlas
         // (l3.y is its shadow slot).
-        float point_shadow =
+        light_shadow =
             SamplePointShadow(light_row, v_position, GetWorldNormal());
-        radiance *= point_shadow;
-#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
-        light_context.shadow = point_shadow;
-#endif
       }
 #endif
     }
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+    // The light's screen-space contact shadow, when it holds a channel of the
+    // mask (texel 10.x, 1 to 3 for g, b, and a). The minimum with the shadow
+    // map keeps a contact that both see from darkening twice. A
+    // reduced-resolution mask (ssao_lighting.w of 2) carries depth there.
+    highp float contact_channel = FetchPunctualTexel(light_row, 10).x;
+    if (contact_channel > 0.5 && frag_info.ssao_lighting.w < 1.5) {
+      vec4 contact_mask = SampleScreenSpaceShadows();
+      light_shadow = min(light_shadow,
+                         contact_channel < 1.5
+                             ? contact_mask.g
+                             : (contact_channel < 2.5 ? contact_mask.b
+                                                      : contact_mask.a));
+    }
+#endif
+    radiance *= light_shadow;
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+    light_context.shadow = light_shadow;
     light_context.light_vector = punctual_light_vector;
     light_context.radiance = radiance;
 #ifdef FLUTTER_SCENE_HOOK_LIGHT

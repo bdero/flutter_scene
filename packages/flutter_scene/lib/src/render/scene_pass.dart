@@ -13,6 +13,8 @@ import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
+import 'package:flutter_scene/src/render/contact_shadow_pass.dart'
+    show kScreenSpaceShadowsBlackboardKey;
 import 'package:flutter_scene/src/render/punctual_lights.dart';
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
@@ -94,7 +96,8 @@ class ScenePass extends RenderGraphPass {
     double ssaoDirectLightAffect = 0.0,
     double ssaoMultiBounce = 0.0,
     bool ssaoBentNormals = false,
-    bool ssaoContactShadows = false,
+    bool screenSpaceShadows = false,
+    bool screenSpaceShadowsPackDepth = false,
     bool ssaoIndirectLight = false,
     IrradianceFieldBinding? irradianceField,
     int layerMask = kRenderLayerAll,
@@ -146,7 +149,8 @@ class ScenePass extends RenderGraphPass {
        _ssaoDirectLightAffect = ssaoDirectLightAffect,
        _ssaoMultiBounce = ssaoMultiBounce,
        _ssaoBentNormals = ssaoBentNormals,
-       _ssaoContactShadows = ssaoContactShadows,
+       _screenSpaceShadows = screenSpaceShadows,
+       _screenSpaceShadowsPackDepth = screenSpaceShadowsPackDepth,
        _ssaoIndirectLight = ssaoIndirectLight,
        _irradianceField = irradianceField,
        _fog = fog,
@@ -181,7 +185,10 @@ class ScenePass extends RenderGraphPass {
   final double _ssaoDirectLightAffect;
   final double _ssaoMultiBounce;
   final bool _ssaoBentNormals;
-  final bool _ssaoContactShadows;
+  // Whether ContactShadowPass publishes a mask for this view.
+  final bool _screenSpaceShadows;
+  // Whether that mask is the low tier's, the sun alone with packed depth.
+  final bool _screenSpaceShadowsPackDepth;
   final bool _ssaoIndirectLight;
   final IrradianceFieldBinding? _irradianceField;
   final Fog? _fog;
@@ -321,6 +328,9 @@ class ScenePass extends RenderGraphPass {
     final shadowAtlasTexture = context.blackboard.get<gpu.Texture>(
       kShadowMapBlackboardKey,
     );
+    final screenSpaceShadowMask = _screenSpaceShadows
+        ? context.blackboard.get<gpu.Texture>(kScreenSpaceShadowsBlackboardKey)
+        : null;
     final ssaoMap = context.blackboard.get<gpu.Texture>(
       kSsaoTextureBlackboardKey,
     );
@@ -385,7 +395,8 @@ class ScenePass extends RenderGraphPass {
       rectAreaLightCount: _punctualLighting.rectAreaLightCount,
       shadowMap: shadowMapForShading(
         shadowAtlasTexture,
-        holdShadowVariant: _holdShadowVariant,
+        // The mask is read in the shadow variants only.
+        holdShadowVariant: _holdShadowVariant || screenSpaceShadowMask != null,
       ),
       shadowAtlas: shadowAtlasTexture == null
           ? null
@@ -398,7 +409,8 @@ class ScenePass extends RenderGraphPass {
       ssaoDirectLightAffect: ssaoMap == null ? 0.0 : _ssaoDirectLightAffect,
       ssaoMultiBounce: ssaoMap == null ? 0.0 : _ssaoMultiBounce,
       ssaoBentNormals: ssaoMap != null && _ssaoBentNormals,
-      ssaoContactShadows: ssaoMap != null && _ssaoContactShadows,
+      screenSpaceShadowMask: screenSpaceShadowMask,
+      screenSpaceShadowMaskPacksDepth: _screenSpaceShadowsPackDepth,
       ssaoIndirectLight: ssaoMap != null && _ssaoIndirectLight,
       viewportSize: _dimensions,
       fog: _fog,

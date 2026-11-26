@@ -6,7 +6,97 @@
 // (as `frag_info`) and the `shadow_map` (unless FLUTTER_SCENE_SKIP_SHADOWS),
 // and `punctual_lights` samplers from material_engine_lighting.glsl.
 
+#include <ssao_depth_pack.glsl>
+
+// Corner [i] (0 to 3) of the 2x2 texel footprint around texel-space
+// [position] in a texture of [size] texels, clamped into it.
+ivec2 DepthAwareCorner(highp vec2 position, int i, ivec2 size) {
+  ivec2 corner = ivec2(i - (i / 2) * 2, i / 2);
+  return clamp(ivec2(floor(position)) + corner, ivec2(0), size - ivec2(1));
+}
+
+// Upsamples a reduced-resolution screen texture whose ba carry each texel's
+// packed depth. [texels] are the four DepthAwareCorner texels around
+// texel-space [position]. Bilinear weights are scaled by how close each
+// texel's depth lies to this surface's plane, predicted from [view_depth]
+// and its screen derivative [depth_slope]. When no texel lies on the plane,
+// the one closest in depth is used.
+vec4 DepthAwareBlend(vec4 texels[4], highp vec2 position, ivec2 size,
+                     highp float view_depth, highp vec2 depth_slope) {
+  highp vec2 fraction = position - floor(position);
+  highp vec2 pixels_per_texel = 1.0 / (vec2(size) * frag_info.ssao_params.zw);
+  bool orthographic = frag_info.view_projection.z > 0.5;
+  // A plane is linear in reciprocal depth under perspective.
+  highp float inverse_depth = 1.0 / max(view_depth, 1e-6);
+  highp vec2 inverse_slope = -depth_slope * inverse_depth * inverse_depth;
+  // Half a pixel of slope covers the gap between a texel's center and the
+  // pixel its depth was taken from.
+  highp float tolerance = 0.02 * abs(view_depth) +
+                          0.5 * (abs(depth_slope.x) + abs(depth_slope.y)) +
+                          1e-4;
+  vec4 sum = vec4(0.0);
+  float weight_sum = 0.0;
+  vec4 closest = vec4(1.0);
+  highp float closest_delta = 1e30;
+  for (int i = 0; i < 4; i++) {
+    ivec2 corner = ivec2(i - (i / 2) * 2, i / 2);
+    ivec2 coord = DepthAwareCorner(position, i, size);
+    vec4 texel = texels[i];
+    highp vec2 offset = (vec2(coord) - position) * pixels_per_texel;
+    highp float expected =
+        orthographic
+            ? view_depth + dot(depth_slope, offset)
+            : 1.0 / max(inverse_depth + dot(inverse_slope, offset), 1e-12);
+    highp float delta = abs(UnpackOcclusionDepth(texel.ba) - expected);
+    vec2 bilinear = mix(1.0 - fraction, fraction, vec2(corner));
+    float weight = bilinear.x * bilinear.y *
+                   clamp(1.0 - delta / tolerance, 0.0, 1.0);
+    sum += texel * weight;
+    weight_sum += weight;
+    if (delta < closest_delta) {
+      closest_delta = delta;
+      closest = texel;
+    }
+  }
+  return weight_sum > 1e-4 ? sum / weight_sum : closest;
+}
+
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
+// This fragment's texel of the screen-space contact shadow mask (1 lit per
+// channel), or all lit when the draw does not read it. Fetched, so it needs
+// no derivatives and may run in any control flow. A reduced-resolution mask
+// gives its nearest texel; SampleScreenSpaceSunShadow upsamples it.
+vec4 SampleScreenSpaceShadows() {
+  if (frag_info.ssao_lighting.w < 0.5) {
+    return vec4(1.0);
+  }
+  ivec2 size = textureSize(screen_space_shadows, 0);
+  highp vec2 uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
+  return texelFetch(screen_space_shadows,
+                    clamp(ivec2(uv * vec2(size)), ivec2(0), size - ivec2(1)),
+                    0);
+}
+
+// The primary directional light's contact visibility. A reduced-resolution
+// mask (ssao_lighting.w of 2, the sun alone with packed depth in ba) is
+// upsampled against [view_depth], with its screen derivative [depth_slope]
+// taken by the caller in uniform control flow.
+float SampleScreenSpaceSunShadow(highp float view_depth,
+                                 highp vec2 depth_slope) {
+  if (frag_info.ssao_lighting.w < 1.5) {
+    return SampleScreenSpaceShadows().r;
+  }
+  ivec2 size = textureSize(screen_space_shadows, 0);
+  highp vec2 position =
+      gl_FragCoord.xy * frag_info.ssao_params.zw * vec2(size) - 0.5;
+  vec4 texels[4];
+  for (int i = 0; i < 4; i++) {
+    texels[i] =
+        texelFetch(screen_space_shadows, DepthAwareCorner(position, i, size), 0);
+  }
+  return DepthAwareBlend(texels, position, size, view_depth, depth_slope).r;
+}
+
 // Places a tile UV (v up, as `ndc * 0.5 + 0.5`) in the atlas tile whose
 // top-left corner is `origin` and extent `extent`, both in atlas UV. The atlas
 // is a render-to-texture target stored top-down, so a top-down texture's top

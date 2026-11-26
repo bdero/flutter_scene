@@ -31,6 +31,11 @@
 * Ground-truth ambient occlusion no longer darkens grazing surfaces, since its blur runs in half float and clamps only at the end.
 * Screen-space indirect light no longer caps its red channel at 1.
 * `SceneView(webPresentation: ScenePresentation.domCanvas)` shows a web view's frames on a DOM canvas behind its Flutter content, skipping the per-frame copy into Flutter's renderer. Ancestor filters and shader masks do not apply to it, and widget captures miss it.
+* Contact shadows run in their own full-resolution pass instead of riding the ambient occlusion blur, so they stay sharp, fade at the screen edge and with distance, and no longer switch off under screen-space indirect light.
+* `PointLight.contactShadows` and `SpotLight.contactShadows` (with `contactShadowDistance`) add contact shadows for up to three lights besides the primary directional light, picked each frame by how large they look on screen.
+* `Scene.contactShadows` (`ContactShadowSettings`) sets the march's steps, thickness, distance fade, and opacity. Steps follow the quality tier, and the low tier marches the primary directional light alone at half resolution.
+* `SurfaceDebugChannel.contactShadows` shows the contact shadow mask.
+* `Lighting.screenSpaceShadowMask` carries the mask to materials, and `Lighting.ssaoContactShadows` is deprecated.
 * Point and spot lights cost lit materials one texture unit instead of two. `Lighting.punctualIndexTexture` and `punctualIndexHeight` are deprecated, since the light-index entries ride in `punctualParamsTexture`.
 * On WebGPU, `textureToPlatformImage` returns an `ImageBitmap` instead of null.
 * On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.

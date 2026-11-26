@@ -1024,6 +1024,25 @@ class DirectionalLightCodec
       get: (c) => c.light.shadowCasterFaces,
       set: (c, v) => c.light.shadowCasterFaces = v,
     ),
+    ComponentField.boolean(
+      'contactShadows',
+      defaultValue: false,
+      doc:
+          'Whether a screen-space march toward this light adds contact '
+          'shadows that shadow maps miss.',
+      group: 'Shadows',
+      get: (c) => c.light.contactShadows,
+      set: (c, v) => c.light.contactShadows = v,
+    ),
+    ComponentField.number(
+      'contactShadowDistance',
+      defaultValue: 0.3,
+      doc: 'How far the contact-shadow march reaches, in world units.',
+      group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 2), Step(0.01)],
+      get: (c) => c.light.contactShadowDistance,
+      set: (c, v) => c.light.contactShadowDistance = v,
+    ),
     // Constructor-only (DirectionalLightComponent.aimed); absent means the
     // node's rotation aims the light.
     ComponentField(
@@ -1177,6 +1196,25 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
       group: 'Shadows',
       get: (c) => c.light.shadowCasterFaces,
       set: (c, v) => c.light.shadowCasterFaces = v,
+    ),
+    ComponentField.boolean(
+      'contactShadows',
+      defaultValue: false,
+      doc:
+          'Whether a screen-space march toward this light adds contact '
+          'shadows that shadow maps miss.',
+      group: 'Shadows',
+      get: (c) => c.light.contactShadows,
+      set: (c, v) => c.light.contactShadows = v,
+    ),
+    ComponentField.number(
+      'contactShadowDistance',
+      defaultValue: 0.3,
+      doc: 'How far the contact-shadow march reaches, in world units.',
+      group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 2), Step(0.01)],
+      get: (c) => c.light.contactShadowDistance,
+      set: (c, v) => c.light.contactShadowDistance = v,
     ),
   ];
 
@@ -1342,6 +1380,25 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
       group: 'Shadows',
       get: (c) => c.light.shadowCasterFaces,
       set: (c, v) => c.light.shadowCasterFaces = v,
+    ),
+    ComponentField.boolean(
+      'contactShadows',
+      defaultValue: false,
+      doc:
+          'Whether a screen-space march toward this light adds contact '
+          'shadows that shadow maps miss.',
+      group: 'Shadows',
+      get: (c) => c.light.contactShadows,
+      set: (c, v) => c.light.contactShadows = v,
+    ),
+    ComponentField.number(
+      'contactShadowDistance',
+      defaultValue: 0.3,
+      doc: 'How far the contact-shadow march reaches, in world units.',
+      group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 2), Step(0.01)],
+      get: (c) => c.light.contactShadowDistance,
+      set: (c, v) => c.light.contactShadowDistance = v,
     ),
   ];
 

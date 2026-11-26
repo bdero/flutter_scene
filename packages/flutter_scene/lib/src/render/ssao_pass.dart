@@ -88,9 +88,9 @@ ui.Size ambientOcclusionTargetSize(
   );
 }
 
-// Two triangles of NDC positions covering the screen (6 vec2s), shared by
-// the occlusion passes.
-gpu.BufferView _fullscreenQuad() {
+/// Two triangles of NDC positions covering the screen (6 vec2s), shared by
+/// the occlusion and contact shadow passes.
+gpu.BufferView fullscreenQuad() {
   return _quadView ??= () {
     final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
       ByteData.sublistView(
@@ -135,16 +135,12 @@ class SsaoPass extends RenderGraphPass {
     required ui.Size dimensions,
     required AmbientOcclusionSettings settings,
     required ProjectionParams projection,
-    Vector3? contactDirectionView,
-    double contactDistance = 0.0,
     gpu.Texture? sceneRadiance,
     Matrix4? ssgiReprojection,
     int temporalNoiseFrame = 0,
   }) : _dimensions = dimensions,
        _settings = settings,
        _projection = projection,
-       _contactDirectionView = contactDirectionView,
-       _contactDistance = contactDistance,
        _sceneRadiance = sceneRadiance,
        _ssgiReprojection = ssgiReprojection,
        _temporalNoiseFrame = temporalNoiseFrame;
@@ -152,11 +148,6 @@ class SsaoPass extends RenderGraphPass {
   final ui.Size _dimensions;
   final AmbientOcclusionSettings _settings;
   final ProjectionParams _projection;
-
-  // View-space direction toward the sun and the march distance for the
-  // contact-shadow term; distance 0 leaves it off.
-  final Vector3? _contactDirectionView;
-  final double _contactDistance;
 
   // Last frame's scene color for the indirect-light gather, or null on the
   // first frame (a black placeholder stands in).
@@ -210,7 +201,7 @@ class SsaoPass extends RenderGraphPass {
     );
     renderPass.bindPipeline(resolvePipeline(_vertexShader, _downsampleShader));
     renderPass.setColorBlendEnable(false);
-    bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
+    bindVertexBufferCompat(renderPass, fullscreenQuad(), 6);
     renderPass.bindTexture(
       _downsampleShader.cachedUniformSlot('source'),
       source,
@@ -315,7 +306,7 @@ class SsaoPass extends RenderGraphPass {
     );
     renderPass.bindPipeline(resolvePipeline(_vertexShader, fragmentShader));
     renderPass.setColorBlendEnable(false);
-    bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
+    bindVertexBufferCompat(renderPass, fullscreenQuad(), 6);
 
     final projection = _projection;
     // Pixels per world unit at depth 1 (at any depth for an orthographic
@@ -325,7 +316,7 @@ class SsaoPass extends RenderGraphPass {
 
     // The ground-truth path appends the mat4 reprojection for the
     // indirect-light history sample; both end with the projection offset.
-    final offsetIndex = groundTruth ? 40 : 24;
+    final offsetIndex = groundTruth ? 36 : 20;
     final info = Float32List(offsetIndex + 8)
       ..[0] = aoWidth.toDouble()
       ..[1] = aoHeight.toDouble()
@@ -357,9 +348,7 @@ class SsaoPass extends RenderGraphPass {
         ..[18] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0
         ..[19] = indirect ? _settings.indirectLight : 0.0;
     } else {
-      // Must match the SsaoInfo layout in flutter_scene_ssao.frag. With
-      // occlusion disabled (a contact-shadow-only chain) the sampling zeroes
-      // out and the shader returns full visibility.
+      // Must match the SsaoInfo layout in flutter_scene_ssao.frag.
       info
         ..[8] = _settings.radius
         ..[9] = _settings.bias
@@ -371,18 +360,10 @@ class SsaoPass extends RenderGraphPass {
         ..[15] = _settings.power
         ..[16] = aoActive ? _settings.detail : 0.0;
     }
-    final contactDirection = _contactDirectionView;
-    if (contactDirection != null && _contactDistance > 0.0) {
-      info
-        ..[20] = contactDirection.x
-        ..[21] = contactDirection.y
-        ..[22] = contactDirection.z
-        ..[23] = _contactDistance;
-    }
     if (groundTruth) {
       // Identity reprojects nothing sensible, but the history is a black
       // placeholder whenever the matrix is absent, so the sample is moot.
-      (_ssgiReprojection ?? Matrix4.identity()).copyIntoArray(info, 24);
+      (_ssgiReprojection ?? Matrix4.identity()).copyIntoArray(info, 20);
     }
     renderPass.bindUniform(
       fragmentShader.cachedUniformSlot(groundTruth ? 'GtaoInfo' : 'SsaoInfo'),
@@ -490,7 +471,7 @@ class SsaoBlurPass extends RenderGraphPass {
       );
       renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
       renderPass.setColorBlendEnable(false);
-      bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
+      bindVertexBufferCompat(renderPass, fullscreenQuad(), 6);
 
       // Must match the BlurInfo layout in flutter_scene_ssao_blur.frag.
       final info = Float32List(12)
@@ -590,7 +571,7 @@ class SceneColorHistoryPass extends RenderGraphPass {
     );
     renderPass.bindPipeline(resolvePipeline(_vertexShader, _copyShader));
     renderPass.setColorBlendEnable(false);
-    bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
+    bindVertexBufferCompat(renderPass, fullscreenQuad(), 6);
     renderPass.bindTexture(
       _copyShader.cachedUniformSlot('source_texture'),
       source,

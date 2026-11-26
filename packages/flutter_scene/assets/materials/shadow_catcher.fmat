@@ -124,20 +124,30 @@ fragment {
       return;
     }
 
+    // The sun's screen-space contact shadow, live in every mode.
+    // TODO(contact-shadows-catcher): point and spot lights' contact channels
+    // (texel 10.x of their rows) darken lit surfaces but not the catcher;
+    // fold them into CatcherSpotShadowVisibility's weighted loop.
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+    highp float view_depth = GetFragmentViewDepth();
+    highp vec2 depth_slope = vec2(dFdx(view_depth), dFdy(view_depth));
+    if (frag_info.has_directional_light > 0.5) {
+      shadow_visibility = min(shadow_visibility,
+                              SampleScreenSpaceSunShadow(view_depth,
+                                                         depth_slope));
+    }
+#endif
+
     // The occlusion chain's texture for this frame. Visibility rides r (a
-    // under the indirect-light layout); the sun contact term rides g.
-    vec4 occlusion_sample = vec4(1.0);
+    // under the indirect-light layout).
     float occlusion = 1.0;
 #ifndef FLUTTER_SCENE_SKIP_SSAO
     if (frag_info.ssao_params.x > 0.5) {
-      occlusion_sample = texture(
+      vec4 occlusion_sample = texture(
           ssao_texture, gl_FragCoord.xy * frag_info.ssao_params.zw);
       occlusion = frag_info.camera_up.w > 0.5
           ? occlusion_sample.a
           : occlusion_sample.r;
-    }
-    if (frag_info.ssao_lighting.w > 0.5) {
-      shadow_visibility = min(shadow_visibility, occlusion_sample.g);
     }
 #endif
     float shadow_term =

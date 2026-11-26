@@ -1809,6 +1809,7 @@ class PhysicallyBasedMaterial extends Material {
       lighting,
       env,
       nodeChannelMask: lightChannelMask,
+      screenSpaceShadows: depthPrepassParticipates,
       modelScaleX: modelScaleX,
       modelScaleY: modelScaleY,
       modelScaleZ: modelScaleZ,

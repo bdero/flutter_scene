@@ -301,6 +301,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       lighting,
       env,
       nodeChannelMask: lightChannelMask,
+      screenSpaceShadows: depthPrepassParticipates,
       modelScaleX: modelScaleX,
       modelScaleY: modelScaleY,
       modelScaleZ: modelScaleZ,

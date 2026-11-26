@@ -1600,6 +1600,94 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // Screen-space contact shadows from a point light and a spot with their
+  // shadow maps off, so only the contact term darkens. A coin 1 cm above the
+  // floor, a row of thin pegs, a box against a wall under a raking spot, and
+  // a sphere on the floor must each ground with a tight, dark contact. Screen
+  // space indirect light is on too, which once switched contact shadows off.
+  // Guards the march, the per-light channels, and the lit shader's mask read
+  // across backends.
+  SmokeScene('contact_shadows', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.25;
+    scene.ambientOcclusion
+      ..enabled = true
+      ..method = AmbientOcclusionMethod.groundTruth
+      ..radius = 0.6
+      ..sliceCount = 2
+      ..stepsPerSlice = 4
+      ..visibilityBitmask = true
+      ..thickness = 0.3
+      ..indirectLight = 2.0;
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.75, 0.74, 0.70, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    void add(MeshGeometry geometry, vm.Vector3 position) => scene.add(
+      Node(mesh: Mesh(geometry, material))
+        ..localTransform = vm.Matrix4.translation(position),
+    );
+    add(PlaneGeometry(width: 4.0, depth: 3.2), vm.Vector3.zero());
+    add(CuboidGeometry(vm.Vector3(4.0, 1.6, 0.1)), vm.Vector3(0, 0.8, -1.25));
+    add(
+      CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5)),
+      vm.Vector3(0.9, 0.25, -0.95),
+    );
+    add(
+      CylinderGeometry(bottomRadius: 0.18, topRadius: 0.18, height: 0.03),
+      vm.Vector3(-0.95, 0.025, 0.55),
+    );
+    for (var i = 0; i < 5; i++) {
+      add(
+        CylinderGeometry(
+          bottomRadius: 0.03,
+          topRadius: 0.03,
+          height: 0.5,
+          radialSegments: 12,
+        ),
+        vm.Vector3(-0.3 + i * 0.2, 0.25, 0.45),
+      );
+    }
+    add(SphereGeometry(radius: 0.3), vm.Vector3(-0.1, 0.3, -0.35));
+    scene.add(
+      Node()
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(-0.3, 1.4, 0.7))
+        ..addComponent(
+          PointLightComponent(
+            PointLight(
+              intensity: 5.0,
+              range: 6.0,
+              contactShadows: true,
+              contactShadowDistance: 0.5,
+            ),
+          ),
+        ),
+    );
+    scene.add(
+      Node()
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(2.0, 0.55, -0.6))
+        ..addComponent(
+          SpotLightComponent(
+            SpotLight(
+              intensity: 10.0,
+              range: 8.0,
+              direction: vm.Vector3(-1.0, -0.12, -0.15),
+              outerConeAngle: 0.8,
+              contactShadows: true,
+              contactShadowDistance: 0.4,
+            ),
+          ),
+        ),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(2.6, 2.4, 3.2),
+        target: vm.Vector3(0, 0.2, -0.2),
+      ),
+    );
+  }),
   // Mixed shadow sizes in one atlas: 2048 cascades, a soft 512 spot, a sharp
   // 1024 spot, and a 256 point light. Four 2048 cascades plus a spot tile in
   // one row would pass 8192, so this guards the 2D packing and each light's

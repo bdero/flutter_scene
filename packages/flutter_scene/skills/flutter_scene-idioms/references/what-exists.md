@@ -340,10 +340,16 @@ Lights (all in `light.dart`, all fields mutable):
   a zero `intensity` still renders them, and toggling `castsShadow` pops and recompiles.
 - `PointLight({color, intensity = 1.0, range = 0.0, falloffExponent = 2.0, castsShadow = false,
   shadowMapResolution = 512, shadowNear = 0.1, shadowDepthBias = 0.0, shadowNormalBias = 0.1,
-  shadowSoftness = 1.0, shadowCasterFaces = front})`. Shadows render six cube faces into the shared
-  atlas (a limited number of point casters per frame; the rest shade unshadowed).
+  shadowSoftness = 1.0, shadowCasterFaces = front, contactShadows = false,
+  contactShadowDistance = 0.3})`. Shadows render six cube faces into the shared atlas (a limited
+  number of point casters per frame; the rest shade unshadowed).
 - `SpotLight({color, intensity = 1.0, range = 0.0, falloffExponent = 2.0, direction /*(0,-1,0)*/,
-  innerConeAngle = 0.0, outerConeAngle = pi/4, castsShadow = false, ...})`.
+  innerConeAngle = 0.0, outerConeAngle = pi/4, castsShadow = false, contactShadows = false,
+  contactShadowDistance = 0.3, ...})`.
+- Contact shadows (`contactShadows` on a light) march the depth buffer toward the light, with or
+  without a shadow map. The primary directional light always gets one; up to three other lights
+  share the rest each frame. `scene.contactShadows` (`ContactShadowSettings`: `sampleCount`,
+  `thickness`, `maxDistance`, `fadeRange`, `opacity`) shapes them all.
 - `RectAreaLight({color, intensity = 1.0, width = 1.0, height = 1.0, range = 0.0})`. Local XY plane,
   emits along +Z, no shadows.
 - `SunLight(SunSky source, {castsShadow = true, ...})` drives `Scene.directionalLight` from a sky.

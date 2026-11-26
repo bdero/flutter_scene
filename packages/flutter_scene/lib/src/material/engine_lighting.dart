@@ -67,11 +67,15 @@ class EngineLightingUniforms {
   /// misses the directional light's own channels the light is packed away for
   /// this draw, which is what suppresses the primary directional per object
   /// (the punctual lights are already filtered by the culler).
+  ///
+  /// [screenSpaceShadows] is whether the draw reads the screen-space shadow
+  /// mask, which describes only the surfaces in the depth prepass.
   static void packInto(
     Float32List fragInfo,
     Lighting lighting,
     EnvironmentMap env, {
     int nodeChannelMask = 0xFF,
+    bool screenSpaceShadows = true,
     double modelScaleX = 1.0,
     double modelScaleY = 1.0,
     double modelScaleZ = 1.0,
@@ -199,7 +203,12 @@ class EngineLightingUniforms {
     fragInfo[164] = lighting.ssaoDirectLightAffect.clamp(0.0, 1.0);
     fragInfo[165] = lighting.ssaoMultiBounce.clamp(0.0, 1.0);
     fragInfo[166] = lighting.ssaoBentNormals ? 1.0 : 0.0;
-    fragInfo[167] = lighting.ssaoContactShadows ? 1.0 : 0.0;
+    // ssao_lighting.w: how this draw reads the screen-space shadow mask. 0
+    // not at all, 1 per pixel, 2 upsampled against the depth in its ba.
+    fragInfo[167] =
+        !screenSpaceShadows || lighting.screenSpaceShadowMask == null
+        ? 0.0
+        : (lighting.screenSpaceShadowMaskPacksDepth ? 2.0 : 1.0);
     // model_scale at [168..170]: the draw's model scale, set by the encoder
     // on the material before bind (replaces the old v_model_scale varying).
     fragInfo[168] = modelScaleX;
@@ -619,6 +628,13 @@ class EngineLightingUniforms {
         // the portable choice.
         sampler: _nearestSampler,
       );
+      // The contact shadow mask, fetched texel by texel. White when no light
+      // has contact shadows.
+      pass.bindTexture(
+        shader.cachedUniformSlot('screen_space_shadows'),
+        Material.whitePlaceholder(lighting.screenSpaceShadowMask),
+        sampler: _nearestClampSampler,
+      );
     }
     // The environment's diffuse SH coefficients, or the irradiance field's
     // atlas (whose first two rows are that same strip) when the field is on.
@@ -694,6 +710,11 @@ class EngineLightingUniforms {
       pass.bindTexture(
         shader.cachedUniformSlot('punctual_lights'),
         Material.whitePlaceholder(lighting.punctualParamsTexture),
+        sampler: _nearestClampSampler,
+      );
+      pass.bindTexture(
+        shader.cachedUniformSlot('screen_space_shadows'),
+        Material.whitePlaceholder(lighting.screenSpaceShadowMask),
         sampler: _nearestClampSampler,
       );
     }
