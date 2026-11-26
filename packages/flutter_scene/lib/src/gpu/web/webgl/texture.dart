@@ -170,14 +170,19 @@ final class WebGlTexture extends Texture {
       gl.texParameteri(
         target,
         web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
-        mipLevelCount > 1
-            ? web.WebGL2RenderingContext.LINEAR_MIPMAP_LINEAR
-            : web.WebGL2RenderingContext.LINEAR,
+        switch ((mipLevelCount > 1, _nearestOnly)) {
+          (true, false) => web.WebGL2RenderingContext.LINEAR_MIPMAP_LINEAR,
+          (true, true) => web.WebGL2RenderingContext.NEAREST_MIPMAP_NEAREST,
+          (false, false) => web.WebGL2RenderingContext.LINEAR,
+          (false, true) => web.WebGL2RenderingContext.NEAREST,
+        },
       );
       gl.texParameteri(
         target,
         web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
-        web.WebGL2RenderingContext.LINEAR,
+        _nearestOnly
+            ? web.WebGL2RenderingContext.NEAREST
+            : web.WebGL2RenderingContext.LINEAR,
       );
       gl.texParameteri(
         target,
@@ -285,6 +290,12 @@ final class WebGlTexture extends Texture {
   final int mipLevelCount;
   @override
   final int layerCount;
+
+  /// Whether this texture can only be sampled with nearest filtering.
+  bool get _nearestOnly =>
+      (format == PixelFormat.r32Float ||
+          format == PixelFormat.r32g32b32a32Float) &&
+      !_gpuContext.float32Filterable;
 
   /// Whether this texture is allocated with `texStorage3D` and addressed by
   /// layer.

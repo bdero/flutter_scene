@@ -80,6 +80,11 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   }
 
   final WebGlContext _gpuContext;
+  static int _nextId = 0;
+
+  /// Identifies this buffer in VAO cache keys; never reused.
+  final int _id = ++_nextId;
+
   late final Uint8List _staging;
 
   /// Non-null for a buffer created by [WebGlDeviceBuffer._initializeTyped].
@@ -164,6 +169,15 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
       gl.bindBuffer(target, buffer);
     }
     return buffer;
+  }
+
+  /// The non-element GL buffer, created on first use but otherwise not bound,
+  /// for `bindBufferRange`, which binds `UNIFORM_BUFFER` itself.
+  web.WebGLBuffer _ensureNonElementBuffer() {
+    assert(_valid, 'A released DeviceBuffer was bound.');
+    final existing = _glOtherBuffer;
+    if (existing != null) return existing;
+    return _bindForTarget(web.WebGL2RenderingContext.UNIFORM_BUFFER);
   }
 
   /// Overwrite a byte range. Source bytes must fit at the destination

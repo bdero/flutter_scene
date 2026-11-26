@@ -17,6 +17,8 @@
 * SMAA's edge pass skips writing pixels with no edge.
 * `SceneView(webPresentation: ScenePresentation.domCanvas)` shows a web view's frames on a DOM canvas behind its Flutter content, skipping the per-frame copy into Flutter's renderer. Ancestor filters and shader masks do not apply to it, and widget captures miss it.
 * On WebGPU, `textureToPlatformImage` returns an `ImageBitmap` instead of null.
+* On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.
+* WebGL2 reuses its present framebuffer and skips redundant vertex array and uniform buffer calls per draw.
 
 ## 0.24.6
 
