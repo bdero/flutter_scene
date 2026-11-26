@@ -261,6 +261,16 @@ PreprocessedMaterial _fmatMaterial(String name) {
   );
 }
 
+/// The lit cutout card loaded by [_loadLitCutout].
+PreprocessedMaterial? _litCutoutMaterial;
+
+/// Loads the lit cutout through the public loader, which wires its own
+/// depth-pass fragments the way an app's material gets them.
+Future<void> _loadLitCutout() async {
+  await loadSmokeMaterials();
+  _litCutoutMaterial ??= await loadFmatMaterial('assets/lit_cutout.fmat');
+}
+
 /// The pre-baked environment preloaded by [loadPrebakedIbl].
 EnvironmentMap? _prebakedIblEnvironment;
 
@@ -1089,11 +1099,12 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
-  // The ground-truth occlusion method with the visibility bitmask and
-  // multi-bounce enabled. Exercises the horizon-slice shader, the uint
-  // bitfield path (including the manual popcount on GLES/WebGL2), and the
-  // albedo-tinted bounce in the material shader. A thin bar over a plane
-  // checks the constant-thickness occluder model.
+  // The ground-truth occlusion method in horizon mode at half resolution,
+  // with multi-bounce and the depth mip chain (so a full-resolution prepass
+  // is downsampled into the occlusion's base level). A receding side wall
+  // and floor crease seen at grazing angles catch stippling from the
+  // denoiser, the base-level subsample, and the upsample in the material.
+  // The visibility bitmask is covered by the ssgi scene.
   SmokeScene('ambient_occlusion_gtao', () {
     final scene = Scene();
     _configureAmbientOcclusion(scene);
@@ -1103,9 +1114,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..intensity = 1.5
       ..sliceCount = 3
       ..stepsPerSlice = 6
-      ..visibilityBitmask = true
-      ..thickness = 0.35
-      ..multiBounce = 1.0;
+      ..multiBounce = 1.0
+      ..halfResolution = true;
     final material = PhysicallyBasedMaterial()
       ..baseColorFactor = vm.Vector4(0.72, 0.5, 0.34, 1.0)
       ..metallicFactor = 0.0
@@ -1125,6 +1135,14 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.8, 0.8, 0.8)), material))
         ..localTransform = vm.Matrix4.translation(vm.Vector3(-1.6, -0.5, -1.1)),
     );
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 8.0, depth: 5.0), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, -1.2, 1.5)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.1, 2.4, 4.4)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(1.0, 0, 1.2)),
+    );
     return (
       scene: scene,
       camera: PerspectiveCamera(
@@ -1132,7 +1150,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         target: vm.Vector3(0, -0.2, -1.0),
       ),
     );
-  }),
+  }, fullCoverage: true),
   // Screen-space indirect light: a sunlit red wall beside a white floor and
   // cuboid. The bitmask gather must bleed red bounce onto the floor and the
   // cuboid's wall-facing side. Guards the fp16 chain, the sector-delta
@@ -2414,6 +2432,44 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _shadowCamera());
   }, preload: loadSmokeMaterials),
+  // A lit alpha_to_coverage card standing on a ground plane under a shadowing
+  // sun. The card's holes must read in its shadow and against the ground,
+  // which exercises the material's own depth and shadow fragments on every
+  // backend.
+  SmokeScene('lit_cutout', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(0.35, -1.0, 0.7),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.6, depth: 3.6),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.78, 0.76, 0.72, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      ),
+    );
+    // Stood upright facing +Z, toward the camera.
+    scene.add(
+      Node(
+          mesh: Mesh(
+            PlaneGeometry(width: 1.6, depth: 1.2),
+            _litCutoutMaterial!,
+          ),
+        )
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0, 0.65, -0.2)) *
+            vm.Matrix4.rotationX(math.pi / 2),
+    );
+    return (scene: scene, camera: _shadowCamera());
+  }, preload: _loadLitCutout),
   // Distance fog: a near and a far cuboid, the far one fading toward the fog
   // color, with height fog and sun in-scatter enabled so those branches of
   // ApplyFog run too. Geometry stays central so the corners keep the clear

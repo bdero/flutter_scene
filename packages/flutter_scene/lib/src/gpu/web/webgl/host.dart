@@ -31,6 +31,12 @@ final class WebGlHost extends GpuHost {
   Object? textureToPlatformImage(Texture texture) =>
       webGlContext.snapshotTextureBitmap(texture);
 
+  @override
+  void presentToCanvas(Texture texture, Object canvas) => presentBitmapToCanvas(
+    webGlContext.snapshotTextureBitmap(texture),
+    canvas,
+  );
+
   /// Wraps [handle], a `WebGLFramebuffer` or `WebGLTexture` created on this
   /// backend's own context (see [nativeGraphicsContext]).
   @override

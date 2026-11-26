@@ -217,14 +217,14 @@ final class _WebGpuDeviceBuffer extends DeviceBuffer {
     _ => _copyTypedDataToJs(source),
   };
 
-  /// Copies [source], whose length is a multiple of 4, into a list JS can
-  /// take as is.
+  /// Copies [source] into a word list JS can take as is. An unaligned tail is
+  /// zero-padded to a whole word, which `writeTexture`'s layout never reads.
   static JSObject _copyTypedDataToJs(TypedData source) {
     final length = source.lengthInBytes;
     if (!kIsWasm) {
       return source.buffer.asUint8List(source.offsetInBytes, length).toJS;
     }
-    final words = Uint32List(length >> 2);
+    final words = Uint32List((length + 3) >> 2);
     _copyWords(words, ByteData.sublistView(words), 0, source, length);
     return words.toJS;
   }

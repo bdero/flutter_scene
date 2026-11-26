@@ -39,7 +39,12 @@ uniform SsaoInfo {
   // distance in world units, 0 when contact shadows are off.
   vec4 contact;
   // xy: the NDC position of the view axis. z: 1 for an orthographic camera.
+  // w: the frame's index into the temporal noise sequence, 0 without TAA.
   vec4 proj_offset;
+  // Maps depth texture UV to the screen UV each texel was sampled at (xy
+  // scale, zw offset). Identity unless the base level subsamples a
+  // full-resolution prepass.
+  vec4 depth_uv;
 }
 ssao;
 
@@ -99,14 +104,18 @@ void main() {
                         ViewProjectionDepthFactor(origin.z, ssao.proj_offset.xyz);
 
   // A non-repeating pixel hash avoids the screen-aligned 4x4 phase pattern
-  // that survives filtering as horizontal and vertical bands.
-  float noise = InterleavedGradientNoise(gl_FragCoord.xy);
+  // that survives filtering as horizontal and vertical bands. Under TAA it
+  // also shifts per frame.
+  vec2 temporal = TemporalNoiseOffset(ssao.proj_offset.w);
+  float noise = fract(InterleavedGradientNoise(gl_FragCoord.xy) + temporal.x);
   float rotation = noise * 2.0 * kPi;
 
   float contact_visibility = 1.0;
   if (ssao.contact.w > 0.0) {
     contact_visibility = MarchContactShadow(
-        origin, InterleavedGradientNoise(gl_FragCoord.xy + vec2(47.0, 17.0)));
+        origin,
+        fract(InterleavedGradientNoise(gl_FragCoord.xy + vec2(47.0, 17.0)) +
+              temporal.y));
   }
   float spiral_turns = sample_count <= 8 ? 3.0
       : (sample_count <= 12 ? 5.0 : (sample_count <= 20 ? 7.0 : 14.0));

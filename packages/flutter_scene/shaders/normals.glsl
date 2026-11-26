@@ -59,6 +59,9 @@ mat3 TangentFrame(vec3 normal, highp vec3 view_vector, highp vec2 uv) {
     vec3 bitangent = normalize(cross(normal, tangent)) * sign(authored.w);
     frame = mat3(tangent, bitangent, normal);
   }
+  // A back face already flips the normal and bitangent; flipping the tangent
+  // too mirrors the whole frame.
+  frame[0] *= gl_FrontFacing ? 1.0 : -1.0;
   return frame;
 }
 

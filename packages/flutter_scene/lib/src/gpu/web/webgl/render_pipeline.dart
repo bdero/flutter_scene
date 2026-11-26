@@ -49,6 +49,11 @@ final class WebGlRenderPipeline extends RenderPipeline {
   }
 
   final WebGlContext _gpuContext;
+  static int _nextId = 0;
+
+  /// Identifies this pipeline in VAO cache keys; never reused.
+  final int _id = ++_nextId;
+
   @override
   final WebGlShader vertexShader;
   @override

@@ -195,6 +195,167 @@ Set<String> lightingHooksIn(String fragmentSource) {
   return hooks;
 }
 
+/// [fragmentSource] keeping only the function definitions `Surface()` can
+/// reach. Every other one (the lighting hooks, and anything only they call)
+/// is blanked to spaces from its first token through its body, since a depth
+/// surface never calls them and does not declare the lighting types and
+/// functions they may use. Newlines stay, so `#line` still maps compiler
+/// errors to the `.fmat` source.
+String _surfaceReachableSource(String fragmentSource) {
+  final code = _codeOnly(fragmentSource);
+  final definitions = _functionDefinitions(code);
+  final byName = <String, List<_FunctionDefinition>>{};
+  for (final definition in definitions) {
+    (byName[definition.name] ??= []).add(definition);
+  }
+  if (!byName.containsKey('Surface')) return fragmentSource;
+  final reachable = <String>{};
+  final pending = ['Surface'];
+  while (pending.isNotEmpty) {
+    final name = pending.removeLast();
+    if (!reachable.add(name)) continue;
+    for (final definition in byName[name]!) {
+      final body = code.substring(definition.bodyStart, definition.end);
+      for (final call in _callPattern.allMatches(body)) {
+        final callee = call.group(1)!;
+        if (byName.containsKey(callee)) pending.add(callee);
+      }
+    }
+  }
+  final chars = fragmentSource.split('');
+  for (final definition in definitions) {
+    if (reachable.contains(definition.name)) continue;
+    for (var i = definition.start; i < definition.end; i++) {
+      if (chars[i] != '\n') chars[i] = ' ';
+    }
+  }
+  return chars.join();
+}
+
+final _callPattern = RegExp(r'\b([A-Za-z_]\w*)\s*\(');
+final _identifierStart = RegExp(r'[A-Za-z_]');
+final _identifierPart = RegExp(r'\w');
+
+/// One top-level function definition: from its first token ([start]) to just
+/// past its closing brace ([end]), with its body opening at [bodyStart].
+typedef _FunctionDefinition = ({
+  String name,
+  int start,
+  int bodyStart,
+  int end,
+});
+
+/// [source] with comments and preprocessor lines turned to spaces, newlines
+/// kept, so offsets match and only code is parsed.
+String _codeOnly(String source) {
+  final out = source.split('');
+  var i = 0;
+  var lineStart = true;
+  while (i < source.length) {
+    final c = source[i];
+    if (source.startsWith('//', i) || (lineStart && c == '#')) {
+      // A preprocessor line or line comment runs to the end of the line,
+      // including a backslash continuation.
+      while (i < source.length && source[i] != '\n') {
+        if (source[i] == '\\' && i + 1 < source.length) out[i++] = ' ';
+        out[i++] = ' ';
+      }
+      continue;
+    }
+    if (source.startsWith('/*', i)) {
+      final close = source.indexOf('*/', i + 2);
+      final end = close < 0 ? source.length : close + 2;
+      for (; i < end; i++) {
+        if (source[i] != '\n') out[i] = ' ';
+      }
+      continue;
+    }
+    if (c == '\n') {
+      lineStart = true;
+    } else if (c != ' ' && c != '\t' && c != '\r') {
+      lineStart = false;
+    }
+    i++;
+  }
+  return out.join();
+}
+
+/// The top-level function definitions in [code] (see [_codeOnly]). A name
+/// followed by a parameter list and then a body at brace depth 0 is one;
+/// prototypes, global initializers, and layout qualifiers are not.
+List<_FunctionDefinition> _functionDefinitions(String code) {
+  final definitions = <_FunctionDefinition>[];
+  var depth = 0;
+  // Just past the last top-level `;` or `}`, where a definition's leading
+  // qualifiers and return type begin.
+  var boundary = 0;
+  var i = 0;
+  while (i < code.length) {
+    final c = code[i];
+    if (c == '{') {
+      depth++;
+      i++;
+      continue;
+    }
+    if (c == '}') {
+      depth--;
+      i++;
+      if (depth == 0) boundary = i;
+      continue;
+    }
+    if (depth == 0 && c == ';') {
+      boundary = ++i;
+      continue;
+    }
+    if (depth != 0 || !_identifierStart.hasMatch(c)) {
+      i++;
+      continue;
+    }
+    final nameStart = i;
+    while (i < code.length && _identifierPart.hasMatch(code[i])) {
+      i++;
+    }
+    final name = code.substring(nameStart, i);
+    var j = i;
+    while (j < code.length && code[j].trim().isEmpty) {
+      j++;
+    }
+    if (j >= code.length || code[j] != '(') continue;
+    var parens = 0;
+    for (; j < code.length; j++) {
+      if (code[j] == '(') parens++;
+      if (code[j] == ')' && --parens == 0) break;
+    }
+    j++;
+    while (j < code.length && code[j].trim().isEmpty) {
+      j++;
+    }
+    if (j >= code.length || code[j] != '{') {
+      i = j;
+      continue;
+    }
+    final bodyStart = j;
+    var braces = 0;
+    for (; j < code.length; j++) {
+      if (code[j] == '{') braces++;
+      if (code[j] == '}' && --braces == 0) break;
+    }
+    if (j >= code.length) break;
+    var start = boundary;
+    while (start < nameStart && code[start].trim().isEmpty) {
+      start++;
+    }
+    definitions.add((
+      name: name,
+      start: start,
+      bodyStart: bodyStart,
+      end: j + 1,
+    ));
+    i = boundary = j + 1;
+  }
+  return definitions;
+}
+
 /// Whether [material] ships its own depth-pass fragments: an opaque cutout
 /// (`alpha_to_coverage`) whose shader reads no engine scene inputs.
 bool materialHasDepthSurface(FmatMaterial material) =>
@@ -239,7 +400,15 @@ String emitFragmentGlsl(
   if (!material.directionalLight) {
     sb.writeln('#define FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT');
   }
-  if (lit && material.shadingModel != FmatShadingModel.shadowCatcher) {
+  // A depth surface of a lit material runs only Surface(), so it carries none
+  // of the lighting framework. Every resource it declares and never reads is
+  // reflected at set 0, binding 0, where on Vulkan it collides with the vertex
+  // stage's FrameInfo and the draw is dropped, and where the WGSL sidecar
+  // cannot match it to Tint's bindings.
+  final surfaceOnly = depthSurface != null && lit;
+  if (lit &&
+      material.shadingModel != FmatShadingModel.shadowCatcher &&
+      !surfaceOnly) {
     for (final hook in lightingHooksIn(material.fragmentSource)) {
       sb.writeln('#define ${_lightingHookDefines[hook]}');
     }
@@ -270,6 +439,10 @@ String emitFragmentGlsl(
     // stages, so the duplicate binding makes every draw with the material
     // disappear.
     sb.writeln('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE');
+  } else if (surfaceOnly &&
+      material.shadingModel != FmatShadingModel.shadowCatcher) {
+    // The lit model reads the environment only through the lighting it skips.
+    sb.writeln('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE');
   }
   sb.writeln('#include <material_varyings.glsl>');
   sb.writeln('#include <pbr.glsl>');
@@ -279,10 +452,17 @@ String emitFragmentGlsl(
   sb.writeln('#include <normals.glsl>');
   sb.writeln('#include <material_inputs.glsl>');
   sb.writeln('#include <material_debug.glsl>');
-  if (material.alphaToCoverage) {
+  // Only the color entry writes coverage. A depth surface cuts with discard
+  // instead, and must not even declare the sample mask: an output it never
+  // writes reaches Vulkan and WebGPU as a mask of 0, dropping every sample.
+  if (material.alphaToCoverage && depthSurface == null) {
     sb.writeln('#include <material_coverage.glsl>');
   }
-  if (material.shadingModel == FmatShadingModel.shadowCatcher) {
+  if (surfaceOnly) {
+    // FragInfo and the scene-input accessors Surface() may read, without the
+    // lighting samplers, RadianceLayoutInfo, or FogInfo.
+    sb.writeln('#include <material_scene_inputs.glsl>');
+  } else if (material.shadingModel == FmatShadingModel.shadowCatcher) {
     // The catcher samples the shadow atlas and occlusion chain but never
     // evaluates the lighting, so it takes the engine bindings plus the
     // sampling utilities without the full framework (whose dead code would
@@ -374,8 +554,11 @@ String emitFragmentGlsl(
 
   // Map compiler errors in the author's code back to the .fmat source line.
   sb.writeln('#line ${material.fragmentSourceLine}');
-  sb.write(material.fragmentSource);
-  if (!material.fragmentSource.endsWith('\n')) sb.writeln();
+  final fragmentSource = surfaceOnly
+      ? _surfaceReachableSource(material.fragmentSource)
+      : material.fragmentSource;
+  sb.write(fragmentSource);
+  if (!fragmentSource.endsWith('\n')) sb.writeln();
   sb.writeln();
 
   if (depthSurface != null) {
