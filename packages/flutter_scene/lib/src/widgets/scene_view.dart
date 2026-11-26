@@ -22,6 +22,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_scene/src/resource_group.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/scene_pointer.dart';
+import 'package:flutter_scene/src/widgets/scene_view_dom_canvas.dart';
 import 'package:flutter_scene/src/widgets/scene_view_pacing.dart';
 import 'package:flutter_scene/src/widgets/scene_view_semantics.dart';
 import 'package:flutter_scene/src/widgets/widget_component_host.dart';
@@ -67,6 +68,32 @@ typedef SceneLoadingBuilder =
 /// {@category Widgets}
 typedef SceneErrorBuilder =
     Widget Function(BuildContext context, Object error, VoidCallback retry);
+
+/// Where a [SceneView] on the web shows its frames. See
+/// [SceneView.webPresentation].
+/// {@category Widgets}
+enum ScenePresentation {
+  /// Each frame is drawn into Flutter's canvas as an image, composited with
+  /// the rest of the widget tree like any other paint.
+  flutterCanvas,
+
+  /// Each frame is handed to a `<canvas>` element behind the view's Flutter
+  /// content without a copy, skipping the per-frame upload into Flutter's
+  /// renderer and its full-view draw.
+  ///
+  /// The scene is a platform view, so ancestor transforms, clips and opacity
+  /// still apply but ancestor [ColorFiltered], [ImageFiltered], [ShaderMask]
+  /// and [BackdropFilter] do not, `RenderObject` captures such as
+  /// `RenderRepaintBoundary.toImage` and golden tests miss it, and widgets
+  /// painting both behind and above it cost Flutter an extra full-size
+  /// canvas. Views from [SceneView.viewsBuilder] still draw into Flutter's
+  /// canvas.
+  ///
+  /// In Chrome it saves GPU process time with Skwasm or the WebGPU backend,
+  /// most at high resolutions, but can cost more with CanvasKit on WebGL2,
+  /// whose extra canvases are copied each frame. Measure before opting in.
+  domCanvas,
+}
 
 /// A widget that renders a [Scene] and drives its per-frame repaint.
 ///
@@ -130,6 +157,7 @@ class SceneView extends StatefulWidget {
     this.warmUpAllShadingTiers = false,
     this.warmUpExtraNodes = const [],
     this.debugWidgetInput = false,
+    this.webPresentation = ScenePresentation.flutterCanvas,
     this.children = const [],
   }) : environment = null,
        environmentIntensity = 1.0,
@@ -179,6 +207,7 @@ class SceneView extends StatefulWidget {
     this.warmUpAllShadingTiers = false,
     this.warmUpExtraNodes = const [],
     this.debugWidgetInput = false,
+    this.webPresentation = ScenePresentation.flutterCanvas,
     this.children = const [],
   }) : scene = null,
        assert(
@@ -247,6 +276,14 @@ class SceneView extends StatefulWidget {
   /// Logical-to-physical pixel multiplier for the offscreen render target,
   /// forwarded to [Scene.render]. Defaults to the view's device pixel ratio.
   final double? pixelRatio;
+
+  /// Where the view shows its frames on the web. Ignored on other
+  /// platforms, which always draw into Flutter's canvas without a copy.
+  ///
+  /// Defaults to [ScenePresentation.flutterCanvas], which composes with every
+  /// widget effect. [ScenePresentation.domCanvas] saves a full-frame copy
+  /// each frame, at the cost of the trade-offs it lists.
+  final ScenePresentation webPresentation;
 
   /// Debug-only: overlays the automatic widget-input pointer's state (hit
   /// node, UV, distance, and a marker at the pointer position), the first
@@ -786,6 +823,19 @@ class _SceneViewState extends State<SceneView>
 
   ScenePointer? _autoPointer;
   int? _activePlatformPointer;
+
+  // The canvas frames present to with ScenePresentation.domCanvas.
+  SceneDomCanvas? _domCanvas;
+
+  SceneDomCanvas? _resolveDomCanvas() {
+    if (!sceneDomCanvasSupported ||
+        widget.webPresentation != ScenePresentation.domCanvas ||
+        widget.viewsBuilder != null) {
+      return _domCanvas = null;
+    }
+    return _domCanvas ??= SceneDomCanvas();
+  }
+
   Size _viewSize = Size.zero;
   Offset? _debugPosition;
 
@@ -936,6 +986,7 @@ class _SceneViewState extends State<SceneView>
       }
       return _buildLoading(context);
     }
+    final domCanvas = _resolveDomCanvas();
     return Listener(
       // Translucent: forwarded events still reach the app's own
       // gesture handlers; the scene never wins a gesture arena.
@@ -950,10 +1001,12 @@ class _SceneViewState extends State<SceneView>
       child: Stack(
         fit: StackFit.passthrough,
         children: [
+          if (domCanvas != null) Positioned.fill(child: domCanvas.build()),
           _SceneCustomPaint(
             semantics: _sceneSemantics,
             painter: _ScenePainter(
               scene: _scene,
+              domCanvas: domCanvas,
               cameraForFrame: widget.viewsBuilder == null
                   ? _cameraForFrame
                   : null,
@@ -1066,6 +1119,7 @@ class _SceneViewState extends State<SceneView>
 class _ScenePainter extends CustomPainter {
   _ScenePainter({
     required this.scene,
+    required this.domCanvas,
     required this.cameraForFrame,
     required this.viewsForFrame,
     required this.pixelRatio,
@@ -1074,6 +1128,7 @@ class _ScenePainter extends CustomPainter {
   }) : super(repaint: repaint);
 
   final Scene scene;
+  final SceneDomCanvas? domCanvas;
   final Camera Function()? cameraForFrame;
   final List<RenderView> Function()? viewsForFrame;
   final double? pixelRatio;
@@ -1109,13 +1164,23 @@ class _ScenePainter extends CustomPainter {
       }
     } else {
       final camera = cameraForFrame!();
+      final dom = domCanvas;
       try {
-        scene.render(
-          camera,
-          canvas,
-          viewport: Offset.zero & size,
-          pixelRatio: pixelRatio,
-        );
+        if (dom != null && dom.isAttached) {
+          scene.renderToPresenter(
+            camera,
+            dom.present,
+            viewport: Offset.zero & size,
+            pixelRatio: pixelRatio,
+          );
+        } else {
+          scene.render(
+            camera,
+            canvas,
+            viewport: Offset.zero & size,
+            pixelRatio: pixelRatio,
+          );
+        }
       } finally {
         semantics.refreshAfterRender(camera, Offset.zero & size);
       }
@@ -1140,6 +1205,7 @@ class _ScenePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ScenePainter oldDelegate) =>
       scene != oldDelegate.scene ||
+      domCanvas != oldDelegate.domCanvas ||
       cameraForFrame != oldDelegate.cameraForFrame ||
       viewsForFrame != oldDelegate.viewsForFrame ||
       pixelRatio != oldDelegate.pixelRatio ||

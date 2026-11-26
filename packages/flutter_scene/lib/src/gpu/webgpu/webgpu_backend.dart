@@ -29,6 +29,7 @@ import '../shared/shader_library_sources.dart';
 import '../shared/wgsl_bindings.dart'
     show WgslBindingMap, parseWgslDeclarations;
 import '../web/_gpu.dart';
+import '../web/bitmap_presentation.dart';
 import 'webgpu_device.dart';
 import 'webgpu_interop.dart';
 import 'webgpu_presenter.dart';

@@ -30,6 +30,11 @@ class GpuHost {
   /// hand to another context.
   Object? textureToPlatformImage(Texture texture) => null;
 
+  /// Not available here; a DOM canvas is a web concept.
+  void presentToCanvas(Texture texture, Object canvas) {
+    throw UnsupportedError('presentToCanvas is only implemented on web.');
+  }
+
   /// Not supported on this backend; see [GpuCapabilities.externalColorTargets].
   Texture wrapExternalColorTarget(
     Object handle, {

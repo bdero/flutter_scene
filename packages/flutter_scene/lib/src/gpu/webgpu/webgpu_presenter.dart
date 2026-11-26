@@ -151,6 +151,15 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     int width,
     int height, {
     required bool srgb,
+  }) => _wrapSync(blitToBitmapSync(source, width, height, srgb: srgb));
+
+  /// [blitToImageSync]'s frame as an `ImageBitmap`, for a consumer outside
+  /// Flutter.
+  web.ImageBitmap blitToBitmapSync(
+    GPUTextureView source,
+    int width,
+    int height, {
+    required bool srgb,
   }) {
     _resize(width, height);
     final targetFormat = srgb ? '$format-srgb' : format;
@@ -183,11 +192,12 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
       ..draw(3)
       ..end();
     device.device.queue.submit([encoder.finish()].toJS);
-    return _transferSync();
+    return _canvas.transferToImageBitmap();
   }
 
-  ui.Image _transferSync() {
-    final bitmap = _canvas.transferToImageBitmap();
+  ui.Image _transferSync() => _wrapSync(_canvas.transferToImageBitmap());
+
+  ui.Image _wrapSync(web.ImageBitmap bitmap) {
     final image = ui_web.createImageFromImageBitmap(bitmap as JSAny);
     if (image is ui.Image) return image;
     throw StateError(
