@@ -330,6 +330,10 @@ abstract base class GpuHost {
   /// such object.
   Object? textureToPlatformImage(Texture texture);
 
+  /// Shows [texture] on [canvas], an `HTMLCanvasElement` outside Flutter's
+  /// own canvas, upright and at the texture's size.
+  void presentToCanvas(Texture texture, Object canvas);
+
   /// Wraps a platform color target this backend can draw into but did not
   /// allocate. See [GpuCapabilities.externalColorTargets].
   Texture wrapExternalColorTarget(
