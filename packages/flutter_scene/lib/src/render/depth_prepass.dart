@@ -637,6 +637,11 @@ class _DepthPrepassEncoder {
                 ? DepthSurfaceKind.linearDepthNormal
                 : DepthSurfaceKind.linearDepth,
           );
+    // The engine's depth fragment cannot cut what the material's own discards,
+    // so the scene pass would lose what shows through those holes.
+    if (surfaceShader == null && material.colorCutsCoverage) {
+      depthMatchesColor = false;
+    }
     final masked = surfaceShader != null || material.depthAlphaMasked;
     final fragmentShader = surfaceShader ?? _fragmentShaderFor(masked);
     // Unskinned geometry draws depth through a position-only shader and layout

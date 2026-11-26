@@ -369,6 +369,13 @@ bool materialHasDepthSurface(FmatMaterial material) =>
     (material.alphaToCoverage || material.effectsDepth) &&
     material.engineInputs.isEmpty;
 
+/// Whether [material]'s color draw may leave fragments uncovered, through
+/// alpha to coverage or its own `discard`. A mention in a comment counts too,
+/// which only costs depth priming.
+bool materialCutsCoverage(FmatMaterial material) =>
+    material.alphaToCoverage ||
+    RegExp(r'\bdiscard\b').hasMatch(material.fragmentSource);
+
 /// The bundle entry name of [material]'s depth-pass fragment for [kind].
 String depthSurfaceEntryName(FmatMaterial material, DepthSurfaceKind kind) =>
     '${material.name}${kind.suffix}';
@@ -1124,6 +1131,7 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     'shading_model': material.shadingModel.name,
     if (!material.environmentLighting) 'environment_lighting': false,
     if (material.alphaToCoverage) 'alpha_to_coverage': true,
+    if (materialCutsCoverage(material)) 'cuts_coverage': true,
     'blending': material.blending.name,
     'culling': material.culling.name,
     if (material.depthWrite) 'depth_write': true,

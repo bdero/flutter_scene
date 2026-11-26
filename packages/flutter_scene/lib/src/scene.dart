@@ -861,8 +861,9 @@ base class Scene implements SceneGraph {
   /// only on frames that already run a depth prepass at full resolution
   /// without MSAA (temporal anti-aliasing, reflections, depth inputs, ambient
   /// occlusion at full size), and costs storing and reloading that depth. A
-  /// frame whose prepass draws a surface differently from the color pass (a
-  /// `ShaderMaterial` that displaces vertices with no depth variant) skips it.
+  /// frame whose prepass cannot reproduce a surface's color draw skips it: an
+  /// opaque `ShaderMaterial`, or a `.fmat` that discards without depth passes
+  /// of its own.
   /// {@category Rendering}
   bool depthPriming = true;
 

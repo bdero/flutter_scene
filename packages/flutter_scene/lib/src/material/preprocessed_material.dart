@@ -49,6 +49,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _culling = _parseCulling(metadata['culling']),
        _depthWrite = metadata['depth_write'] == true,
        _effectsDepth = metadata['effects_depth'] == true,
+       _cutsCoverage = metadata['cuts_coverage'] == true,
        _depthCompare = _parseDepthCompare(metadata['depth_test']),
        _sceneInputs = _parseSceneInputs(metadata['engine_inputs']),
        _environmentLighting = metadata['environment_lighting'] != false,
@@ -144,6 +145,12 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   }
 
   Map<DepthSurfaceKind, gpu.Shader>? _depthSurfaceShaders;
+
+  bool _cutsCoverage;
+
+  @override
+  @internal
+  bool get colorCutsCoverage => _cutsCoverage;
 
   /// Sets the depth-pass fragments named by a sidecar's `depth_surface` map,
   /// looking each entry up with [shaderFor]. Missing entries leave the
@@ -442,6 +449,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _culling = _parseCulling(metadata['culling']);
     _depthWrite = metadata['depth_write'] == true;
     _effectsDepth = metadata['effects_depth'] == true;
+    _cutsCoverage = metadata['cuts_coverage'] == true;
     _depthCompare = _parseDepthCompare(metadata['depth_test']);
     _sceneInputs = _parseSceneInputs(metadata['engine_inputs']);
     _environmentLighting = metadata['environment_lighting'] != false;
