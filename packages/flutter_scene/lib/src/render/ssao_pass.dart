@@ -36,6 +36,10 @@ const String _kSsaoDepthBlackboardKey = 'ssao_depth';
 // TODO(ssao-format): use R8 once it is renderable on Impeller GLES.
 const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8g8b8a8UNormInt;
 
+// The raw occlusion and the blur's intermediate are half float, so
+// visibility keeps its overshoot above 1 until the final blur clamps it.
+const gpu.PixelFormat _aoIntermediateFormat = gpu.PixelFormat.r16g16b16a16Float;
+
 // Frames before the temporal noise offsets repeat. Short enough that TAA's
 // history sees most of the cycle, so the converged result stays steady.
 const int _kTemporalNoiseCycle = 16;
@@ -290,7 +294,7 @@ class SsaoPass extends RenderGraphPass {
       TransientTextureDescriptor.color(
         width: aoWidth,
         height: aoHeight,
-        format: indirect ? gpu.PixelFormat.r16g16b16a16Float : _aoFormat,
+        format: _aoIntermediateFormat,
         debugName: 'ssao_raw',
       ),
     );
@@ -471,7 +475,7 @@ class SsaoBlurPass extends RenderGraphPass {
         TransientTextureDescriptor.color(
           width: aoWidth,
           height: aoHeight,
-          format: blurFormat,
+          format: finalPass ? blurFormat : _aoIntermediateFormat,
           debugName: debugName,
         ),
       );

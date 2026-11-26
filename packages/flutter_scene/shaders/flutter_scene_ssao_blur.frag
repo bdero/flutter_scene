@@ -103,7 +103,8 @@ void main() {
     if (blur.axis.w > 0.5) {
       result.ba = PackOcclusionDepth(center_depth);
     }
+    // Earlier passes keep overshoot above 1 so it averages unbiased.
+    result.r = clamp(result.r, 0.0, 1.0);
   }
-  result.r = clamp(result.r, 0.0, 1.0);
   frag_color = result;
 }

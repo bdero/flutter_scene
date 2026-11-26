@@ -346,12 +346,10 @@ void main() {
     }
   }
 
-  // TODO(ssao-headroom): horizon noise overshoots 1 on grazing surfaces, and
-  // clamping here biases them slightly dark. Storing visibility / 1.5 and
-  // clamping after the blur measured about 1% brighter there but added
-  // banding, since the RGBA8 intermediate loses a third of its precision.
-  // Keep the overshoot once the blur has a higher-precision intermediate.
-  float visibility = clamp(visibility_sum / float(slice_count), 0.0, 1.0);
+  // Horizon noise overshoots 1 on grazing surfaces. The half-float target
+  // keeps the overshoot so the blur averages it, and the blur's final pass
+  // clamps, which would otherwise bias those surfaces dark.
+  float visibility = max(visibility_sum / float(slice_count), 0.0);
   if (gi_intensity > 0.0) {
     // Radiance in rgb, shaped visibility in a; the material composites the
     // bounce into indirect diffuse.
@@ -364,7 +362,7 @@ void main() {
   // Shared output shaping with the obscurance shader, so intensity and power
   // keep one meaning across both methods.
   float obscurance = min(intensity * (1.0 - visibility), 0.98);
-  float ao = pow(clamp(1.0 - obscurance, 0.0, 1.0), power);
+  float ao = pow(1.0 - obscurance, power);
 
   if (compute_bent) {
     // Nudged toward the view direction so a fully occluded pixel still
