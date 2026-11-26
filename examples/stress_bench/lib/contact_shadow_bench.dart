@@ -22,6 +22,7 @@ import 'package:flutter_scene/src/contact_shadows.dart'
 import 'package:flutter_scene/src/gpu/raster_sync.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'src/bench_capture.dart';
 import 'src/bench_exit.dart';
 
 const int kBatch = int.fromEnvironment('bench.batch', defaultValue: 30);
@@ -31,6 +32,11 @@ const int kBatches = int.fromEnvironment('bench.batches', defaultValue: 9);
 final RegExp kOnly = RegExp(
   const String.fromEnvironment('bench.only', defaultValue: '.'),
 );
+// Where to save one frame per config as a PNG, to check what rendered; empty
+// saves nothing. On Android, the app's external files directory
+// (/sdcard/Android/data/dev.bdero.stress_bench/files) is writable and pulls
+// with adb.
+const String kCaptureDir = String.fromEnvironment('bench.capture');
 const String kSizes = String.fromEnvironment(
   'bench.sizes',
   defaultValue: '1920x1080,3840x2160',
@@ -153,6 +159,28 @@ class _BenchState extends State<_Bench> {
     for (var i = 0; i < 40; i++) {
       frame();
       await awaitRasterThread();
+    }
+
+    if (kCaptureDir.isNotEmpty) {
+      final recorder = ui.PictureRecorder();
+      scene.render(
+        camera,
+        ui.Canvas(recorder),
+        viewport: viewport,
+        pixelRatio: 1.0,
+      );
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(width, height);
+      final png = await image.toByteData(format: ui.ImageByteFormat.png);
+      picture.dispose();
+      image.dispose();
+      if (png != null) {
+        await benchSaveCapture(
+          kCaptureDir,
+          '${width}x${height}_${config.name}',
+          png.buffer.asUint8List(),
+        );
+      }
     }
 
     final wall = <double>[];
