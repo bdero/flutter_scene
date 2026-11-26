@@ -88,6 +88,7 @@ jobs:
           - packages/flutter_scene_input
           - packages/flutter_scene_rapier
           - packages/flutter_scene_box3d
+          - packages/flutter_scene_xr
     steps:
       - uses: actions/checkout@v7
       - name: Set up Flutter
@@ -124,6 +125,28 @@ jobs:
         run: flutter pub get
       - name: Run tests in Chrome
         working-directory: packages/flutter_scene
+        run: |
+          files=$(grep -rL --include='*_test.dart' "@TestOn('vm')" test | sort)
+          flutter test --platform chrome ${{ matrix.compiler == 'dart2wasm' && '--wasm' || '' }} $files
+
+  # The WebXR runtime's browser tests, against an emulated headset.
+  xr_web_test:
+    name: Test flutter_scene_xr on web (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dart2js, dart2wasm]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+      - name: Resolve workspace dependencies
+        run: flutter pub get
+      - name: Run tests in Chrome
+        working-directory: packages/flutter_scene_xr
         run: |
           files=$(grep -rL --include='*_test.dart' "@TestOn('vm')" test | sort)
           flutter test --platform chrome ${{ matrix.compiler == 'dart2wasm' && '--wasm' || '' }} $files
