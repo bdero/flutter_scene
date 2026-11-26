@@ -52,3 +52,15 @@ Direct loops over the hot structures, no rendering involved, `ms/op`:
 ## Comparing runs
 
 Grab the `BENCH_JSON` line from two runs and diff the numbers. Scenario timings include GPU command encoding but not GPU execution; keep the machine idle and on AC power for stable results.
+
+## Presentation benchmark
+
+`lib/present_bench.dart` times a `SceneView` filling the window, with a gradient behind it and a HUD above, to compare web presentation modes. It reports Flutter frame timings (build, raster, and vsync interval medians) as a `BENCH_JSON` line, and marks `bench_start` and `bench_end` on the page timeline so a Chrome trace can be cut to the measured frames.
+
+```sh
+flutter build web --profile -t lib/present_bench.dart
+python3 -m http.server -d build/web 8000
+# open http://localhost:8000/?presentation=domCanvas (or flutterCanvas)
+```
+
+`background=0` drops the gradient and `hud=0` drops the HUD. Add `--wasm` for Skwasm, and `--dart-define=flutter_scene.webgpu=true` (with `flutter_scene_webgpu: true` under the workspace pubspec's `hooks: user_defines:` for both `flutter_scene` and `stress_bench`, as `tools/webgpu_smoke/opt_in.sh` does for the smoke app) for WebGPU.

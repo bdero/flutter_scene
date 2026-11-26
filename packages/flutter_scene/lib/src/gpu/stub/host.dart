@@ -30,6 +30,8 @@ class GpuHost {
 
   Object? textureToPlatformImage(Texture texture) => null;
 
+  void presentToCanvas(Texture texture, Object canvas) => _stub();
+
   Texture wrapExternalColorTarget(
     Object handle, {
     required int width,

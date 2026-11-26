@@ -488,20 +488,20 @@ final class WebGlContext extends GpuContext {
     _gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, null);
   }
 
+  /// Blit [texture] onto the OffscreenCanvas and transfer the result out as
+  /// an `ImageBitmap`, for a consumer outside Flutter (another WebGL context,
+  /// or a DOM canvas). Synchronous, like [snapshotTextureSync].
+  web.ImageBitmap snapshotTextureBitmap(Texture texture) {
+    _blitTextureToCanvas(texture);
+    return _canvas.transferToImageBitmap();
+  }
+
   /// Synchronously snapshot [texture] into a `ui.Image`. Blits to the
   /// OffscreenCanvas, transfers the canvas content out as an ImageBitmap,
   /// and wraps it. `transferToImageBitmap` and `createImageFromImageBitmap`
   /// are both synchronous on CanvasKit and Skwasm, so this works inside a
   /// synchronous paint callback - which is what flutter_scene's
   /// `Texture.asImage()` -> `canvas.drawImageRect` path needs.
-  /// Blit [texture] onto the OffscreenCanvas and transfer the result out as
-  /// an `ImageBitmap`, for a consumer outside Flutter (another WebGL context
-  /// that presents it). Synchronous, like [snapshotTextureSync].
-  web.ImageBitmap snapshotTextureBitmap(Texture texture) {
-    _blitTextureToCanvas(texture);
-    return _canvas.transferToImageBitmap();
-  }
-
   ui.Image snapshotTextureSync(Texture texture) {
     _blitTextureToCanvas(texture);
     final bitmap = _canvas.transferToImageBitmap();

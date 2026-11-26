@@ -19,6 +19,7 @@ import '../../shared/external_target.dart';
 import '../../shared/gpu_capabilities.dart';
 import '../../shared/shader_library_sources.dart';
 import '../_gpu.dart';
+import '../bitmap_presentation.dart';
 import '../shader_bundle_generated.dart' as fb;
 
 part 'backend.dart';
