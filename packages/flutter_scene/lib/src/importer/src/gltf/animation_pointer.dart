@@ -347,5 +347,49 @@ Float32List convertGltfPathKeyframes(
   return values;
 }
 
+/// Converts a cubic path channel's tangents to engine units, matching how
+/// [convertGltfPathKeyframes] converts the glTF [values] they belong to.
+///
+/// An intensity tangent scales as its intensity does. A color tangent
+/// follows the derivative of the luminance rescale at its keyframe, so the
+/// converted curve leaves each keyframe in the authored direction.
+Float32List convertGltfPathTangents(
+  GltfAnimationChannel channel,
+  List<GltfPunctualLight> lights,
+  Float32List tangents,
+  Float32List values,
+) {
+  final light = channel.pointerLight;
+  final path = channel.pathTargets.firstOrNull?.path;
+  if (light == null || light >= lights.length) return tangents;
+  final staticLuminance = _luminance(
+    lights[light].color.x,
+    lights[light].color.y,
+    lights[light].color.z,
+  );
+  if (path == 'light/intensity') {
+    return Float32List.fromList([
+      for (final tangent in tangents)
+        staticLuminance <= 1e-8 ? 0 : tangent / (683.0 * staticLuminance),
+    ]);
+  }
+  if (path == 'light/color' && staticLuminance > 1e-8) {
+    final out = Float32List(tangents.length);
+    for (var i = 0; i + 3 <= tangents.length; i += 3) {
+      final luminance = _luminance(values[i], values[i + 1], values[i + 2]);
+      if (luminance <= 1e-8) continue;
+      // d(c * L / lum(c)) = (L / lum(c)) * (dc - c * lum(dc) / lum(c)).
+      final scale = staticLuminance / luminance;
+      final change =
+          _luminance(tangents[i], tangents[i + 1], tangents[i + 2]) / luminance;
+      for (var c = 0; c < 3; c++) {
+        out[i + c] = (tangents[i + c] - values[i + c] * change) * scale;
+      }
+    }
+    return out;
+  }
+  return tangents;
+}
+
 double _luminance(double r, double g, double b) =>
     r * 0.2126 + g * 0.7152 + b * 0.0722;

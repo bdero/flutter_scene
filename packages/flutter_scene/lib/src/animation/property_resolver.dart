@@ -2,11 +2,15 @@ part of '../animation.dart';
 
 /// Computes a per-property animated value from a timeline of keyframes.
 ///
-/// Subclasses cover the [AnimationProperty] flavors with the correct
-/// interpolator, spherical linear interpolation for rotation and linear
-/// interpolation for the rest. Use the [PropertyResolver]
-/// factories to construct one rather than instantiating subclasses
-/// directly.
+/// Subclasses cover the [AnimationProperty] flavors. Between keyframes each
+/// moves as its [AnimationInterpolation] says: holding the previous value,
+/// interpolating linearly (spherically for rotation), or following a cubic
+/// spline. Use the [PropertyResolver] factories to construct one rather than
+/// instantiating subclasses directly.
+///
+/// A cubic spline timeline takes an in-tangent and an out-tangent per
+/// keyframe. Tangents are per second, as glTF stores them, so each segment
+/// scales them by its duration.
 abstract class PropertyResolver {
   /// Returns the end time of the property in seconds.
   double getEndTime();
@@ -18,67 +22,119 @@ abstract class PropertyResolver {
   /// applying several AnimationClips.
   void apply(AnimationTransforms target, double timeInSeconds, double weight);
 
-  /// Creates a translation resolver that linearly interpolates between
-  /// the keyframe positions in [values] at the corresponding [times].
+  /// Creates a translation resolver over the keyframe positions in [values]
+  /// at the corresponding [times], moving between them as [interpolation]
+  /// says.
   ///
   /// `times` and `values` must have the same length and `times` must be
-  /// monotonically non-decreasing.
+  /// monotonically non-decreasing. A cubic spline also needs [inTangents]
+  /// and [outTangents], one per keyframe.
   static PropertyResolver makeTranslationTimeline(
     List<double> times,
-    List<Vector3> values,
-  ) {
-    return TranslationTimelineResolver._(times, values);
+    List<Vector3> values, {
+    AnimationInterpolation interpolation = AnimationInterpolation.linear,
+    List<Vector3>? inTangents,
+    List<Vector3>? outTangents,
+  }) {
+    return TranslationTimelineResolver._(
+      times,
+      values,
+      interpolation,
+      inTangents,
+      outTangents,
+    );
   }
 
-  /// Creates a rotation resolver that spherically interpolates between
-  /// the keyframe quaternions in [values] at the corresponding [times].
+  /// Creates a rotation resolver over the keyframe quaternions in [values]
+  /// at the corresponding [times]. A linear timeline interpolates them
+  /// spherically, and a cubic spline normalizes each result.
   ///
   /// `times` and `values` must have the same length and `times` must be
-  /// monotonically non-decreasing.
+  /// monotonically non-decreasing. A cubic spline also needs [inTangents]
+  /// and [outTangents], one per keyframe.
   static PropertyResolver makeRotationTimeline(
     List<double> times,
-    List<Quaternion> values,
-  ) {
-    return RotationTimelineResolver._(times, values);
+    List<Quaternion> values, {
+    AnimationInterpolation interpolation = AnimationInterpolation.linear,
+    List<Quaternion>? inTangents,
+    List<Quaternion>? outTangents,
+  }) {
+    return RotationTimelineResolver._(
+      times,
+      values,
+      interpolation,
+      inTangents,
+      outTangents,
+    );
   }
 
-  /// Creates a scale resolver that linearly interpolates between the
-  /// keyframe scales in [values] at the corresponding [times].
+  /// Creates a scale resolver over the keyframe scales in [values] at the
+  /// corresponding [times], moving between them as [interpolation] says.
   ///
   /// `times` and `values` must have the same length and `times` must be
-  /// monotonically non-decreasing.
+  /// monotonically non-decreasing. A cubic spline also needs [inTangents]
+  /// and [outTangents], one per keyframe.
   static PropertyResolver makeScaleTimeline(
     List<double> times,
-    List<Vector3> values,
-  ) {
-    return ScaleTimelineResolver._(times, values);
+    List<Vector3> values, {
+    AnimationInterpolation interpolation = AnimationInterpolation.linear,
+    List<Vector3>? inTangents,
+    List<Vector3>? outTangents,
+  }) {
+    return ScaleTimelineResolver._(
+      times,
+      values,
+      interpolation,
+      inTangents,
+      outTangents,
+    );
   }
 
-  /// Creates a morph weights resolver that linearly interpolates between
-  /// keyframed weight vectors.
+  /// Creates a morph weights resolver over keyframed weight vectors.
   ///
   /// [values] is the flattened keyframe data, [targetCount] weights per
   /// keyframe in target order (`times.length * targetCount` floats), the
-  /// shape a glTF `weights` sampler decodes to.
+  /// shape a glTF `weights` sampler decodes to. A cubic spline's
+  /// [inTangents] and [outTangents] are flattened the same way.
   static PropertyResolver makeMorphWeightsTimeline(
     List<double> times,
     Float32List values, {
     required int targetCount,
+    AnimationInterpolation interpolation = AnimationInterpolation.linear,
+    Float32List? inTangents,
+    Float32List? outTangents,
   }) {
-    return MorphWeightsTimelineResolver._(times, values, targetCount);
+    return MorphWeightsTimelineResolver._(
+      times,
+      values,
+      targetCount,
+      interpolation,
+      inTangents,
+      outTangents,
+    );
   }
 
   /// Creates a resolver for the [AnimationProperty.path] property [path],
-  /// interpolating [componentCount] floats per keyframe linearly, or holding
-  /// each keyframe when [step] is set.
+  /// with [componentCount] floats per keyframe. A cubic spline's
+  /// [inTangents] and [outTangents] are flattened like [values].
   static PropertyResolver makePathTimeline(
     String path,
     List<double> times,
     Float32List values, {
     required int componentCount,
-    bool step = false,
+    AnimationInterpolation interpolation = AnimationInterpolation.linear,
+    Float32List? inTangents,
+    Float32List? outTangents,
   }) {
-    return PathTimelineResolver._(path, times, values, componentCount, step);
+    return PathTimelineResolver._(
+      path,
+      times,
+      values,
+      componentCount,
+      interpolation,
+      inTangents,
+      outTangents,
+    );
   }
 }
 
@@ -101,7 +157,10 @@ class _TimelineKey {
 abstract class TimelineResolver implements PropertyResolver {
   final List<double> _times;
 
-  TimelineResolver._(this._times);
+  /// How the timeline moves between keyframes.
+  final AnimationInterpolation interpolation;
+
+  TimelineResolver._(this._times, this.interpolation);
 
   /// The keyframe times, in seconds. Read by the scene serializer.
   List<double> get times => List.unmodifiable(_times);
@@ -126,20 +185,113 @@ abstract class TimelineResolver implements PropertyResolver {
     double lerp = (time - previousTime) / (nextTime - previousTime);
     return _TimelineKey(nextTimeIndex, lerp);
   }
+
+  /// The cubic Hermite weights at [key], which lies between two keyframes,
+  /// for the previous keyframe's value, its out-tangent, the next keyframe's
+  /// value, and that keyframe's in-tangent. The tangent weights include the
+  /// segment's duration.
+  (double, double, double, double) _cubicWeights(_TimelineKey key) {
+    final s = key.lerp;
+    final s2 = s * s;
+    final s3 = s2 * s;
+    final duration = _times[key.index] - _times[key.index - 1];
+    return (
+      2 * s3 - 3 * s2 + 1,
+      (s3 - 2 * s2 + s) * duration,
+      -2 * s3 + 3 * s2,
+      (s3 - s2) * duration,
+    );
+  }
+
+  /// The value at [key], which lies between two keyframes, of a [Vector3]
+  /// timeline.
+  Vector3 _vector3Between(
+    _TimelineKey key,
+    List<Vector3> values,
+    List<Vector3>? inTangents,
+    List<Vector3>? outTangents,
+  ) {
+    final previous = values[key.index - 1];
+    final next = values[key.index];
+    switch (interpolation) {
+      case AnimationInterpolation.step:
+        return previous;
+      case AnimationInterpolation.linear:
+        return previous.lerp(next, key.lerp);
+      case AnimationInterpolation.cubicSpline:
+        final (fromValue, fromTangent, toValue, toTangent) = _cubicWeights(key);
+        return previous * fromValue +
+            outTangents![key.index - 1] * fromTangent +
+            next * toValue +
+            inTangents![key.index] * toTangent;
+    }
+  }
+
+  /// The value at [key], which lies between two keyframes, of one component
+  /// of a flattened timeline, whose floats for those keyframes sit at
+  /// [previous] and [next].
+  double _componentBetween(
+    _TimelineKey key,
+    Float32List values,
+    Float32List? inTangents,
+    Float32List? outTangents,
+    int previous,
+    int next,
+  ) {
+    switch (interpolation) {
+      case AnimationInterpolation.step:
+        return values[previous];
+      case AnimationInterpolation.linear:
+        final a = values[previous];
+        return a + (values[next] - a) * key.lerp;
+      case AnimationInterpolation.cubicSpline:
+        final (fromValue, fromTangent, toValue, toTangent) = _cubicWeights(key);
+        return values[previous] * fromValue +
+            outTangents![previous] * fromTangent +
+            values[next] * toValue +
+            inTangents![next] * toTangent;
+    }
+  }
 }
 
-/// Resolves a translation timeline with per-component linear
-/// interpolation, blended into [AnimationTransforms.animatedPose] as an
-/// offset from the bind pose.
+/// Whether a timeline with [count] values has the tangents its
+/// [interpolation] needs, one per value.
+bool _hasTangents(
+  AnimationInterpolation interpolation,
+  int count,
+  int? inTangentCount,
+  int? outTangentCount,
+) {
+  return interpolation != AnimationInterpolation.cubicSpline ||
+      (inTangentCount == count && outTangentCount == count);
+}
+
+/// Resolves a translation timeline, blended into
+/// [AnimationTransforms.animatedPose] as an offset from the bind pose.
 class TranslationTimelineResolver extends TimelineResolver {
   final List<Vector3> _values;
+  final List<Vector3>? _inTangents;
+  final List<Vector3>? _outTangents;
 
   /// The keyframe values. Read by the scene serializer.
   List<Vector3> get values => List.unmodifiable(_values);
 
-  TranslationTimelineResolver._(List<double> times, this._values)
-    : super._(times) {
+  TranslationTimelineResolver._(
+    List<double> times,
+    this._values,
+    AnimationInterpolation interpolation,
+    this._inTangents,
+    this._outTangents,
+  ) : super._(times, interpolation) {
     assert(times.length == _values.length);
+    assert(
+      _hasTangents(
+        interpolation,
+        _values.length,
+        _inTangents?.length,
+        _outTangents?.length,
+      ),
+    );
   }
 
   @override
@@ -151,7 +303,7 @@ class TranslationTimelineResolver extends TimelineResolver {
     _TimelineKey key = _getTimelineKey(timeInSeconds);
     Vector3 value = _values[key.index];
     if (key.lerp < 1) {
-      value = _values[key.index - 1].lerp(value, key.lerp);
+      value = _vector3Between(key, _values, _inTangents, _outTangents);
     }
 
     target.animatedPose.translation +=
@@ -159,19 +311,34 @@ class TranslationTimelineResolver extends TimelineResolver {
   }
 }
 
-/// Resolves a rotation timeline with spherical linear interpolation,
-/// accumulating clip weights relative to the node's uncovered bind weight.
-/// Two fully covering clips interpolate directly between their poses. Three
-/// or more rotations use incremental weighted slerp in registration order.
+/// Resolves a rotation timeline, accumulating clip weights relative to the
+/// node's uncovered bind weight. Two fully covering clips interpolate
+/// directly between their poses. Three or more rotations use incremental
+/// weighted slerp in registration order.
 class RotationTimelineResolver extends TimelineResolver {
   final List<Quaternion> _values;
+  final List<Quaternion>? _inTangents;
+  final List<Quaternion>? _outTangents;
 
   /// The keyframe values. Read by the scene serializer.
   List<Quaternion> get values => List.unmodifiable(_values);
 
-  RotationTimelineResolver._(List<double> times, this._values)
-    : super._(times) {
+  RotationTimelineResolver._(
+    List<double> times,
+    this._values,
+    AnimationInterpolation interpolation,
+    this._inTangents,
+    this._outTangents,
+  ) : super._(times, interpolation) {
     assert(times.length == _values.length);
+    assert(
+      _hasTangents(
+        interpolation,
+        _values.length,
+        _inTangents?.length,
+        _outTangents?.length,
+      ),
+    );
   }
 
   @override
@@ -183,7 +350,7 @@ class RotationTimelineResolver extends TimelineResolver {
     _TimelineKey key = _getTimelineKey(timeInSeconds);
     Quaternion value = _values[key.index];
     if (key.lerp < 1) {
-      value = _values[key.index - 1].slerp(value, key.lerp);
+      value = _between(key);
     }
 
     final accumulated = target.rotationBlendWeight == null
@@ -195,21 +362,58 @@ class RotationTimelineResolver extends TimelineResolver {
     );
     target.rotationBlendWeight = accumulated;
   }
+
+  /// The rotation at [key], which lies between two keyframes.
+  Quaternion _between(_TimelineKey key) {
+    final previous = _values[key.index - 1];
+    final next = _values[key.index];
+    switch (interpolation) {
+      case AnimationInterpolation.step:
+        return previous;
+      case AnimationInterpolation.linear:
+        return previous.slerp(next, key.lerp);
+      case AnimationInterpolation.cubicSpline:
+        // glTF splines a rotation per component, then normalizes it.
+        final (fromValue, fromTangent, toValue, toTangent) = _cubicWeights(key);
+        final spline =
+            previous.scaled(fromValue) +
+            _outTangents![key.index - 1].scaled(fromTangent) +
+            next.scaled(toValue) +
+            _inTangents![key.index].scaled(toTangent);
+        return spline.normalized();
+    }
+  }
 }
 
-/// Resolves a scale timeline with per-component linear interpolation.
+/// Resolves a scale timeline.
 ///
 /// The blended scale is normalized against the bind pose so weighted
 /// blends behave multiplicatively (a weight of `1` reaches the keyframe
 /// scale exactly).
 class ScaleTimelineResolver extends TimelineResolver {
   final List<Vector3> _values;
+  final List<Vector3>? _inTangents;
+  final List<Vector3>? _outTangents;
 
   /// The keyframe values. Read by the scene serializer.
   List<Vector3> get values => List.unmodifiable(_values);
 
-  ScaleTimelineResolver._(List<double> times, this._values) : super._(times) {
+  ScaleTimelineResolver._(
+    List<double> times,
+    this._values,
+    AnimationInterpolation interpolation,
+    this._inTangents,
+    this._outTangents,
+  ) : super._(times, interpolation) {
     assert(times.length == _values.length);
+    assert(
+      _hasTangents(
+        interpolation,
+        _values.length,
+        _inTangents?.length,
+        _outTangents?.length,
+      ),
+    );
   }
 
   @override
@@ -221,7 +425,7 @@ class ScaleTimelineResolver extends TimelineResolver {
     _TimelineKey key = _getTimelineKey(timeInSeconds);
     Vector3 value = _values[key.index];
     if (key.lerp < 1) {
-      value = _values[key.index - 1].lerp(value, key.lerp);
+      value = _vector3Between(key, _values, _inTangents, _outTangents);
     }
 
     Vector3 scale = Vector3(
@@ -238,11 +442,13 @@ class ScaleTimelineResolver extends TimelineResolver {
   }
 }
 
-/// Resolves a morph weights timeline with per-target linear interpolation,
-/// blended into [AnimationTransforms.animatedMorphWeights] as an offset
-/// from the rest weights (matching the translation blend rule).
+/// Resolves a morph weights timeline per target, blended into
+/// [AnimationTransforms.animatedMorphWeights] as an offset from the rest
+/// weights (matching the translation blend rule).
 class MorphWeightsTimelineResolver extends TimelineResolver {
   final Float32List _values;
+  final Float32List? _inTangents;
+  final Float32List? _outTangents;
 
   /// Weights per keyframe.
   final int targetCount;
@@ -255,9 +461,20 @@ class MorphWeightsTimelineResolver extends TimelineResolver {
     List<double> times,
     this._values,
     this.targetCount,
-  ) : super._(times) {
+    AnimationInterpolation interpolation,
+    this._inTangents,
+    this._outTangents,
+  ) : super._(times, interpolation) {
     assert(targetCount >= 0);
     assert(times.length * targetCount == _values.length);
+    assert(
+      _hasTangents(
+        interpolation,
+        _values.length,
+        _inTangents?.length,
+        _outTangents?.length,
+      ),
+    );
   }
 
   @override
@@ -278,8 +495,14 @@ class MorphWeightsTimelineResolver extends TimelineResolver {
     for (var i = 0; i < count; i++) {
       var value = _values[current + i];
       if (key.lerp < 1) {
-        final a = _values[previous + i];
-        value = a + (value - a) * key.lerp;
+        value = _componentBetween(
+          key,
+          _values,
+          _inTangents,
+          _outTangents,
+          previous + i,
+          current + i,
+        );
       }
       animated[i] += (value - bind[i]) * weight;
     }
@@ -294,12 +517,11 @@ class PathTimelineResolver extends TimelineResolver {
   final String path;
 
   final Float32List _values;
+  final Float32List? _inTangents;
+  final Float32List? _outTangents;
 
   /// Floats per keyframe.
   final int componentCount;
-
-  /// Whether each keyframe holds until the next instead of interpolating.
-  final bool step;
 
   /// The flattened keyframe values ([componentCount] per keyframe). Read by
   /// the scene serializer.
@@ -310,10 +532,20 @@ class PathTimelineResolver extends TimelineResolver {
     List<double> times,
     this._values,
     this.componentCount,
-    this.step,
-  ) : super._(times) {
+    AnimationInterpolation interpolation,
+    this._inTangents,
+    this._outTangents,
+  ) : super._(times, interpolation) {
     assert(componentCount > 0);
     assert(times.length * componentCount == _values.length);
+    assert(
+      _hasTangents(
+        interpolation,
+        _values.length,
+        _inTangents?.length,
+        _outTangents?.length,
+      ),
+    );
   }
 
   @override
@@ -321,17 +553,20 @@ class PathTimelineResolver extends TimelineResolver {
     final state = target.paths[path];
     if (state == null || _values.isEmpty) return;
     final key = _getTimelineKey(timeInSeconds);
-    // The key's index is the keyframe after the time, so a step holds the
-    // one before it.
-    final hold = step && key.lerp < 1;
-    final current = (hold ? key.index - 1 : key.index) * componentCount;
+    final current = key.index * componentCount;
     final previous = (key.index - 1) * componentCount;
     final count = min(componentCount, state.animated.length);
     for (var i = 0; i < count; i++) {
       var value = _values[current + i];
-      if (!hold && key.lerp < 1) {
-        final a = _values[previous + i];
-        value = a + (value - a) * key.lerp;
+      if (key.lerp < 1) {
+        value = _componentBetween(
+          key,
+          _values,
+          _inTangents,
+          _outTangents,
+          previous + i,
+          current + i,
+        );
       }
       state.animated[i] += (value - state.bind[i]) * weight;
     }

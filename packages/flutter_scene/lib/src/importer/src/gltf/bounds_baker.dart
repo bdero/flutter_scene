@@ -216,9 +216,10 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
     final ibm = _readInverseBindMatrices(skin, doc, bufferData);
 
     // Samples the rest pose with no channel applied, then each animation's
-    // keyframe times with only that animation's channels. With the
-    // emitters converting CUBICSPLINE to bare keyframe values, evaluating
-    // at each keyframe time is exact for our pipeline.
+    // keyframe times with only that animation's channels.
+    // TODO(gltf-animation-interpolation): the runtime importer plays STEP and
+    // CUBICSPLINE samplers as authored, and a cubic segment can pass beyond
+    // its keyframes. Evaluate both that way, sampling inside cubic segments.
     final poses = <(Map<int, List<_PoseChannel>>, List<double>)>[
       (const {}, const [0.0]),
     ];
@@ -434,9 +435,8 @@ class _PoseChannel {
 
   /// Returns the value at time [t] as a `List<double>` of either 3
   /// (translation/scale) or 4 (rotation) components, sampled with
-  /// LINEAR / SLERP interpolation between bracketing keyframes. The
-  /// runtime treats CUBICSPLINE samplers as LINEAR over their stripped
-  /// keyframe values, so we mirror that here.
+  /// LINEAR / SLERP interpolation between bracketing keyframes, whatever
+  /// the sampler's interpolation.
   List<double> sampleAt(double t) {
     final componentCount = targetPath == 'rotation' ? 4 : 3;
     final stride = isCubic ? componentCount * 3 : componentCount;

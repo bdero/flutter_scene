@@ -363,7 +363,7 @@ void _serializeAnimations(
               Float32List.fromList(resolver.times),
             ),
             keyframes: _floatsPayload(document, resolver.values),
-            step: resolver.step,
+            step: resolver.interpolation == engine.AnimationInterpolation.step,
           ),
         );
         continue;

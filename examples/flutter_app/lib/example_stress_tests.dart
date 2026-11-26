@@ -50,6 +50,7 @@ class _StressTest {
     required this.url,
     required this.sizeBytes,
     this.animationName,
+    this.playAllAnimations = false,
     this.modelScale = 1.0,
     this.settings,
   });
@@ -62,6 +63,10 @@ class _StressTest {
   final double modelScale;
   // If set, the first matching animation is played on a loop after load.
   final String? animationName;
+  // If set, every animation plays on a loop after load instead, each from
+  // the node it drives, so clips on different nodes keep their full weight
+  // rather than sharing one player's.
+  final bool playAllAnimations;
   final ExampleSettings Function()? settings;
 
   /// True when [url] points at a multi-file glTF (a `.gltf` JSON with
@@ -76,6 +81,7 @@ _StressTest _sampleAsset({
   required int sizeBytes,
   String variant = 'glTF-Binary',
   String? animationName,
+  bool playAllAnimations = false,
 }) {
   final extension = variant == 'glTF-Binary' ? 'glb' : 'gltf';
   return _StressTest(
@@ -83,6 +89,7 @@ _StressTest _sampleAsset({
     title: title,
     description: description,
     animationName: animationName,
+    playAllAnimations: playAllAnimations,
     url:
         'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
         'main/Models/$id/$variant/$id.$extension',
@@ -912,6 +919,15 @@ final _additionalStressTests = <_StressTest>[
     sizeBytes: 1819824,
   ),
   _sampleAsset(
+    id: 'InterpolationTest',
+    title: 'Interpolation Test',
+    description:
+        'Cubes moving, turning, and scaling through STEP, LINEAR, and '
+        'CUBICSPLINE samplers, one clip each, all playing at once.',
+    sizeBytes: 7952,
+    playAllAnimations: true,
+  ),
+  _sampleAsset(
     id: 'IridescenceAbalone',
     title: 'Iridescence Abalone',
     description:
@@ -1338,9 +1354,15 @@ class _StressSceneState extends State<_StressScene> {
       _cameraSpeed = max(radius * 0.5, 0.5);
       _quake.speed = _cameraSpeed;
 
-      // Kick off the first matching animation if requested.
+      // Kick off every animation, or the first matching one, if requested.
       final wantedAnim = widget.test.animationName;
-      if (wantedAnim != null) {
+      if (widget.test.playAllAnimations) {
+        for (final anim in _collectAnimations(node)) {
+          _clipRoot(node, anim).createAnimationClip(anim)
+            ..loop = true
+            ..play();
+        }
+      } else if (wantedAnim != null) {
         final anim = _findAnimation(node, wantedAnim) ?? _firstAnimation(node);
         if (anim != null) {
           node.createAnimationClip(anim)
@@ -1431,6 +1453,16 @@ class _StressSceneState extends State<_StressScene> {
   Animation? _firstAnimation(Node root) {
     final anims = _collectAnimations(root);
     return anims.isEmpty ? null : anims.first;
+  }
+
+  // The node an animation plays from when each clip gets its own player:
+  // the one its channels drive when they all drive one, else [root].
+  Node _clipRoot(Node root, Animation animation) {
+    final names = {
+      for (final channel in animation.channels) channel.bindTarget.nodeName,
+    };
+    if (names.length != 1) return root;
+    return root.getChildByName(names.single) ?? root;
   }
 
   List<Animation> _collectAnimations(Node node) {

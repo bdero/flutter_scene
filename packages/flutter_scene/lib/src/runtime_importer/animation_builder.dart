@@ -8,10 +8,8 @@ import '../node.dart';
 /// Builds an engine [Animation] from a glTF animation. Each glTF channel
 /// becomes an engine [AnimationChannel] keyed by the target node's name and
 /// property (translation/rotation/scale/weights), or one per target node of
-/// a `KHR_animation_pointer` channel's engine paths. The engine currently
-/// supports linear timeline interpolation; STEP samplers degrade to "always
-/// pick the next keyframe" via the same resolver, and CUBICSPLINE samplers
-/// keep only the keyframe values (tangents discarded).
+/// a `KHR_animation_pointer` channel's engine paths. Each channel keeps its
+/// sampler's interpolation, and a CUBICSPLINE sampler keeps its tangents.
 Animation buildAnimation({
   required GltfAnimation gltfAnimation,
   required List<GltfAccessor> accessors,
@@ -59,7 +57,8 @@ Animation buildAnimation({
 
     AnimationProperty property;
     PropertyResolver resolver;
-    final isCubic = sampler.interpolation == 'CUBICSPLINE';
+    final interpolation = _interpolationOf(sampler);
+    final isCubic = interpolation == AnimationInterpolation.cubicSpline;
     // A weights sampler is a flattened (frame x target) scalar stream, so its
     // per-keyframe component count comes from the output/input length ratio
     // instead of the target path.
@@ -71,13 +70,13 @@ Animation buildAnimation({
             : sourceValues.length ~/ (times.length * (isCubic ? 3 : 1)),
       _ => 3,
     };
-    final values = coordinatePolicy.convertAnimationValues(
-      selectGltfKeyframeValues(
+    final keyframes = splitGltfKeyframes(
+      coordinatePolicy.convertAnimationValues(
         sourceValues,
-        componentCount: componentCount,
-        cubicSpline: isCubic,
+        targetPath: channel.targetPath,
       ),
-      targetPath: channel.targetPath,
+      componentCount: componentCount,
+      cubicSpline: isCubic,
     );
 
     switch (channel.targetPath) {
@@ -85,27 +84,39 @@ Animation buildAnimation({
         property = AnimationProperty.translation;
         resolver = PropertyResolver.makeTranslationTimeline(
           times.toList(),
-          _readVec3List(values),
+          _readVec3List(keyframes.values),
+          interpolation: interpolation,
+          inTangents: _readVec3ListOrNull(keyframes.inTangents),
+          outTangents: _readVec3ListOrNull(keyframes.outTangents),
         );
       case 'rotation':
         property = AnimationProperty.rotation;
         resolver = PropertyResolver.makeRotationTimeline(
           times.toList(),
-          _readQuatList(values),
+          _readQuatList(keyframes.values),
+          interpolation: interpolation,
+          inTangents: _readQuatListOrNull(keyframes.inTangents),
+          outTangents: _readQuatListOrNull(keyframes.outTangents),
         );
       case 'scale':
         property = AnimationProperty.scale;
         resolver = PropertyResolver.makeScaleTimeline(
           times.toList(),
-          _readVec3List(values),
+          _readVec3List(keyframes.values),
+          interpolation: interpolation,
+          inTangents: _readVec3ListOrNull(keyframes.inTangents),
+          outTangents: _readVec3ListOrNull(keyframes.outTangents),
         );
       case 'weights':
         if (componentCount == 0) continue;
         property = AnimationProperty.weights;
         resolver = PropertyResolver.makeMorphWeightsTimeline(
           times.toList(),
-          values,
+          keyframes.values,
           targetCount: componentCount,
+          interpolation: interpolation,
+          inTangents: keyframes.inTangents,
+          outTangents: keyframes.outTangents,
         );
       default:
         debugPrint(
@@ -134,21 +145,19 @@ Iterable<AnimationChannel> _buildPathChannels(
 ) sync* {
   if (channel.sampler < 0 || channel.sampler >= samplers.length) return;
   final sampler = samplers[channel.sampler];
+  final interpolation = _interpolationOf(sampler);
   final times = readAccessorAsFloat32(
     accessors[sampler.input],
     bufferViews,
     bufferData,
   ).toList();
   final count = channel.pathComponentCount;
-  final values = convertGltfPathKeyframes(
-    channel,
-    lights,
-    selectGltfKeyframeValues(
-      readAccessorAsFloat32(accessors[sampler.output], bufferViews, bufferData),
-      componentCount: count,
-      cubicSpline: sampler.interpolation == 'CUBICSPLINE',
-    ),
+  final keyframes = splitGltfKeyframes(
+    readAccessorAsFloat32(accessors[sampler.output], bufferViews, bufferData),
+    componentCount: count,
+    cubicSpline: interpolation == AnimationInterpolation.cubicSpline,
   );
+  final values = convertGltfPathKeyframes(channel, lights, keyframes.values);
   if (times.isEmpty || values.length != times.length * count) {
     debugPrint(
       'Skipping animation pointer "${channel.pointer}" whose keyframes are '
@@ -156,6 +165,13 @@ Iterable<AnimationChannel> _buildPathChannels(
     );
     return;
   }
+  Float32List? tangents(Float32List? source) {
+    if (source == null) return null;
+    return convertGltfPathTangents(channel, lights, source, keyframes.values);
+  }
+
+  final inTangents = tangents(keyframes.inTangents);
+  final outTangents = tangents(keyframes.outTangents);
   for (final target in channel.pathTargets) {
     if (target.node < 0 || target.node >= engineNodes.length) continue;
     yield AnimationChannel(
@@ -169,11 +185,27 @@ Iterable<AnimationChannel> _buildPathChannels(
         times,
         values,
         componentCount: count,
-        step: sampler.interpolation == 'STEP',
+        interpolation: interpolation,
+        inTangents: inTangents,
+        outTangents: outTangents,
       ),
     );
   }
 }
+
+AnimationInterpolation _interpolationOf(GltfAnimationSampler sampler) {
+  return switch (sampler.interpolation) {
+    'STEP' => AnimationInterpolation.step,
+    'CUBICSPLINE' => AnimationInterpolation.cubicSpline,
+    _ => AnimationInterpolation.linear,
+  };
+}
+
+List<Vector3>? _readVec3ListOrNull(Float32List? values) =>
+    values == null ? null : _readVec3List(values);
+
+List<Quaternion>? _readQuatListOrNull(Float32List? values) =>
+    values == null ? null : _readQuatList(values);
 
 List<Vector3> _readVec3List(Float32List values) {
   final out = <Vector3>[];
