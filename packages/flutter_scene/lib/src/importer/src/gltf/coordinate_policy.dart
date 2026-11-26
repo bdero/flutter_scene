@@ -41,17 +41,33 @@ GltfKeyframes splitGltfKeyframes(
   return (values: values, inTangents: inTangents, outTangents: outTangents);
 }
 
-/// Removes cubic spline tangents, leaving one value per keyframe.
-Float32List selectGltfKeyframeValues(
-  Float32List values, {
+/// Lays [keyframes] out as a sampler's output again, undoing
+/// [splitGltfKeyframes]. With tangents, each value sits between its
+/// keyframe's in-tangent and out-tangent, [componentCount] floats apiece.
+Float32List joinGltfKeyframes(
+  GltfKeyframes keyframes, {
   required int componentCount,
-  required bool cubicSpline,
 }) {
-  return splitGltfKeyframes(
-    values,
-    componentCount: componentCount,
-    cubicSpline: cubicSpline,
-  ).values;
+  final (:values, :inTangents, :outTangents) = keyframes;
+  if (inTangents == null || outTangents == null || componentCount <= 0) {
+    return values;
+  }
+  final count = values.length ~/ componentCount;
+  final output = Float32List(count * componentCount * 3);
+  for (var keyframe = 0; keyframe < count; keyframe++) {
+    final from = keyframe * componentCount;
+    final to = from * 3;
+    output
+      ..setRange(to, to + componentCount, inTangents, from)
+      ..setRange(to + componentCount, to + componentCount * 2, values, from)
+      ..setRange(
+        to + componentCount * 2,
+        to + componentCount * 3,
+        outTangents,
+        from,
+      );
+  }
+  return output;
 }
 
 /// Selects where glTF coordinates become native scene coordinates.

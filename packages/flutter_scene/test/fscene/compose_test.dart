@@ -221,6 +221,50 @@ void main() {
     expect(wheel.shadowCastingMode, 'off');
   });
 
+  test('expansion keeps each animation channel\'s interpolation', () {
+    final prefab = _prefab();
+    final wheel = prefab.rootNodes.single.children.single;
+    prefab.addAnimation(
+      AnimationSpec(
+        prefab.newId(),
+        name: 'spin',
+        channels: [
+          AnimationChannelSpec(
+            target: wheel,
+            property: AnimationProperty.rotation,
+            timeline: prefab.newId(),
+            keyframes: prefab.newId(),
+            interpolation: AnimationInterpolation.cubicSpline,
+          ),
+        ],
+        pathChannels: [
+          AnimationPathChannelSpec(
+            target: wheel,
+            path: 'visible',
+            timeline: prefab.newId(),
+            keyframes: prefab.newId(),
+            interpolation: AnimationInterpolation.step,
+          ),
+        ],
+      ),
+    );
+    final host = SceneDocument();
+    host.createNode(root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+    );
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+    final animation = composed.animations.values.single;
+    expect(
+      animation.channels.single.interpolation,
+      AnimationInterpolation.cubicSpline,
+    );
+    expect(
+      animation.pathChannels.single.interpolation,
+      AnimationInterpolation.step,
+    );
+  });
+
   test('applies an override inside a component list and map', () {
     final prefab = SceneDocument();
     final original = prefab.addResource(

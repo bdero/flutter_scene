@@ -75,40 +75,68 @@ engine.Animation? buildAnimation(
   final channels = <engine.AnimationChannel>[];
   for (final channel in spec.channels) {
     final times = _floats(document.payload(channel.timeline)).toList();
-    final values = _floats(document.payload(channel.keyframes));
+    final floats = _floats(document.payload(channel.keyframes));
     final name = nodes[channel.target]?.name ?? channel.targetName ?? '';
+    final interpolation = _interpolation(channel.interpolation);
 
     final engine.AnimationProperty property;
     final engine.PropertyResolver resolver;
     switch (channel.property) {
       case AnimationProperty.translation:
+        final keyframes = _keyframes(floats, 3, channel.interpolation);
         property = engine.AnimationProperty.translation;
         resolver = engine.PropertyResolver.makeTranslationTimeline(
           times,
-          _vec3List(values),
+          _vec3List(keyframes.values),
+          interpolation: interpolation,
+          inTangents: _vec3ListOrNull(keyframes.inTangents),
+          outTangents: _vec3ListOrNull(keyframes.outTangents),
         );
       case AnimationProperty.rotation:
+        final keyframes = _keyframes(floats, 4, channel.interpolation);
         property = engine.AnimationProperty.rotation;
         resolver = engine.PropertyResolver.makeRotationTimeline(
           times,
-          _quaternionList(values),
+          _quaternionList(keyframes.values),
+          interpolation: interpolation,
+          inTangents: _quaternionListOrNull(keyframes.inTangents),
+          outTangents: _quaternionListOrNull(keyframes.outTangents),
         );
       case AnimationProperty.scale:
+        final keyframes = _keyframes(floats, 3, channel.interpolation);
         property = engine.AnimationProperty.scale;
         resolver = engine.PropertyResolver.makeScaleTimeline(
           times,
-          _vec3List(values),
+          _vec3List(keyframes.values),
+          interpolation: interpolation,
+          inTangents: _vec3ListOrNull(keyframes.inTangents),
+          outTangents: _vec3ListOrNull(keyframes.outTangents),
         );
       case AnimationProperty.weights:
         // The keyframes payload is the flattened glTF shape, one weight per
         // target per keyframe. Trailing floats past a whole keyframe are
         // dropped rather than trusted.
-        final targetCount = times.isEmpty ? 0 : values.length ~/ times.length;
+        final width = _floatsPerComponent(channel.interpolation);
+        final targetCount = times.isEmpty
+            ? 0
+            : floats.length ~/ (times.length * width);
+        final keyframes = _keyframes(
+          Float32List.sublistView(
+            floats,
+            0,
+            times.length * targetCount * width,
+          ),
+          targetCount,
+          channel.interpolation,
+        );
         property = engine.AnimationProperty.weights;
         resolver = engine.PropertyResolver.makeMorphWeightsTimeline(
           times,
-          Float32List.sublistView(values, 0, times.length * targetCount),
+          keyframes.values,
           targetCount: targetCount,
+          interpolation: interpolation,
+          inTangents: keyframes.inTangents,
+          outTangents: keyframes.outTangents,
         );
     }
     channels.add(
@@ -120,11 +148,19 @@ engine.Animation? buildAnimation(
   }
   for (final channel in spec.pathChannels) {
     final times = _floats(document.payload(channel.timeline)).toList();
-    final values = _floats(document.payload(channel.keyframes));
+    final floats = _floats(document.payload(channel.keyframes));
     final name = nodes[channel.target]?.name ?? channel.targetName ?? '';
     // Same trailing-float rule as weights.
-    final componentCount = times.isEmpty ? 0 : values.length ~/ times.length;
+    final width = _floatsPerComponent(channel.interpolation);
+    final componentCount = times.isEmpty
+        ? 0
+        : floats.length ~/ (times.length * width);
     if (componentCount == 0) continue;
+    final keyframes = _keyframes(
+      Float32List.sublistView(floats, 0, times.length * componentCount * width),
+      componentCount,
+      channel.interpolation,
+    );
     channels.add(
       engine.AnimationChannel(
         bindTarget: engine.BindKey(
@@ -135,17 +171,63 @@ engine.Animation? buildAnimation(
         resolver: engine.PropertyResolver.makePathTimeline(
           channel.path,
           times,
-          Float32List.sublistView(values, 0, times.length * componentCount),
+          keyframes.values,
           componentCount: componentCount,
-          interpolation: channel.step
-              ? engine.AnimationInterpolation.step
-              : engine.AnimationInterpolation.linear,
+          interpolation: _interpolation(channel.interpolation),
+          inTangents: keyframes.inTangents,
+          outTangents: keyframes.outTangents,
         ),
       ),
     );
   }
   if (channels.isEmpty) return null;
   return engine.Animation(name: spec.name, channels: channels);
+}
+
+engine.AnimationInterpolation _interpolation(
+  AnimationInterpolation interpolation,
+) => switch (interpolation) {
+  AnimationInterpolation.step => engine.AnimationInterpolation.step,
+  AnimationInterpolation.linear => engine.AnimationInterpolation.linear,
+  AnimationInterpolation.cubicSpline =>
+    engine.AnimationInterpolation.cubicSpline,
+};
+
+// The floats a keyframe holds per component: a cubic spline's in-tangent,
+// value, and out-tangent, or the value alone.
+int _floatsPerComponent(AnimationInterpolation interpolation) =>
+    interpolation == AnimationInterpolation.cubicSpline ? 3 : 1;
+
+typedef _Keyframes = ({
+  Float32List values,
+  Float32List? inTangents,
+  Float32List? outTangents,
+});
+
+// Splits a channel's keyframe floats, [componentCount] per value. A cubic
+// spline's tangents sit on either side of each value, as glTF lays them out.
+_Keyframes _keyframes(
+  Float32List floats,
+  int componentCount,
+  AnimationInterpolation interpolation,
+) {
+  if (interpolation != AnimationInterpolation.cubicSpline) {
+    return (values: floats, inTangents: null, outTangents: null);
+  }
+  final stride = componentCount * 3;
+  final count = stride <= 0 ? 0 : floats.length ~/ stride;
+  final values = Float32List(count * componentCount);
+  final inTangents = Float32List(count * componentCount);
+  final outTangents = Float32List(count * componentCount);
+  for (var keyframe = 0; keyframe < count; keyframe++) {
+    final from = keyframe * stride;
+    final to = keyframe * componentCount;
+    final end = to + componentCount;
+    inTangents.setRange(to, end, floats, from);
+    values.setRange(to, end, floats, from + componentCount);
+    outTangents.setRange(to, end, floats, from + componentCount * 2);
+  }
+  return (values: values, inTangents: inTangents, outTangents: outTangents);
 }
 
 List<Matrix4> _matrices(PayloadSpec? payload) {
@@ -182,3 +264,9 @@ List<Quaternion> _quaternionList(Float32List v) => [
   for (var i = 0; i + 4 <= v.length; i += 4)
     Quaternion(v[i], v[i + 1], v[i + 2], v[i + 3]),
 ];
+
+List<Vector3>? _vec3ListOrNull(Float32List? v) =>
+    v == null ? null : _vec3List(v);
+
+List<Quaternion>? _quaternionListOrNull(Float32List? v) =>
+    v == null ? null : _quaternionList(v);

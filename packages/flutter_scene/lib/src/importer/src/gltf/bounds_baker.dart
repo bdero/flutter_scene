@@ -217,7 +217,7 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
 
     // Samples the rest pose with no channel applied, then each animation's
     // keyframe times with only that animation's channels.
-    // TODO(gltf-animation-interpolation): the runtime importer plays STEP and
+    // TODO(gltf-animation-interpolation): both importers play STEP and
     // CUBICSPLINE samplers as authored, and a cubic segment can pass beyond
     // its keyframes. Evaluate both that way, sampling inside cubic segments.
     final poses = <(Map<int, List<_PoseChannel>>, List<double>)>[

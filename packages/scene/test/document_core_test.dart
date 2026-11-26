@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
 import 'package:test/test.dart';
@@ -69,7 +71,7 @@ void main() {
               path: 'visible',
               timeline: document.newId(),
               keyframes: document.newId(),
-              step: true,
+              interpolation: AnimationInterpolation.step,
             ),
           ],
         ),
@@ -84,13 +86,16 @@ void main() {
       ).animations.values.single.pathChannels.single;
       expect(channel.path, 'visible');
       expect(channel.targetName, 'Lamp');
-      expect(channel.step, isTrue);
+      expect(channel.interpolation, AnimationInterpolation.step);
       expect(writeFscene(readFscene(text)), text);
     });
 
-    test('a changed path or step is an animation change', () {
+    test('a changed path or interpolation is an animation change', () {
       final base = document();
-      SceneDocument edited({String? path, bool? step}) {
+      SceneDocument edited({
+        String? path,
+        AnimationInterpolation? interpolation,
+      }) {
         final copy = readFscene(writeFscene(base));
         final channels = copy.animations.values.single.pathChannels;
         final c = channels.single;
@@ -100,7 +105,7 @@ void main() {
           path: path ?? c.path,
           timeline: c.timeline,
           keyframes: c.keyframes,
-          step: step ?? c.step,
+          interpolation: interpolation ?? c.interpolation,
         );
         return copy;
       }
@@ -110,7 +115,104 @@ void main() {
         diffScene(base, edited(path: 'light/color')).animationsChanged,
         isTrue,
       );
-      expect(diffScene(base, edited(step: false)).animationsChanged, isTrue);
+      expect(
+        diffScene(
+          base,
+          edited(interpolation: AnimationInterpolation.linear),
+        ).animationsChanged,
+        isTrue,
+      );
+    });
+
+    test('a document that marked a held channel `step` reads as stepped', () {
+      final text = writeFscene(document());
+      final json = jsonDecode(text) as Map<String, dynamic>;
+      final animation = (json['animations'] as Map).values.single as Map;
+      final channel = (animation['pathChannels'] as List).single as Map;
+      channel
+        ..remove('interpolation')
+        ..['step'] = true;
+
+      final read = readFscene(jsonEncode(json));
+      expect(
+        read.animations.values.single.pathChannels.single.interpolation,
+        AnimationInterpolation.step,
+      );
+      // It writes back as the current format does.
+      expect(writeFscene(read), text);
+    });
+
+    test('the deprecated step flag is a view of interpolation', () {
+      final channel = AnimationPathChannelSpec(
+        target: const LocalId(1, 1),
+        path: 'visible',
+        timeline: const LocalId(1, 2),
+        keyframes: const LocalId(1, 3),
+        // ignore: deprecated_member_use_from_same_package
+        step: true,
+      );
+      expect(channel.interpolation, AnimationInterpolation.step);
+      // ignore: deprecated_member_use_from_same_package
+      expect(channel.step, isTrue);
+    });
+  });
+
+  group('animation channel interpolation', () {
+    SceneDocument document(AnimationInterpolation interpolation) {
+      final document = SceneDocument();
+      final node = document.newId();
+      document.addNode(NodeSpec(id: node, name: 'Cube'), root: true);
+      document.addAnimation(
+        AnimationSpec(
+          document.newId(),
+          name: 'Bounce',
+          channels: [
+            AnimationChannelSpec(
+              target: node,
+              targetName: 'Cube',
+              property: AnimationProperty.translation,
+              timeline: document.newId(),
+              keyframes: document.newId(),
+              interpolation: interpolation,
+            ),
+          ],
+        ),
+      );
+      return document;
+    }
+
+    test('round trips through .fscene text', () {
+      for (final interpolation in AnimationInterpolation.values) {
+        final text = writeFscene(document(interpolation));
+        final channel = readFscene(
+          text,
+        ).animations.values.single.channels.single;
+        expect(channel.interpolation, interpolation);
+        expect(writeFscene(readFscene(text)), text);
+      }
+    });
+
+    test('is written only when it is not linear', () {
+      final linear = writeFscene(document(AnimationInterpolation.linear));
+      expect(linear, isNot(contains('interpolation')));
+      final cubic = writeFscene(document(AnimationInterpolation.cubicSpline));
+      expect(cubic, contains('cubicSpline'));
+    });
+
+    test('a changed interpolation is an animation change', () {
+      final base = document(AnimationInterpolation.linear);
+      final edited = readFscene(writeFscene(base));
+      final channels = edited.animations.values.single.channels;
+      final c = channels.single;
+      channels[0] = AnimationChannelSpec(
+        target: c.target,
+        targetName: c.targetName,
+        property: c.property,
+        timeline: c.timeline,
+        keyframes: c.keyframes,
+        interpolation: AnimationInterpolation.cubicSpline,
+      );
+      expect(diffScene(base, edited).animationsChanged, isTrue);
     });
   });
 }

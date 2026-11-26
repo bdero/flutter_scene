@@ -4,6 +4,9 @@
 
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/animation.dart'
+    as engine
+    show MorphWeightsTimelineResolver;
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -91,5 +94,53 @@ void main() {
     expect(animation, isNotNull);
     // A clip can be instantiated and bound without error.
     expect(root.createAnimationClip(animation!), isNotNull);
+  });
+
+  test('splits a cubic spline channel\'s keyframes from its tangents', () {
+    final doc = SceneDocument();
+    final face = doc.createNode(name: 'Face', root: true);
+    final timeline = doc.addPayload(
+      PayloadSpec(
+        doc.newId(),
+        encoding: PayloadEncoding.floats,
+        bytes: _floatBytes([0.0, 1.0]),
+      ),
+    );
+    final keyframes = doc.addPayload(
+      PayloadSpec(
+        doc.newId(),
+        encoding: PayloadEncoding.floats,
+        // Two keyframes of two morph target weights, each keyframe an
+        // in-tangent, a value, and an out-tangent.
+        bytes: _floatBytes([
+          0, 0, 0, 1, 2, 3, //
+          4, 5, 1, 0, 0, 0, //
+        ]),
+      ),
+    );
+    doc.addAnimation(
+      AnimationSpec(
+        doc.newId(),
+        name: 'Blink',
+        channels: [
+          AnimationChannelSpec(
+            target: face.id,
+            targetName: 'Face',
+            property: AnimationProperty.weights,
+            timeline: timeline.id,
+            keyframes: keyframes.id,
+            interpolation: AnimationInterpolation.cubicSpline,
+          ),
+        ],
+      ),
+    );
+
+    final resolver =
+        realizeScene(doc).parsedAnimations.single.channels.single.resolver
+            as engine.MorphWeightsTimelineResolver;
+    expect(resolver.targetCount, 2);
+    expect(resolver.values, [0, 1, 1, 0]);
+    expect(resolver.inTangents, [0, 0, 4, 5]);
+    expect(resolver.outTangents, [2, 3, 0, 0]);
   });
 }

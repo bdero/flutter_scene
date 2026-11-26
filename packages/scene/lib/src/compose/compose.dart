@@ -733,6 +733,7 @@ AnimationSpec _remapAnimation(
         property: ch.property,
         timeline: remap(ch.timeline),
         keyframes: remap(ch.keyframes),
+        interpolation: ch.interpolation,
       ),
   ],
   pathChannels: [
@@ -743,7 +744,7 @@ AnimationSpec _remapAnimation(
         path: ch.path,
         timeline: remap(ch.timeline),
         keyframes: remap(ch.keyframes),
-        step: ch.step,
+        interpolation: ch.interpolation,
       ),
   ],
 );
