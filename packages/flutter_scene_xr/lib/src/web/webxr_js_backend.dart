@@ -23,8 +23,11 @@ final class JsWebXrBackend implements WebXrBackend {
 
   XRSystem? get _xr => web.window.navigator.xr;
 
+  // TODO(webgpu-xr): the WebGPU backend cannot render into a session's
+  // targets yet, so it reports no runtime until flutter_scene's WebGPU host
+  // implements external color targets.
   @override
-  bool get isSupported => _xr != null;
+  bool get isSupported => _xr != null && gpu.externalColorTargetsSupported;
 
   @override
   Future<bool> isSessionSupported(XrSessionMode mode) async {

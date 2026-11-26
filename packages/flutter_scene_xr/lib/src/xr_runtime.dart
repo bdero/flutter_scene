@@ -13,7 +13,8 @@ abstract class XrRuntime {
   /// The platform's runtime. Replaceable, so tests can install a fake.
   static XrRuntime instance = impl.createRuntime();
 
-  /// Whether this platform has an XR runtime at all.
+  /// Whether this platform has an XR runtime the active GPU backend can
+  /// render for.
   bool get isSupported;
 
   /// Whether a [mode] session can be started right now.
