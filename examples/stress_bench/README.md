@@ -64,3 +64,13 @@ python3 -m http.server -d build/web 8000
 ```
 
 `background=0` drops the gradient and `hud=0` drops the HUD. Add `--wasm` for Skwasm, and `--dart-define=flutter_scene.webgpu=true` (with `flutter_scene_webgpu: true` under the workspace pubspec's `hooks: user_defines:` for both `flutter_scene` and `stress_bench`, as `tools/webgpu_smoke/opt_in.sh` does for the smoke app) for WebGPU.
+
+## Contact shadow benchmark
+
+`lib/contact_shadow_bench.dart` times one scene offscreen at 1080p and 4K with contact shadows off, marched per pixel, and marched in wavefronts (compute), per quality tier, with and without TAA and three extra point lights. Frames render back to back with GPU pacing off and a trailing empty submission waits for the GPU, so `ms` is GPU throughput whenever it exceeds `cpu`; when the two match the run was CPU bound and says nothing about the GPU.
+
+```sh
+flutter run -d macos --profile --enable-flutter-gpu -t lib/contact_shadow_bench.dart
+```
+
+`--dart-define=bench.only=<regex>` narrows the configs by name and `--dart-define=bench.sizes=3840x2160` the sizes. The wavefront path needs a Flutter with Flutter GPU compute (3.51 or newer). On web it builds like the presentation benchmark and prints to the console.
