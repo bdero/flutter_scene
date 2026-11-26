@@ -19,11 +19,6 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart';
 
-/// Forces the traced feed on wherever compute is available, whatever the
-/// scene's [GlobalIlluminationSettings.feed], for tests.
-@visibleForTesting
-bool tracedIrradianceEnabled = false;
-
 /// How many times each frame's trace is dispatched, so a test can read its
 /// GPU cost off the difference in completion times.
 @visibleForTesting
@@ -80,9 +75,7 @@ class IrradianceTraceState {
   /// starts loading the compute shaders the first time it is asked.
   bool availableFor(GlobalIlluminationSettings settings) {
     if (_failed) return false;
-    if (!tracedIrradianceEnabled && settings.feed != IrradianceFeed.rayTraced) {
-      return false;
-    }
+    if (settings.feed != IrradianceFeed.rayTraced) return false;
     return _readyShaders() != null;
   }
 

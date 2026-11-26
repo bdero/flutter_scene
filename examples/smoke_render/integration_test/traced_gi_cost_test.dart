@@ -20,8 +20,6 @@ import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 // ignore: implementation_imports
-import 'package:flutter_scene/src/render/engine_compute_shaders.dart';
-// ignore: implementation_imports
 import 'package:flutter_scene/src/render/frame_transients.dart'
     show rendererSubmissions;
 // ignore: implementation_imports
@@ -44,8 +42,7 @@ void main() {
   testWidgets('the traced feed costs', (tester) async {
     await tester.pumpWidget(const SizedBox.expand());
     await tester.pump();
-    await Scene.preload(smaa: true);
-    await tester.runAsync(EngineComputeShaders.whenLoaded);
+    await tester.runAsync(() => Scene.preload(smaa: true, compute: true));
     final report = <String, Object?>{'compute': gpu.supportsCompute};
     if (!gpu.supportsCompute) {
       binding.reportData = {
@@ -83,11 +80,9 @@ void main() {
       },
     };
 
-    tracedIrradianceEnabled = true;
     for (final MapEntry(key: name, value: setup) in configs.entries) {
       report[name] = await _measure(tester, setup);
     }
-    tracedIrradianceEnabled = false;
     debugTraceRepeats = 1;
     debugGatherRepeats = 1;
     debugOnTraceCompleted = null;
@@ -105,7 +100,9 @@ Future<Map<String, Object?>> _measure(
   _Setup Function() build,
 ) async {
   final setup = build();
-  final scene = setup.scene..globalIllumination.enabled = true;
+  final scene = setup.scene
+    ..globalIllumination.enabled = true
+    ..globalIllumination.feed = IrradianceFeed.rayTraced;
   final key = GlobalKey();
   await tester.pumpWidget(
     MaterialApp(

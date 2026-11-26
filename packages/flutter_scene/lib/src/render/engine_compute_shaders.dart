@@ -41,6 +41,11 @@ abstract final class EngineComputeShaders {
     return null;
   }
 
+  /// The load in flight, or null once it has landed or failed or before it
+  /// starts.
+  static Future<void>? get pendingLoad =>
+      _library == null && !_failed ? _loading : null;
+
   /// Waits for the load [request] starts. Completes at once on a device
   /// without compute.
   static Future<void> whenLoaded() async {
