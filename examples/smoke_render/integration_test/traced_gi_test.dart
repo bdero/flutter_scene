@@ -3,8 +3,9 @@
 // screen-space scatter, and fed by the compute trace, saving each frame and
 // the colour bleed each one measures to build/smoke/.
 //
-// Not part of the smoke matrix. Needs compute for the traced frame (Flutter
-// 3.53 or newer on Metal or Vulkan, or WebGPU). Run on macOS:
+// Not part of the smoke matrix. The traced frame needs compute (Flutter 3.53
+// or newer on Metal or Vulkan, or WebGPU) and checks the screen-space
+// fallback without it. Run on macOS:
 //
 //   flutter drive --driver=test_driver/integration_test.dart \
 //     --target=integration_test/traced_gi_test.dart \
@@ -117,6 +118,7 @@ void main() {
       return {
         'traced': passes.contains('IrradianceTracePass'),
         'injected': passes.contains('IrradianceInjectPass'),
+        'prepass': passes.contains('DepthPrepass'),
         'left': left,
         'right': right,
         // Positive when the right half leans red against green more than the
@@ -131,9 +133,7 @@ void main() {
       gi: true,
       traced: false,
     );
-    if (gpu.supportsCompute) {
-      report['traced'] = await render('traced', gi: true, traced: true);
-    }
+    report['traced'] = await render('traced', gi: true, traced: true);
 
     binding.reportData = {
       ...captures,
@@ -145,10 +145,16 @@ void main() {
     final off = report['off']! as Map<String, Object?>;
     final screenSpace = report['screen_space']! as Map<String, Object?>;
     expect(screenSpace['injected'], isTrue);
-    if (!gpu.supportsCompute) return;
+    expect(screenSpace['prepass'], isTrue);
     final traced = report['traced']! as Map<String, Object?>;
+    if (!gpu.supportsCompute) {
+      expect(traced['traced'], isFalse);
+      expect(traced['injected'], isTrue, reason: 'falls back to screen space');
+      return;
+    }
     expect(traced['traced'], isTrue, reason: 'the trace pass ran');
     expect(traced['injected'], isFalse);
+    expect(traced['prepass'], isFalse, reason: 'the trace reads no prepass');
     // The walls bleed onto the room, more than with the field off.
     expect(
       (traced['bleed']! as double),
