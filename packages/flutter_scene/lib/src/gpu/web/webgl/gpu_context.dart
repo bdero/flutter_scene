@@ -45,7 +45,7 @@ final class WebGlContext extends GpuContext {
     _gl.pixelStorei(web.WebGL2RenderingContext.UNPACK_ALIGNMENT, 1);
     // Cache extensions we rely on for later phases.
     _gl.getExtension('EXT_color_buffer_float');
-    _gl.getExtension('OES_texture_float_linear');
+    float32Filterable = _gl.getExtension('OES_texture_float_linear') != null;
     // Anisotropic filtering. MAX_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FF.
     if (_gl.getExtension('EXT_texture_filter_anisotropic') != null) {
       _maxSupportedAnisotropy = _integerParameter(0x84FF) ?? 1;
@@ -147,6 +147,12 @@ final class WebGlContext extends GpuContext {
       <String, web.WebGLVertexArrayObject>{};
 
   int _maxSupportedAnisotropy = 1;
+
+  /// Whether 32-bit float textures can be sampled with linear filtering.
+  /// Without it [WebGlRenderPass.bindTexture] samples them nearest, since a
+  /// linear filter leaves them incomplete and they read as zero.
+  @visibleForTesting
+  bool float32Filterable = false;
 
   /// The device's maximum supported anisotropy (1 when the extension is
   /// unavailable, which disables anisotropic filtering).
