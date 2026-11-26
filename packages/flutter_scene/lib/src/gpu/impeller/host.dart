@@ -91,6 +91,10 @@ class GpuHost {
   /// [buffer] must not be used again. Work already submitted is unaffected.
   // TODO(gpu-release): see releaseTexture.
   void releaseBuffer(DeviceBuffer buffer) {}
+
+  /// Impeller's OpenGL ES backend lacks `kR8G8UNormInt` texture format mapping
+  /// (`formats_gles.cc`), so native backends stay on portable RGBA8 targets.
+  bool get supportsRg8RenderTarget => false;
 }
 
 /// Readies the GPU backend. Flutter GPU needs nothing beyond the engine.

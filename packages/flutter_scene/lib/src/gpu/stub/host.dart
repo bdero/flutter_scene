@@ -39,6 +39,8 @@ class GpuHost {
     required ExternalTargetHandleKind kind,
     PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
   }) => _stub();
+
+  bool get supportsRg8RenderTarget => false;
 }
 
 /// The active backend's host integration.

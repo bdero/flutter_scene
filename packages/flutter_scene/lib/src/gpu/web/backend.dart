@@ -321,6 +321,10 @@ abstract base class GpuHost {
   /// [buffer] must not be used again. Work already submitted is unaffected.
   void releaseBuffer(DeviceBuffer buffer);
 
+  /// Whether this backend supports two-channel `r8g8UNormInt` (`RG8` /
+  /// `rg8unorm`) as a renderable, linear-filterable color attachment.
+  bool get supportsRg8RenderTarget => false;
+
   /// The platform graphics context behind this backend (the
   /// `WebGL2RenderingContext` on WebGL2), for a runtime that must bind it.
   Object? get nativeGraphicsContext;

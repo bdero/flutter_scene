@@ -158,8 +158,8 @@ class SmaaPass extends RenderGraphPass {
     final search = await rootBundle.load(
       'packages/flutter_scene/assets/smaa_search.bin',
     );
-    // Expanded to rgba8: two-channel formats are not in the Flutter GPU
-    // format set.
+    // Expanded to rgba8: Impeller's GLES backend lacks two-channel RG8 texture
+    // support, so the static lookup tables stay on portable RGBA8.
     _areaTexture = _uploadExpanded(
       area.buffer.asUint8List(area.offsetInBytes, area.lengthInBytes),
       width: 160,
@@ -198,6 +198,10 @@ class SmaaPass extends RenderGraphPass {
     return texture;
   }
 
+  static gpu.PixelFormat get _edgesFormat => gpu.gpuHost.supportsRg8RenderTarget
+      ? gpu.PixelFormat.r8g8UNormInt
+      : gpu.PixelFormat.r8g8b8a8UNormInt;
+
   @override
   String get name => 'SmaaPass';
 
@@ -228,7 +232,7 @@ class SmaaPass extends RenderGraphPass {
       TransientTextureDescriptor.color(
         width: width,
         height: height,
-        format: gpu.PixelFormat.r8g8b8a8UNormInt,
+        format: _edgesFormat,
         debugName: 'smaa_edges',
       ),
     );

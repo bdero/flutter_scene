@@ -76,6 +76,11 @@ final class WebGlHost extends GpuHost {
   /// Deletes [buffer]'s GL objects. See [releaseTexture].
   @override
   void releaseBuffer(DeviceBuffer buffer) => buffer.webGl._release();
+
+  /// `GL_RG8` is a mandatory color-renderable + filterable core format in
+  /// WebGL2.
+  @override
+  bool get supportsRg8RenderTarget => true;
 }
 
 /// The WebGL2 backend's host integration.

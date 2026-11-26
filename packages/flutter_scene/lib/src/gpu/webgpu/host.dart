@@ -72,6 +72,10 @@ final class _WebGpuHost extends GpuHost {
   @override
   void releaseBuffer(DeviceBuffer buffer) =>
       (buffer as _WebGpuDeviceBuffer)._release();
+
+  /// `rg8unorm` is a mandatory renderable + filterable core format in WebGPU.
+  @override
+  bool get supportsRg8RenderTarget => true;
 }
 
 /// Hands [texture] to Flutter as a `ui.Image`, synchronously, through the
