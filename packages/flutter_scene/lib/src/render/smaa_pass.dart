@@ -106,6 +106,16 @@ class SmaaPass extends RenderGraphPass {
     heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
   );
 
+  // Pass 1 marks surviving edge pixels with stencil = 1; discarded edgeless
+  // fragments leave the cleared 0 intact so Pass 2 skips them in hardware.
+  static final gpu.StencilConfig _markEdgeStencil = gpu.StencilConfig(
+    depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
+  );
+  static final gpu.StencilConfig _testEdgeStencil = gpu.StencilConfig(
+    compareFunction: gpu.CompareFunction.equal,
+    writeMask: 0,
+  );
+
   static gpu.Texture? _areaTexture;
   static gpu.Texture? _searchTexture;
 
@@ -222,14 +232,29 @@ class SmaaPass extends RenderGraphPass {
       ByteData.sublistView(info),
     );
 
-    // Pass 1: edge detection. Non-edge texels discard, so the target must
-    // clear to zero.
+    // Device-private depth-stencil target shared between Pass 1 (write) and
+    // Pass 2 (test); a deviceTransient target cannot preserve stencil across
+    // passes. Using the default depth-stencil format keeps WebGL2, WebGPU, and
+    // Impeller aligned and lets the pool reuse the same slot format.
+    final stencil = context.texturePool.acquireScoped(
+      TransientTextureDescriptor(
+        width: width,
+        height: height,
+        format: gpu.gpuContext.defaultDepthStencilFormat,
+        enableShaderReadUsage: false,
+        debugName: 'smaa_stencil',
+      ),
+    );
+
+    // Pass 1: edge detection. Non-edge texels discard, leaving both color and
+    // stencil at zero while surviving edge texels write stencil = 1.
     final edges = context.texturePool.acquireScoped(
       TransientTextureDescriptor.color(
         width: width,
         height: height,
         format: gpu.PixelFormat.r8g8b8a8UNormInt,
         debugName: 'smaa_edges',
+        attachmentKey: 'smaa_stencil',
       ),
     );
     {
@@ -241,9 +266,21 @@ class SmaaPass extends RenderGraphPass {
             loadAction: gpu.LoadAction.clear,
             clearValue: Vector4.zero(),
           ),
+          depthStencilAttachment: gpu.DepthStencilAttachment(
+            texture: stencil,
+            depthLoadAction: gpu.LoadAction.dontCare,
+            depthStoreAction: gpu.StoreAction.dontCare,
+            stencilLoadAction: gpu.LoadAction.clear,
+            stencilStoreAction: gpu.StoreAction.store,
+            stencilClearValue: 0,
+          ),
         ),
       );
       renderPass.bindPipeline(resolvePipeline(_vertexShader, _edgesShader));
+      renderPass.setDepthWriteEnable(false);
+      renderPass.setDepthCompareOperation(gpu.CompareFunction.always);
+      renderPass.setStencilReference(1);
+      renderPass.setStencilConfig(_markEdgeStencil);
       bindVertexBufferCompat(renderPass, _quadView, 6);
       renderPass.bindTexture(
         _edgesShader.cachedUniformSlot('scene_color'),
@@ -259,12 +296,15 @@ class SmaaPass extends RenderGraphPass {
     }
 
     // Pass 2: blending weights from the edge, area, and search textures.
+    // Hardware stencil testing skips edgeless pixels whose stencil stayed 0,
+    // leaving their cleared zero weights intact.
     final weights = context.texturePool.acquireScoped(
       TransientTextureDescriptor.color(
         width: width,
         height: height,
         format: gpu.PixelFormat.r8g8b8a8UNormInt,
         debugName: 'smaa_weights',
+        attachmentKey: 'smaa_stencil',
       ),
     );
     {
@@ -276,9 +316,20 @@ class SmaaPass extends RenderGraphPass {
             loadAction: gpu.LoadAction.clear,
             clearValue: Vector4.zero(),
           ),
+          depthStencilAttachment: gpu.DepthStencilAttachment(
+            texture: stencil,
+            depthLoadAction: gpu.LoadAction.dontCare,
+            depthStoreAction: gpu.StoreAction.dontCare,
+            stencilLoadAction: gpu.LoadAction.load,
+            stencilStoreAction: gpu.StoreAction.dontCare,
+          ),
         ),
       );
       renderPass.bindPipeline(resolvePipeline(_vertexShader, _weightsShader));
+      renderPass.setDepthWriteEnable(false);
+      renderPass.setDepthCompareOperation(gpu.CompareFunction.always);
+      renderPass.setStencilReference(1);
+      renderPass.setStencilConfig(_testEdgeStencil);
       bindVertexBufferCompat(renderPass, _quadView, 6);
       renderPass.bindTexture(
         _weightsShader.cachedUniformSlot('edges_texture'),
@@ -303,8 +354,11 @@ class SmaaPass extends RenderGraphPass {
       rendererSubmissions.submit(commandBuffer);
     }
     context.texturePool.releaseScoped(edges);
+    context.texturePool.releaseScoped(stencil);
 
-    // Pass 3: neighborhood blending into the output.
+    // Pass 3: neighborhood blending into the output. Runs full-screen because
+    // edgeless pixels still read neighbors' blending weights (right/bottom)
+    // and copy scene_color into _output.
     {
       final commandBuffer = gpu.gpuContext.createCommandBuffer();
       final renderPass = commandBuffer.createRenderPass(
