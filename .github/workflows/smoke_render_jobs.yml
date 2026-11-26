@@ -230,6 +230,13 @@ jobs:
           emulator-options: ${{ matrix.emulator_options }}
           # Caps, retry, capture pulls, and diagnostics live in the script.
           script: bash examples/smoke_render/tool/android_drive.sh ${{ matrix.backend }} build/app/outputs/flutter-apk/app-${{ matrix.backend }}-debug.apk
+      - name: Keep frames for the Vulkan parity check
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-android_${{ matrix.backend }}-frames
+          path: examples/smoke_render/build/smoke
+          if-no-files-found: ignore
       - name: Upload Android diagnostics
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7
@@ -480,6 +487,47 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.argos_prefix }}smoke-web-parity-diff
+          path: frames/diff
+          if-no-files-found: ignore
+
+  # Vulkan must render what GLES renders on the same emulator image and build,
+  # the native counterpart of web-parity. A draw Vulkan drops silently (a bad
+  # descriptor layout, a sample mask of 0) shows up here instead of only as a
+  # new or changed screenshot.
+  android-parity:
+    name: ${{ inputs.argos_prefix }}android-parity (${{ inputs.label }})
+    needs: [android]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        if: ${{ inputs.checkout_ref != '' }}
+        with:
+          ref: ${{ inputs.checkout_ref }}
+      - uses: actions/checkout@v7
+        if: ${{ inputs.checkout_ref == '' }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-android_gles-frames
+          path: frames/gles
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-android_vulkan-frames
+          path: frames/vulkan
+      - run: pip install --quiet pillow numpy
+      # TODO(cube-seam-parity): prebaked_ibl differs along the prefiltered
+      # cube's face seams (about 1.1% of pixels, widest on the roughest
+      # sphere), GLES through ANGLE against SwiftShader Vulkan. Find which
+      # side filters across seams correctly, fix it in the shim or file it
+      # upstream, then drop the allowance.
+      - name: Compare Vulkan against GLES
+        run: python3 tools/webgpu_smoke/compare_frames.py frames/gles frames/vulkan --diff-dir frames/diff --allow prebaked_ibl.png=2.0
+      - name: Keep the differences
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-android-parity-diff
           path: frames/diff
           if-no-files-found: ignore
 

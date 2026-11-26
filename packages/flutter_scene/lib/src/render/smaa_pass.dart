@@ -224,7 +224,7 @@ class SmaaPass extends RenderGraphPass {
 
     // Pass 1: edge detection. Non-edge texels discard, so the target must
     // clear to zero.
-    final edges = context.texturePool.acquire(
+    final edges = context.texturePool.acquireScoped(
       TransientTextureDescriptor.color(
         width: width,
         height: height,
@@ -259,7 +259,7 @@ class SmaaPass extends RenderGraphPass {
     }
 
     // Pass 2: blending weights from the edge, area, and search textures.
-    final weights = context.texturePool.acquire(
+    final weights = context.texturePool.acquireScoped(
       TransientTextureDescriptor.color(
         width: width,
         height: height,
@@ -302,6 +302,7 @@ class SmaaPass extends RenderGraphPass {
       drawCompat(renderPass, 6);
       rendererSubmissions.submit(commandBuffer);
     }
+    context.texturePool.releaseScoped(edges);
 
     // Pass 3: neighborhood blending into the output.
     {
@@ -329,6 +330,7 @@ class SmaaPass extends RenderGraphPass {
       rendererSubmissions.submit(commandBuffer);
     }
 
+    context.texturePool.releaseScoped(weights);
     context.blackboard.set(kDisplayColorBlackboardKey, _output);
   }
 }

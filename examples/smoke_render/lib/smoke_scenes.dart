@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -42,6 +43,7 @@ class SmokeScene {
     this.id,
     this.setup, {
     this.preload,
+    this.paint,
     this.warmupFrames = 0,
     this.requiredFrames = 1,
     this.fullCoverage = false,
@@ -52,6 +54,12 @@ class SmokeScene {
   final String id;
   final ({Scene scene, Camera camera}) Function() setup;
   final Future<void> Function()? preload;
+
+  /// Draws the frame in place of `scene.render(camera, canvas)`, for a scene
+  /// that exercises another render entry point (view groups, render to an
+  /// external target).
+  final void Function(Scene scene, Camera camera, Canvas canvas, Size size)?
+  paint;
 
   /// Counters the captured frame's `ScenePass` must report exactly, keyed
   /// as `RenderCounters.toJson` names them. For pinning a statistic the
@@ -251,6 +259,16 @@ PreprocessedMaterial _fmatMaterial(String name) {
     metadata: metadata,
     vertexShaders: vertexShaders,
   );
+}
+
+/// The lit cutout card loaded by [_loadLitCutout].
+PreprocessedMaterial? _litCutoutMaterial;
+
+/// Loads the lit cutout through the public loader, which wires its own
+/// depth-pass fragments the way an app's material gets them.
+Future<void> _loadLitCutout() async {
+  await loadSmokeMaterials();
+  _litCutoutMaterial ??= await loadFmatMaterial('assets/lit_cutout.fmat');
 }
 
 /// The pre-baked environment preloaded by [loadPrebakedIbl].
@@ -924,7 +942,157 @@ UnskinnedGeometry _packedBox(double half, int palette) {
     );
 }
 
+/// The two eyes of a headset-like pair around [head], as camera nodes the way
+/// an XR rig places them: 64 mm apart along the head's right axis, each lens
+/// wider away from the nose (50 degrees out, 40 degrees in, 64 degrees up and
+/// down). The head node's transform is the inverse of the head camera's view
+/// matrix, so the eyes inherit its orientation exactly.
+({Camera left, Camera right}) _stereoEyes(Camera head) {
+  const ipd = 0.064;
+  const outer = 50 * vm.degrees2Radians;
+  const inner = 40 * vm.degrees2Radians;
+  // Tall enough that a half-width capture shows the lens unsquashed: the
+  // frustum's width over its height is one half, like the viewport's.
+  const vertical = 63.8 * vm.degrees2Radians;
+  final headTransform = vm.Matrix4.inverted(head.getViewMatrix());
+  Camera eye(double x, double left, double right) {
+    final node = Node()
+      ..localTransform =
+          headTransform * vm.Matrix4.translation(vm.Vector3(x, 0, 0));
+    node.addComponent(
+      CameraComponent(
+        projection: OffAxisProjection.fromAngles(
+          left: left,
+          right: right,
+          down: -vertical,
+          up: vertical,
+          near: 0.1,
+          far: 100.0,
+        ),
+      ),
+    );
+    return node.getComponent<CameraComponent>()!.toCamera();
+  }
+
+  return (
+    left: eye(-ipd / 2, -outer, inner),
+    right: eye(ipd / 2, -inner, outer),
+  );
+}
+
+const Rect _leftHalf = Rect.fromLTWH(0, 0, 0.5, 1);
+const Rect _rightHalf = Rect.fromLTWH(0.5, 0, 0.5, 1);
+
+/// A ground plane, two blocks, and a shadow-casting sun, lit so both eyes see
+/// shadow edges and a horizon.
+({Scene scene, Camera camera}) _stereoScene() {
+  final scene = Scene()..antiAliasingMode = AntiAliasingMode.none;
+  // Lit from behind the camera's left so the pole and block throw their
+  // shadows toward the viewer, across the plane both eyes see.
+  scene.add(
+    _directionalLightNode(
+      vm.Vector3(0.55, -1.0, 0.3),
+      DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
+    ),
+  );
+  final material = PhysicallyBasedMaterial()
+    ..baseColorFactor = vm.Vector4(0.75, 0.74, 0.70, 1.0)
+    ..metallicFactor = 0.0
+    ..roughnessFactor = 0.9
+    ..vertexColorWeight = 0.0;
+  scene.add(Node(mesh: Mesh(PlaneGeometry(width: 4.0, depth: 3.2), material)));
+  scene.add(
+    Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.16, 2.2, 0.16)), material))
+      ..localTransform = vm.Matrix4.translation(vm.Vector3(-0.5, 1.1, 0.2)),
+  );
+  scene.add(
+    Node(
+      mesh: Mesh(
+        CuboidGeometry(vm.Vector3(1.1, 0.12, 0.8)),
+        PhysicallyBasedMaterial()
+          ..baseColorFactor = vm.Vector4(0.85, 0.30, 0.20, 1.0)
+          ..roughnessFactor = 0.5
+          ..vertexColorWeight = 0.0,
+      ),
+    )..localTransform = vm.Matrix4.translation(vm.Vector3(0.7, 0.1, -0.4)),
+  );
+  return (scene: scene, camera: _shadowCamera());
+}
+
+// The texture an external-target scene renders into, kept across frames the
+// way a runtime keeps its swapchain.
+gpu.Texture? _externalPairTexture;
+
+// Renders [views] into one caller-owned texture the size of the capture and
+// draws it onto the canvas, the way an XR runtime consumes a frame.
+void _paintThroughExternalTarget(
+  Scene scene,
+  Canvas canvas,
+  Size size,
+  List<RenderView> Function(ExternalRenderTarget target) views,
+) {
+  final dpr =
+      ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ?? 1.0;
+  final width = (size.width * dpr).round();
+  final height = (size.height * dpr).round();
+  var texture = _externalPairTexture;
+  if (texture == null || texture.width != width || texture.height != height) {
+    texture = _externalPairTexture = gpu_shim.gpuContext.createTexture(
+      gpu_shim.StorageMode.devicePrivate,
+      width,
+      height,
+      enableRenderTargetUsage: true,
+      enableShaderReadUsage: true,
+    );
+  }
+  final target = ExternalRenderTarget.texture(texture);
+  scene.renderViewsToTargets([RenderViewGroup(views(target))], pixelRatio: dpr);
+  canvas.drawImageRect(
+    texture.asImage(),
+    Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+    Offset.zero & size,
+    Paint()..filterQuality = FilterQuality.medium,
+  );
+}
+
+/// The stereo scene with its two eyes, for the external-target comparison
+/// test.
+({Scene scene, Camera left, Camera right}) buildStereoPairScene() {
+  final built = _stereoScene();
+  final eyes = _stereoEyes(built.camera);
+  return (scene: built.scene, left: eyes.left, right: eyes.right);
+}
+
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
+  // Two off-axis eyes in one view group, rendered into one caller-owned
+  // texture the way an XR runtime takes a frame, so the frame culls once,
+  // renders the shadows once, and copies each eye into its half. The canvas
+  // and solo-eye paths are compared against this in the smoke test.
+  SmokeScene(
+    'stereo_pair',
+    _stereoScene,
+    fullCoverage: true,
+    paint: (scene, head, canvas, size) {
+      final eyes = _stereoEyes(head);
+      _paintThroughExternalTarget(
+        scene,
+        canvas,
+        size,
+        (target) => [
+          RenderView(
+            camera: eyes.left,
+            externalTarget: target,
+            viewport: _leftHalf,
+          ),
+          RenderView(
+            camera: eyes.right,
+            externalTarget: target,
+            viewport: _rightHalf,
+          ),
+        ],
+      );
+    },
+  ),
   // Diffuse-ish PBR under the default studio IBL.
   SmokeScene('pbr_cuboid', () {
     final scene = Scene();
@@ -986,11 +1154,12 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
-  // The ground-truth occlusion method with the visibility bitmask and
-  // multi-bounce enabled. Exercises the horizon-slice shader, the uint
-  // bitfield path (including the manual popcount on GLES/WebGL2), and the
-  // albedo-tinted bounce in the material shader. A thin bar over a plane
-  // checks the constant-thickness occluder model.
+  // The ground-truth occlusion method in horizon mode at half resolution,
+  // with multi-bounce and the depth mip chain (so a full-resolution prepass
+  // is downsampled into the occlusion's base level). A receding side wall
+  // and floor crease seen at grazing angles catch stippling from the
+  // denoiser, the base-level subsample, and the upsample in the material.
+  // The visibility bitmask is covered by the ssgi scene.
   SmokeScene('ambient_occlusion_gtao', () {
     final scene = Scene();
     _configureAmbientOcclusion(scene);
@@ -1000,9 +1169,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..intensity = 1.5
       ..sliceCount = 3
       ..stepsPerSlice = 6
-      ..visibilityBitmask = true
-      ..thickness = 0.35
-      ..multiBounce = 1.0;
+      ..multiBounce = 1.0
+      ..halfResolution = true;
     final material = PhysicallyBasedMaterial()
       ..baseColorFactor = vm.Vector4(0.72, 0.5, 0.34, 1.0)
       ..metallicFactor = 0.0
@@ -1022,6 +1190,14 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.8, 0.8, 0.8)), material))
         ..localTransform = vm.Matrix4.translation(vm.Vector3(-1.6, -0.5, -1.1)),
     );
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 8.0, depth: 5.0), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, -1.2, 1.5)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.1, 2.4, 4.4)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(1.0, 0, 1.2)),
+    );
     return (
       scene: scene,
       camera: PerspectiveCamera(
@@ -1029,7 +1205,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         target: vm.Vector3(0, -0.2, -1.0),
       ),
     );
-  }),
+  }, fullCoverage: true),
   // Screen-space indirect light: a sunlit red wall beside a white floor and
   // cuboid. The bitmask gather must bleed red bounce onto the floor and the
   // cuboid's wall-facing side. Guards the fp16 chain, the sector-delta
@@ -1379,6 +1555,95 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       scene: scene,
       camera: PerspectiveCamera(
         position: vm.Vector3(3.3, 3.1, 3.8),
+        target: vm.Vector3(0, 0.2, 0),
+      ),
+    );
+  }),
+  // Mixed shadow sizes in one atlas: 2048 cascades, a soft 512 spot, a sharp
+  // 1024 spot, and a 256 point light. Four 2048 cascades plus a spot tile in
+  // one row would pass 8192, so this guards the 2D packing and each light's
+  // own tile, bias, and softness on every backend.
+  SmokeScene('shadow_atlas_packing', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.15;
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.75, 0.74, 0.70, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 6.0, depth: 4.0), material)),
+    );
+    for (final x in [-1.3, 1.3]) {
+      scene.add(
+        Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5)), material))
+          ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0.25, 0.0)),
+      );
+    }
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.14, 0.7, 0.14)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.0, 0.35, 0.6)),
+    );
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.5, -1.0, 0.35),
+        DirectionalLight(
+          intensity: 0.5,
+          castsShadow: true,
+          shadowMapResolution: 2048,
+        ),
+      ),
+    );
+    Node spot(vm.Vector3 position, vm.Vector3 direction, SpotLight light) =>
+        Node()
+          ..localTransform = vm.Matrix4.translation(position)
+          ..addComponent(SpotLightComponent(light..direction = direction));
+    scene.add(
+      spot(
+        vm.Vector3(-3.0, 2.2, 0.3),
+        vm.Vector3(0.75, -1.0, -0.1),
+        SpotLight(
+          intensity: 10.0,
+          range: 12.0,
+          outerConeAngle: 0.6,
+          castsShadow: true,
+          shadowMapResolution: 512,
+          shadowSoftness: 3.0,
+        ),
+      ),
+    );
+    scene.add(
+      spot(
+        vm.Vector3(3.0, 2.2, -0.3),
+        vm.Vector3(-0.75, -1.0, 0.1),
+        SpotLight(
+          intensity: 10.0,
+          range: 12.0,
+          outerConeAngle: 0.6,
+          castsShadow: true,
+          shadowMapResolution: 1024,
+          shadowSoftness: 0.5,
+        ),
+      ),
+    );
+    scene.add(
+      Node()
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.0, 0.9, 1.3))
+        ..addComponent(
+          PointLightComponent(
+            PointLight(
+              intensity: 3.0,
+              range: 6.0,
+              castsShadow: true,
+              shadowMapResolution: 256,
+            ),
+          ),
+        ),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0.0, 4.0, 5.0),
         target: vm.Vector3(0, 0.2, 0),
       ),
     );
@@ -2222,6 +2487,44 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _shadowCamera());
   }, preload: loadSmokeMaterials),
+  // A lit alpha_to_coverage card standing on a ground plane under a shadowing
+  // sun. The card's holes must read in its shadow and against the ground,
+  // which exercises the material's own depth and shadow fragments on every
+  // backend.
+  SmokeScene('lit_cutout', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(0.35, -1.0, 0.7),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.6, depth: 3.6),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.78, 0.76, 0.72, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      ),
+    );
+    // Stood upright facing +Z, toward the camera.
+    scene.add(
+      Node(
+          mesh: Mesh(
+            PlaneGeometry(width: 1.6, depth: 1.2),
+            _litCutoutMaterial!,
+          ),
+        )
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0, 0.65, -0.2)) *
+            vm.Matrix4.rotationX(math.pi / 2),
+    );
+    return (scene: scene, camera: _shadowCamera());
+  }, preload: _loadLitCutout),
   // Distance fog: a near and a far cuboid, the far one fading toward the fog
   // color, with height fog and sun in-scatter enabled so those branches of
   // ApplyFog run too. Geometry stays central so the corners keep the clear
@@ -3311,7 +3614,7 @@ class SmokeSceneViewState extends State<SmokeSceneView> {
           color: kSmokeClear,
           child: CustomPaint(
             size: Size.infinite,
-            painter: _SmokePainter(_scene, _camera),
+            painter: _SmokePainter(widget.scene, _scene, _camera),
           ),
         ),
       ),
@@ -3320,13 +3623,19 @@ class SmokeSceneViewState extends State<SmokeSceneView> {
 }
 
 class _SmokePainter extends CustomPainter {
-  _SmokePainter(this.scene, this.camera);
+  _SmokePainter(this.smoke, this.scene, this.camera);
 
+  final SmokeScene smoke;
   final Scene scene;
   final Camera camera;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final custom = smoke.paint;
+    if (custom != null) {
+      custom(scene, camera, canvas, size);
+      return;
+    }
     scene.render(camera, canvas, viewport: Offset.zero & size);
   }
 

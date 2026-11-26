@@ -25,6 +25,7 @@ import 'package:flutter_scene/src/render/render_stats.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/wireframe_overlay.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/render/sh_composite.dart';
 import 'package:flutter_scene/src/render/skybox_encoder.dart';
@@ -105,6 +106,7 @@ class ScenePass extends RenderGraphPass {
     bool bindSceneDepth = false,
     double time = 0.0,
     List<Plane> cullingPlanes = const [],
+    Frustum? cullingFrustum,
     bool includeOffscreen = false,
     bool suppressPlanarReflections = false,
     Matrix4? cameraTransform,
@@ -113,6 +115,7 @@ class ScenePass extends RenderGraphPass {
     bool primaryView = false,
   }) : _debugView = debugView,
        _primaryView = primaryView,
+       _cullingFrustum = cullingFrustum,
        _captureOpaqueColor = captureOpaqueColor,
        _displayReferredLayer = displayReferredLayer,
        _displayReferredFormat = displayReferredFormat,
@@ -200,6 +203,9 @@ class ScenePass extends RenderGraphPass {
   final bool _suppressPlanarReflections;
   final double _time;
   final List<Plane> _cullingPlanes;
+  // Replaces the camera's frustum for culling when set (a view group's
+  // combined frustum).
+  final Frustum? _cullingFrustum;
   final bool _includeOffscreen;
 
   static const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
@@ -375,10 +381,12 @@ class ScenePass extends RenderGraphPass {
           ? 0
           : _punctualLighting.pointShadowTileCount,
       rectAreaLightCount: _punctualLighting.rectAreaLightCount,
-      spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
-      spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
-      spotShadowSoftness: _punctualLighting.spotShadowSoftness,
       shadowMap: shadowMap,
+      shadowAtlas: shadowMap == null
+          ? null
+          : context.blackboard.get<ShadowAtlasLayout>(
+              kShadowAtlasLayoutBlackboardKey,
+            ),
       cascades: shadowMap == null ? const [] : _cascades,
       ssaoMap: ssaoMap,
       specularOcclusionMode: ssaoMap == null ? 0.0 : _specularOcclusionMode,
@@ -447,6 +455,7 @@ class ScenePass extends RenderGraphPass {
       displayReferredCameraTransform: _displayReferredCameraTransform,
       debugView: _debugView,
       primaryView: _primaryView,
+      cullingFrustum: _cullingFrustum,
     );
     final cullWatch = profileRendering ? (Stopwatch()..start()) : null;
     if (_includeOffscreen) {
@@ -479,6 +488,7 @@ class ScenePass extends RenderGraphPass {
       }
       rendererSubmissions.submit(commandBuffer);
       _encodeDisplayReferredLayer(context, encoder, depth, width, height);
+      if (ssaoMap != null) context.texturePool.releaseScoped(ssaoMap);
       context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
       return;
     }
@@ -601,6 +611,7 @@ class ScenePass extends RenderGraphPass {
     }
 
     _encodeDisplayReferredLayer(context, encoder, depth, width, height);
+    if (ssaoMap != null) context.texturePool.releaseScoped(ssaoMap);
     context.blackboard.set(kSceneColorBlackboardKey, currentColor);
     flushWatch?.stop();
     if (profileRendering) {

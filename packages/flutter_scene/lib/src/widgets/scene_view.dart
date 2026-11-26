@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart'
     show PipelineOwner, RenderCustomPaint, SemanticsBuilderCallback;
@@ -22,8 +24,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_scene/src/resource_group.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/scene_pointer.dart';
+import 'package:flutter_scene/src/widgets/scene_view_dom_canvas.dart';
+import 'package:flutter_scene/src/widgets/scene_view_pacing.dart';
 import 'package:flutter_scene/src/widgets/scene_view_semantics.dart';
-import 'package:flutter_scene/src/widget_texture.dart';
+import 'package:flutter_scene/src/widgets/widget_component_host.dart';
 
 /// Builds a [Camera] for the current frame from the [elapsed] time since the
 /// view started ticking. Use this for time-based cameras (for example an
@@ -66,6 +70,32 @@ typedef SceneLoadingBuilder =
 /// {@category Widgets}
 typedef SceneErrorBuilder =
     Widget Function(BuildContext context, Object error, VoidCallback retry);
+
+/// Where a [SceneView] on the web shows its frames. See
+/// [SceneView.webPresentation].
+/// {@category Widgets}
+enum ScenePresentation {
+  /// Each frame is drawn into Flutter's canvas as an image, composited with
+  /// the rest of the widget tree like any other paint.
+  flutterCanvas,
+
+  /// Each frame is handed to a `<canvas>` element behind the view's Flutter
+  /// content without a copy, skipping the per-frame upload into Flutter's
+  /// renderer and its full-view draw.
+  ///
+  /// The scene is a platform view, so ancestor transforms, clips and opacity
+  /// still apply but ancestor [ColorFiltered], [ImageFiltered], [ShaderMask]
+  /// and [BackdropFilter] do not, `RenderObject` captures such as
+  /// `RenderRepaintBoundary.toImage` and golden tests miss it, and widgets
+  /// painting both behind and above it cost Flutter an extra full-size
+  /// canvas. Views from [SceneView.viewsBuilder] still draw into Flutter's
+  /// canvas.
+  ///
+  /// In Chrome it saves GPU process time with Skwasm or the WebGPU backend,
+  /// most at high resolutions, but can cost more with CanvasKit on WebGL2,
+  /// whose extra canvases are copied each frame. Measure before opting in.
+  domCanvas,
+}
 
 /// A widget that renders a [Scene] and drives its per-frame repaint.
 ///
@@ -129,6 +159,7 @@ class SceneView extends StatefulWidget {
     this.warmUpAllShadingTiers = false,
     this.warmUpExtraNodes = const [],
     this.debugWidgetInput = false,
+    this.webPresentation = ScenePresentation.flutterCanvas,
     this.children = const [],
   }) : environment = null,
        environmentIntensity = 1.0,
@@ -178,6 +209,7 @@ class SceneView extends StatefulWidget {
     this.warmUpAllShadingTiers = false,
     this.warmUpExtraNodes = const [],
     this.debugWidgetInput = false,
+    this.webPresentation = ScenePresentation.flutterCanvas,
     this.children = const [],
   }) : scene = null,
        assert(
@@ -246,6 +278,14 @@ class SceneView extends StatefulWidget {
   /// Logical-to-physical pixel multiplier for the offscreen render target,
   /// forwarded to [Scene.render]. Defaults to the view's device pixel ratio.
   final double? pixelRatio;
+
+  /// Where the view shows its frames on the web. Ignored on other
+  /// platforms, which always draw into Flutter's canvas without a copy.
+  ///
+  /// Defaults to [ScenePresentation.flutterCanvas], which composes with every
+  /// widget effect. [ScenePresentation.domCanvas] saves a full-frame copy
+  /// each frame, at the cost of the trade-offs it lists.
+  final ScenePresentation webPresentation;
 
   /// Debug-only: overlays the automatic widget-input pointer's state (hit
   /// node, UV, distance, and a marker at the pointer position), the first
@@ -380,9 +420,10 @@ class _SceneViewState extends State<SceneView>
   // deltas; null until the first revealed tick.
   DateTime? _lastTickTime;
 
-  // When the next frame is due under [SceneView.maxFrameRate], in ticker
-  // time; null renders the next tick.
+  // When the next frame is due under [SceneView.maxFrameRate], in scheduler
+  // frame-timestamp time; null renders the next tick.
   Duration? _frameDue;
+  final PacedTickerSleep _pace = PacedTickerSleep();
 
   Clock get _clock => widget.clock ?? clock;
 
@@ -452,8 +493,80 @@ class _SceneViewState extends State<SceneView>
 
   void _onAssetsRefreshed() => _repaint.notify();
 
-  // A paced frame's GPU work finished; paint the frame the view held.
-  void _onRepaintRequested() => _repaint.notify();
+  void _resumePacedTicker() {
+    _pace.wakeTimer = null;
+    if (!mounted || !widget.autoTick || !_revealed) return;
+    if (!(_ticker?.isActive ?? false)) {
+      _pace.lastVsyncElapsed = null;
+      (_ticker ??= createTicker(_onTick)).start();
+      _resumed = true;
+      _pace.sleptBeforeFrame = true;
+    }
+  }
+
+  void _resetPacing({required bool wakeIfSleeping}) {
+    final wasSleeping = _pace.isSleeping;
+    final sleepStart = _pace.sleepStartTimeStamp;
+    _pace.reset();
+    _frameDue = null;
+    if (wakeIfSleeping && sleepStart != null && widget.autoTick && _revealed) {
+      _pace.sleepStartTimeStamp = sleepStart;
+      if (wasSleeping) _resumePacedTicker();
+    }
+  }
+
+  void _afterFrameTick(
+    double? rate,
+    DateTime frameStartNow,
+    Duration frameTimeStamp,
+  ) {
+    if (!kIsWeb ||
+        widget.clock != null ||
+        rate == null ||
+        rate <= 0 ||
+        !widget.autoTick ||
+        !_revealed ||
+        !(_ticker?.isActive ?? false)) {
+      return;
+    }
+    if (_pace.consumeReprobeDue()) return;
+    final due = _frameDue;
+    if (due == null) return;
+    final period = Duration(microseconds: (1e6 / rate).round());
+    final tickElapsed = _clock.now().difference(frameStartNow);
+    // Skip sleeping if the wall clock stepped backward mid-tick.
+    if (tickElapsed.isNegative) return;
+    final sleep = computePacedTickerSleep(
+      targetPeriod: period,
+      measuredVsyncInterval: _pace.vsyncInterval,
+      sawSkippedVsync: _pace.sawSkippedVsync,
+      remaining: (due - frameTimeStamp) - tickElapsed,
+    );
+    if (sleep == null) return;
+    assert(!_pace.isSleeping);
+    _pace.sleepStartTimeStamp = frameTimeStamp;
+    _pace.sleptSinceReprobe++;
+    _ticker?.stop();
+    _pace.lastVsyncElapsed = null;
+    _pace.wakeTimer = Timer(sleep, _resumePacedTicker);
+  }
+
+  // A paced frame's GPU work, or a deferred load, finished. A running or
+  // sleeping ticker paints on its next vsync with a tick.
+  void _onRepaintRequested() {
+    if (widget.autoTick && _revealed) {
+      if (_pace.isSleeping) {
+        _pace.cancelTimer();
+        _frameDue = null;
+        _resumePacedTicker();
+        if (_ticker?.isTicking ?? false) return;
+      } else if (_ticker?.isTicking ?? false) {
+        _frameDue = null;
+        return;
+      }
+    }
+    _repaint.notify();
+  }
 
   // Creates the owned scene for the declarative form and applies every scene
   // prop, the single creation path for initState and constructor-form
@@ -495,15 +608,17 @@ class _SceneViewState extends State<SceneView>
   @override
   void didUpdateWidget(SceneView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.maxFrameRate != oldWidget.maxFrameRate) _frameDue = null;
+    if (widget.maxFrameRate != oldWidget.maxFrameRate ||
+        (widget.clock != null && _pace.isSleeping)) {
+      _resetPacing(wakeIfSleeping: true);
+    }
     if (widget.autoTick != oldWidget.autoTick) {
       // One ticker for the state's life, stopped and restarted: the
       // single-ticker mixin rejects a second.
+      _resetPacing(wakeIfSleeping: false);
       if (widget.autoTick) {
         (_ticker ??= createTicker(_onTick)).start();
         _resumed = true;
-        // The deadline was in the stopped ticker's time.
-        _frameDue = null;
       } else {
         _ticker?.stop();
       }
@@ -544,7 +659,14 @@ class _SceneViewState extends State<SceneView>
         !identical(_scene, oldScene)) {
       _revealed = !_gated;
       if (_gated) {
+        final wasSleeping = _pace.isSleeping;
+        _resetPacing(wakeIfSleeping: false);
+        if (wasSleeping && widget.autoTick) {
+          (_ticker ??= createTicker(_onTick)).start();
+        }
         _startRevealWatch();
+      } else if (!identical(_scene, oldScene) && _pace.isSleeping) {
+        _resetPacing(wakeIfSleeping: true);
       }
     }
     // Repaint immediately so a changed camera / scene is reflected even when
@@ -636,6 +758,7 @@ class _SceneViewState extends State<SceneView>
 
   void _onTick(Duration elapsed) {
     final now = _clock.now();
+    final frameTimeStamp = SchedulerBinding.instance.currentFrameTimeStamp;
     if (!_revealed) {
       // Hold the origin at the latest tick so the first revealed frame's delta
       // is a single frame, not the whole time spent on the loading screen.
@@ -646,20 +769,36 @@ class _SceneViewState extends State<SceneView>
     }
     if (_resumed) {
       _resumed = false;
-      _tickOrigin = elapsed - _elapsed.value;
-      _lastTickTime = now;
+      final sleepStart = _pace.sleepStartTimeStamp;
+      _pace.sleepStartTimeStamp = null;
+      final fromPaceSleep = sleepStart != null;
+      var resumedElapsed = _elapsed.value;
+      // Preserve monotonic timestamp-based elapsed across adaptive sleeps.
+      if (fromPaceSleep) {
+        final slept = frameTimeStamp - sleepStart;
+        if (!slept.isNegative) resumedElapsed += slept;
+      }
+      _tickOrigin = elapsed - resumedElapsed;
+      if (!fromPaceSleep) _lastTickTime = now;
+      _pace.lastVsyncElapsed = elapsed;
+    } else {
+      _pace.recordVsync(elapsed);
     }
     final rate = widget.maxFrameRate;
     if (rate != null && rate > 0) {
       final period = Duration(microseconds: (1e6 / rate).round());
       final due = _frameDue;
       // A quarter period of slack picks the refresh nearest the deadline.
-      if (due != null && elapsed < due - period ~/ 4) return;
+      if (due != null && frameTimeStamp < due - period ~/ 4) {
+        _pace.noteSkip();
+        return;
+      }
       // Deadlines advance by whole periods to hold the average rate; one
       // missed by more than a period restarts from this frame.
-      _frameDue = due == null || elapsed - due > period
-          ? elapsed + period
+      _frameDue = due == null || frameTimeStamp - due > period
+          ? frameTimeStamp + period
           : due + period;
+      _pace.noteFrameStarted();
     }
     final revealElapsed = elapsed - _tickOrigin;
     final deltaSeconds = _lastTickTime == null
@@ -669,6 +808,7 @@ class _SceneViewState extends State<SceneView>
     _elapsed.value = revealElapsed;
     widget.onTick?.call(revealElapsed, deltaSeconds);
     _repaint.notify();
+    _afterFrameTick(rate, now, frameTimeStamp);
   }
 
   Camera? _lastBuiltCamera;
@@ -686,6 +826,19 @@ class _SceneViewState extends State<SceneView>
 
   ScenePointer? _autoPointer;
   int? _activePlatformPointer;
+
+  // The canvas frames present to with ScenePresentation.domCanvas.
+  SceneDomCanvas? _domCanvas;
+
+  SceneDomCanvas? _resolveDomCanvas() {
+    if (!sceneDomCanvasSupported ||
+        widget.webPresentation != ScenePresentation.domCanvas ||
+        widget.viewsBuilder != null) {
+      return _domCanvas = null;
+    }
+    return _domCanvas ??= SceneDomCanvas();
+  }
+
   Size _viewSize = Size.zero;
   Offset? _debugPosition;
 
@@ -786,6 +939,7 @@ class _SceneViewState extends State<SceneView>
       _onSemanticsChanged,
     );
     _scene.repaintRequested.removeListener(_onRepaintRequested);
+    _pace.cancelTimer();
     _ticker?.dispose();
     _repaint.dispose();
     _elapsed.dispose();
@@ -835,6 +989,7 @@ class _SceneViewState extends State<SceneView>
       }
       return _buildLoading(context);
     }
+    final domCanvas = _resolveDomCanvas();
     return Listener(
       // Translucent: forwarded events still reach the app's own
       // gesture handlers; the scene never wins a gesture arena.
@@ -849,10 +1004,12 @@ class _SceneViewState extends State<SceneView>
       child: Stack(
         fit: StackFit.passthrough,
         children: [
+          if (domCanvas != null) Positioned.fill(child: domCanvas.build()),
           _SceneCustomPaint(
             semantics: _sceneSemantics,
             painter: _ScenePainter(
               scene: _scene,
+              domCanvas: domCanvas,
               cameraForFrame: widget.viewsBuilder == null
                   ? _cameraForFrame
                   : null,
@@ -868,43 +1025,12 @@ class _SceneViewState extends State<SceneView>
               semantics: _sceneSemantics,
               repaint: _repaint,
             ),
-            // Invisible hosts for the scene's WidgetComponents: each hosted
-            // subtree stays fully live (state, tickers, animations) while
-            // occupying no layout space and never painting to the screen; its
-            // visual output streams into the component's texture. The Overlay
-            // keeps dialogs, dropdowns, and tooltips inside the capture.
-            // Riding as the paint widget's child puts each subtree's
-            // semantics under the scene's semantics boundary, beside the
-            // nodes synthesized for SemanticsComponents.
+            // Invisible hosts for the scene's WidgetComponents (see
+            // WidgetComponentHosts). Riding as the paint widget's child puts
+            // each subtree's semantics under the scene's semantics boundary,
+            // beside the nodes synthesized for SemanticsComponents.
             child: SizedBox.expand(
-              child: ValueListenableBuilder<int>(
-                valueListenable: _scene.renderScene.widgetComponentsChanged,
-                builder: (context, _, _) => Stack(
-                  children: [
-                    for (final component
-                        in _scene.renderScene.widgetComponents
-                            .whereType<WidgetComponent>())
-                      WidgetTexture(
-                        key: ObjectKey(component),
-                        controller: component.controller,
-                        width: component.size.width,
-                        height: component.size.height,
-                        pixelRatio: component.pixelRatio,
-                        update: component.updatePolicy,
-                        // ExcludeSemantics gates the subtree's semantics
-                        // by the coordinator's per-frame decision (see
-                        // WidgetTextureController.semanticsHidden); the
-                        // subtree stays structurally present either way.
-                        child: ValueListenableBuilder<bool>(
-                          valueListenable: component.controller.semanticsHidden,
-                          builder: (context, hidden, child) =>
-                              ExcludeSemantics(excluding: hidden, child: child),
-                          child: _WidgetComponentHost(component: component),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+              child: WidgetComponentHosts(renderScene: _scene.renderScene),
             ),
           ),
           if (widget.debugWidgetInput) _buildDebugOverlay(),
@@ -996,6 +1122,7 @@ class _SceneViewState extends State<SceneView>
 class _ScenePainter extends CustomPainter {
   _ScenePainter({
     required this.scene,
+    required this.domCanvas,
     required this.cameraForFrame,
     required this.viewsForFrame,
     required this.pixelRatio,
@@ -1004,6 +1131,7 @@ class _ScenePainter extends CustomPainter {
   }) : super(repaint: repaint);
 
   final Scene scene;
+  final SceneDomCanvas? domCanvas;
   final Camera Function()? cameraForFrame;
   final List<RenderView> Function()? viewsForFrame;
   final double? pixelRatio;
@@ -1039,13 +1167,23 @@ class _ScenePainter extends CustomPainter {
       }
     } else {
       final camera = cameraForFrame!();
+      final dom = domCanvas;
       try {
-        scene.render(
-          camera,
-          canvas,
-          viewport: Offset.zero & size,
-          pixelRatio: pixelRatio,
-        );
+        if (dom != null && dom.isAttached) {
+          scene.renderToPresenter(
+            camera,
+            dom.present,
+            viewport: Offset.zero & size,
+            pixelRatio: pixelRatio,
+          );
+        } else {
+          scene.render(
+            camera,
+            canvas,
+            viewport: Offset.zero & size,
+            pixelRatio: pixelRatio,
+          );
+        }
       } finally {
         semantics.refreshAfterRender(camera, Offset.zero & size);
       }
@@ -1070,6 +1208,7 @@ class _ScenePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ScenePainter oldDelegate) =>
       scene != oldDelegate.scene ||
+      domCanvas != oldDelegate.domCanvas ||
       cameraForFrame != oldDelegate.cameraForFrame ||
       viewsForFrame != oldDelegate.viewsForFrame ||
       pixelRatio != oldDelegate.pixelRatio ||
@@ -1193,28 +1332,4 @@ class SceneScope extends InheritedWidget {
   @override
   bool updateShouldNotify(SceneScope oldWidget) =>
       scene != oldWidget.scene || elapsed != oldWidget.elapsed;
-}
-
-/// Hosts one [WidgetComponent]'s subtree inside its own [Overlay], so routes
-/// and overlay entries the subtree spawns (dialogs, dropdown menus,
-/// tooltips) render inside the captured texture instead of escaping to the
-/// app's root overlay.
-class _WidgetComponentHost extends StatefulWidget {
-  const _WidgetComponentHost({required this.component});
-
-  final WidgetComponent component;
-
-  @override
-  State<_WidgetComponentHost> createState() => _WidgetComponentHostState();
-}
-
-class _WidgetComponentHostState extends State<_WidgetComponentHost> {
-  @override
-  Widget build(BuildContext context) {
-    return Overlay(
-      initialEntries: [
-        OverlayEntry(builder: (context) => widget.component.child),
-      ],
-    );
-  }
 }

@@ -148,4 +148,7 @@ enum TextureType {
   texture2DMultisample,
   textureCube,
   textureExternalOES,
+
+  /// Layers of one size, sampled as `sampler2DArray`.
+  texture2DArray,
 }

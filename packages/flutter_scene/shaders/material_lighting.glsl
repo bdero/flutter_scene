@@ -47,6 +47,7 @@
 // Distance fog (the FogInfo block + ApplyFog), applied to the final lit color.
 #include <fog.glsl>
 #include <octahedral.glsl>
+#include <ssao_depth_pack.glsl>
 // The baked lightmap. Included only where it is used, so a plain lit entry
 // compiles to exactly the same code it did before the slot existed.
 #ifdef FLUTTER_SCENE_LIGHTMAP
@@ -416,6 +417,57 @@ highp vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
   return diffuse + specular;
 }
 
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
+    !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
+// Upsamples a reduced-resolution occlusion texture whose ba carry each texel's
+// packed depth. Bilinear weights are scaled by how close each texel's depth
+// lies to this surface's plane, predicted from [view_depth] and its screen
+// derivative [depth_slope]. When no texel lies on the plane, the one closest
+// in depth is used.
+vec4 SampleOcclusionBilateral(highp vec2 screen_uv, highp float view_depth,
+                              highp vec2 depth_slope) {
+  ivec2 size = textureSize(ssao_texture, 0);
+  highp vec2 position = screen_uv * vec2(size) - 0.5;
+  highp vec2 base = floor(position);
+  highp vec2 fraction = position - base;
+  highp vec2 pixels_per_texel = 1.0 / (vec2(size) * frag_info.ssao_params.zw);
+  bool orthographic = frag_info.view_projection.z > 0.5;
+  // A plane is linear in reciprocal depth under perspective.
+  highp float inverse_depth = 1.0 / max(view_depth, 1e-6);
+  highp vec2 inverse_slope = -depth_slope * inverse_depth * inverse_depth;
+  // Half a pixel of slope covers the gap between a texel's center and the
+  // pixel its depth was taken from.
+  highp float tolerance = 0.02 * abs(view_depth) +
+                          0.5 * (abs(depth_slope.x) + abs(depth_slope.y)) +
+                          1e-4;
+  vec4 sum = vec4(0.0);
+  float weight_sum = 0.0;
+  vec4 closest = vec4(1.0);
+  highp float closest_delta = 1e30;
+  for (int i = 0; i < 4; i++) {
+    ivec2 corner = ivec2(i - (i / 2) * 2, i / 2);
+    ivec2 coord = clamp(ivec2(base) + corner, ivec2(0), size - ivec2(1));
+    vec4 texel = texelFetch(ssao_texture, coord, 0);
+    highp vec2 offset = (vec2(coord) - position) * pixels_per_texel;
+    highp float expected =
+        orthographic
+            ? view_depth + dot(depth_slope, offset)
+            : 1.0 / max(inverse_depth + dot(inverse_slope, offset), 1e-12);
+    highp float delta = abs(UnpackOcclusionDepth(texel.ba) - expected);
+    vec2 bilinear = mix(1.0 - fraction, fraction, vec2(corner));
+    float weight = bilinear.x * bilinear.y *
+                   clamp(1.0 - delta / tolerance, 0.0, 1.0);
+    sum += texel * weight;
+    weight_sum += weight;
+    if (delta < closest_delta) {
+      closest_delta = delta;
+      closest = texel;
+    }
+  }
+  return weight_sum > 1e-4 ? sum / weight_sum : closest;
+}
+#endif
+
 // Lights a surface described by `material` and returns the final fragment
 // color (linear HDR, premultiplied by alpha). This is the engine-owned half of
 // the material contract; a material's Surface() function fills `material` and
@@ -445,6 +497,13 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   vec3 ao_bent_normal = vec3(0.0);
   float ao_bent_valid = 0.0;
   vec4 ssao_sample = vec4(1.0);
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
+    !defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION)
+  // Taken before any branch so the derivatives stay in uniform control flow.
+  highp float occlusion_view_depth = GetFragmentViewDepth();
+  highp vec2 occlusion_depth_slope =
+      vec2(dFdx(occlusion_view_depth), dFdy(occlusion_view_depth));
+#endif
 #if defined(FLUTTER_SCENE_NO_SCREEN_SPACE_OCCLUSION) && \
     !defined(FLUTTER_SCENE_SKIP_SSAO)
   // Keeps ssao_texture declared (the engine binds it); never taken.
@@ -462,7 +521,17 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     // each backend.
     // Both terms estimate the same visibility. Multiplying them counts the
     // same blocked hemisphere twice and over-darkens surfaces with baked AO.
-    ssao_sample = texture(ssao_texture, screen_uv);
+    if (frag_info.ssao_lighting.z < 0.5 && frag_info.camera_up.w < 0.5) {
+      ssao_sample = SampleOcclusionBilateral(screen_uv, occlusion_view_depth,
+                                             occlusion_depth_slope);
+    } else {
+      // TODO(ssao-upsample): the bent normal and indirect light layouts have
+      // no free channel for depth, so they upsample bilinearly and blur across
+      // silhouettes at half resolution. Once rendering into an array layer is
+      // in the Flutter floor, carry depth in a second layer of this sampler
+      // and give them the bilateral path.
+      ssao_sample = textureLod(ssao_texture, screen_uv, 0.0);
+    }
     // With indirect light active the texture carries radiance in rgb and
     // visibility in a; otherwise visibility rides in r.
     occlusion = min(
@@ -813,9 +882,9 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
         // the geometric normal (the shadow is a geometric property).
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
         if (cone > 0.0 && l3.y > -0.5 &&
-            frag_info.spot_shadow_params.x > 0.5) {
-          float spot_shadow = SampleSpotShadow(
-              light_row, int(l3.y + 0.5), v_position, GetWorldNormal());
+            frag_info.shadow_atlas_params.x > 0.5) {
+          float spot_shadow =
+              SampleSpotShadow(light_row, v_position, GetWorldNormal());
           radiance *= spot_shadow;
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
           light_context.shadow = spot_shadow;
@@ -825,11 +894,11 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       }
 #if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && !defined(FLUTTER_SCENE_NO_POINT_SHADOWS)
       else if (type > 0.5 && l3.y > -0.5 &&
-               frag_info.spot_shadow_params.x > 0.5) {
+               frag_info.shadow_atlas_params.x > 0.5) {
         // Point shadow, when this light's cube faces ride the shared atlas
-        // (l3.y is its first tile after the cascades).
-        float point_shadow = SamplePointShadow(
-            light_row, l3.y, v_position, GetWorldNormal());
+        // (l3.y is its shadow slot).
+        float point_shadow =
+            SamplePointShadow(light_row, v_position, GetWorldNormal());
         radiance *= point_shadow;
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
         light_context.shadow = point_shadow;

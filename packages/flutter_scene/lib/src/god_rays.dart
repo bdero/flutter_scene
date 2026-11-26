@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -60,6 +61,15 @@ class GodRaysPass extends CustomRenderPass {
 
   final GodRaysSettings settings;
 
+  // Depth and shadow textures are non-filtering single-channel targets.
+  @visibleForTesting
+  static final gpu.SamplerOptions depthAndShadowSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.nearest,
+    magFilter: gpu.MinMagFilter.nearest,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
   gpu.Shader? _shaderCache;
   gpu.Shader get _shader =>
       _shaderCache ??= baseShaderLibrary['GodRaysFragment']!;
@@ -88,6 +98,10 @@ class GodRaysPass extends CustomRenderPass {
     context.applyShader(
       _shader,
       textures: {'input_depth': depth, 'input_shadow': shadowMap},
+      samplers: {
+        'input_depth': depthAndShadowSampler,
+        'input_shadow': depthAndShadowSampler,
+      },
       uniforms: {
         'PostCameraInfo': context.cameraInfo,
         'PostShadowInfo': shadowInfo,

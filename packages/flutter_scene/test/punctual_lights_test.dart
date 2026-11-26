@@ -4,16 +4,20 @@
 // scale/offset, and that the selected primary directional light is skipped.
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/src/render/point_shadow.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
+import 'package:flutter_scene/src/render/spot_shadow.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
-// Floats per light row (8 RGBA32F texels). Kept local to the test so a change
+// Floats per light row (12 RGBA32F texels). Kept local to the test so a change
 // to the layout has to be reflected here on purpose.
-const int _floatsPerLight = 32;
+const int _floatsPerLight = 48;
 
 PointLightComponent _pointAt(Vector3 position, PointLight light) {
   final node = Node(localTransform: Matrix4.translation(position));
@@ -107,8 +111,8 @@ void main() {
       );
       expect(floats[14], closeTo(1.3, 1e-6));
       // A negative exponent clamps to 0, and 0 (no distance falloff) is kept.
-      expect(floats[32 + 14], 0.0);
-      expect(floats[64 + 14], 0.0);
+      expect(floats[_floatsPerLight + 14], 0.0);
+      expect(floats[2 * _floatsPerLight + 14], 0.0);
     });
 
     test('packs the source radius into texel 3.w, clamped at zero', () {
@@ -121,8 +125,8 @@ void main() {
         ],
       );
       expect(floats[15], closeTo(0.05, 1e-6));
-      expect(floats[32 + 15], 0.0);
-      expect(floats[64 + 15], closeTo(0.2, 1e-6));
+      expect(floats[_floatsPerLight + 15], 0.0);
+      expect(floats[2 * _floatsPerLight + 15], closeTo(0.2, 1e-6));
     });
 
     test('an infinite-range point light encodes inverse range 0', () {
@@ -254,5 +258,97 @@ void main() {
       expect(component.worldDirection.y, closeTo(0, 1e-6));
       expect(component.worldDirection.z, closeTo(0, 1e-6));
     });
+  });
+
+  test('each shadow-casting light stamps its own tile and parameters', () {
+    final point = _pointAt(
+      Vector3(0, 2, 0),
+      PointLight(
+        castsShadow: true,
+        range: 5,
+        shadowMapResolution: 128,
+        shadowDepthBias: 0.01,
+      ),
+    );
+    final soft = _spotAt(
+      Vector3(-2, 3, 0),
+      SpotLight(
+        castsShadow: true,
+        range: 8,
+        shadowMapResolution: 512,
+        shadowDepthBias: 0.004,
+        shadowNormalBias: 0.05,
+        shadowSoftness: 3,
+      ),
+    );
+    final sharp = _spotAt(
+      Vector3(2, 3, 0),
+      SpotLight(
+        castsShadow: true,
+        range: 8,
+        shadowMapResolution: 1024,
+        shadowDepthBias: 0.002,
+        shadowNormalBias: 0.01,
+        shadowSoftness: 0.5,
+      ),
+    );
+    final spots = [soft, sharp];
+    final spotFrame = collectSpotShadows(spots)!;
+    final pointFrame = collectPointShadows([point])!;
+    final atlas = ShadowAtlasLayout.plan(
+      cascadeCount: 4,
+      cascadeResolution: 2048,
+      spotResolutions: [
+        for (final c in spotFrame.casters) c.light.shadowMapResolution,
+      ],
+      pointFaceResolutions: [128],
+    )!;
+    final (floats, _) = PunctualLightBuffer.packLights(
+      directionals: const [],
+      points: [point],
+      spots: spots,
+    );
+    PunctualLightBuffer.stampShadowRows(
+      floats,
+      directionals: const [],
+      points: [point],
+      spots: spots,
+      spotShadows: spotFrame,
+      pointShadows: pointFrame,
+      shadowAtlas: atlas,
+    );
+
+    for (var i = 0; i < spots.length; i++) {
+      final light = spots[i].light;
+      final slot = spotFrame.slotOf(spots[i]);
+      final base = (1 + i) * _floatsPerLight;
+      final tile = atlas.spotTiles[slot];
+      expect(tile.size, light.shadowMapResolution);
+      expect(floats[base + 13], slot.toDouble());
+      expect(
+        floats.sublist(base + 32, base + 36),
+        Float32List.fromList(tile.uvRect(atlas.width, atlas.height).storage),
+      );
+      expect(floats[base + 36], closeTo(light.shadowDepthBias, 1e-6));
+      expect(floats[base + 37], closeTo(light.shadowNormalBias, 1e-6));
+      expect(floats[base + 38], closeTo(light.shadowSoftness, 1e-6));
+      expect(floats[base + 39], closeTo(1 / light.shadowMapResolution, 1e-9));
+    }
+
+    final first = atlas.pointTiles[0], second = atlas.pointTiles[1];
+    expect(first.size, 256);
+    expect(floats[21], closeTo(1 / 128, 1e-9));
+    expect(floats[20], closeTo(0.01, 1e-6));
+    expect(
+      floats.sublist(32, 38),
+      Float32List.fromList([
+        first.x / atlas.width,
+        first.y / atlas.height,
+        second.x / atlas.width,
+        second.y / atlas.height,
+        256 / atlas.width,
+        256 / atlas.height,
+      ]),
+    );
   });
 }

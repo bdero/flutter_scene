@@ -1,0 +1,23 @@
+// A lit cutout whose Composite() is declared the way the engine prototype
+// is, `highp vec4`, with a parameter block after it (0.24.5 failed to build
+// its depth passes, #585).
+material {
+  name: "HookHighpComposite",
+  shading_model: lit,
+  alpha_to_coverage: true,
+  parameters: [
+    { type: float, name: hole, default: 0.3 },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec2 cell = fract(GetUV0() * 4.0) - 0.5;
+    material.base_color =
+        vec4(0.25, 0.6, 0.15, step(material_params.hole, length(cell)));
+  }
+
+  highp vec4 Composite(MaterialInputs material, LightingResult r) {
+    return vec4(r.direct_diffuse + r.indirect_diffuse, 1.0) * r.alpha;
+  }
+}

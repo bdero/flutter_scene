@@ -31,10 +31,7 @@ final class _WebGpuCommandBuffer extends CommandBuffer {
     final queue = _context.device.device.queue;
     queue.submit([_encoder.finish()].toJS);
     if (completionCallback == null) return;
-    queue.onSubmittedWorkDone().toDart.then(
-      (_) => completionCallback(CompletionStatus.successful),
-      onError: (Object _) => completionCallback(CompletionStatus.error),
-    );
+    _context.enqueueSubmissionCallback(completionCallback);
   }
 }
 

@@ -9,6 +9,24 @@ import 'package:flutter_scene/src/render/bloom_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('a shorter bloom chain keeps its brightness', () {
+    for (final levels in [3, 4, 6]) {
+      for (final scatter in [0.0, .7, 1.0]) {
+        var up = 8000.0;
+        for (var level = levels - 2; level >= 0; level--) {
+          final weights = bloomUpsampleWeights(
+            bloomLevelWeight(scatter),
+            level,
+            levels,
+            normalization: 6,
+          );
+          up = weights.source * up + weights.base * 8000;
+          if (level > 0) expect(up, closeTo(8000, 1e-6));
+        }
+        expect(up, closeTo(48000, 1e-6));
+      }
+    }
+  });
   test('views sharing a reference size spread bloom alike', () {
     // A header, and a taller overlay the same character moves into.
     const header = ui.Size(820, 760);

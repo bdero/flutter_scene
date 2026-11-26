@@ -69,6 +69,10 @@ class AnimationTransforms {
   /// solely by a morph weights channel keeps its manual transform.
   bool drivesTransform = false;
 
+  /// The rotation weight blended so far this frame, starting at the weight
+  /// the clips leave to the bind pose. Null outside an [AnimationPlayer].
+  double? rotationBlendWeight;
+
   /// The node's rest morph weights, captured when the first weights channel
   /// binds it; null while no weights channel targets the node.
   Float32List? bindMorphWeights;

@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show compute, kIsWeb;
 
+import 'web_time_slicer_yield_stub.dart'
+    if (dart.library.js_interop) 'web_time_slicer_yield_web.dart';
+
 // TODO(web-texture-chunking): one large texture still blocks for its whole
 // decode (about 60 ms for a 2048 squared mip chain). Yield between mip levels,
 // and between bands of block rows within the top level.
@@ -38,7 +41,7 @@ final class WebTimeSlicer {
     await previous;
     try {
       if (_sinceYield.elapsed >= sliceBudget) {
-        await Future<void>.delayed(Duration.zero);
+        await yieldWebTimeSlice();
         _sinceYield.reset();
       }
       return work();

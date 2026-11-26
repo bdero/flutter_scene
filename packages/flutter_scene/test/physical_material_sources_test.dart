@@ -641,7 +641,7 @@ void main() {
     expect(compiled.sidecar['depth_write'], isTrue);
     expect(compiled.glsl, contains('GetSceneColorFiltered'));
     expect(compiled.glsl, contains('#define FLUTTER_SCENE_SKIP_SSAO'));
-    expect(compiled.glsl, isNot(contains('uniform sampler2D ssao_texture;')));
+    expect(compiled.glsl, isNot(contains('sampler2D ssao_texture;')));
     // The scene-color sampler and its accessors compile in through the shared
     // include, on the define the emitter writes for a declared input.
     expect(compiled.glsl, contains('#define FLUTTER_SCENE_SCENE_COLOR'));
@@ -845,6 +845,14 @@ void main() {
       normals,
       contains('B *= gl_FrontFacing ? -orientation : orientation;'),
     );
+  });
+
+  test('back faces mirror the whole tangent frame', () {
+    // The normal and bitangent flip with the face, so without the tangent a
+    // double-sided normal map reads its red channel inverted from behind.
+    final normals = File('shaders/normals.glsl').readAsStringSync();
+
+    expect(normals, contains('frame[0] *= gl_FrontFacing ? 1.0 : -1.0;'));
   });
 
   test('vertex bodies carry normals by the inverse-transpose', () {

@@ -1,0 +1,24 @@
+// A lit cutout with a helper only its Light() hook calls, taking a lighting
+// type (0.24.5 failed to build its depth passes).
+material {
+  name: "HookHelper",
+  shading_model: lit,
+  alpha_to_coverage: true,
+}
+
+fragment {
+  float WrapDiffuse(LightContext light) {
+    return max(dot(light.normal, light.light_vector) + 0.3, 0.0) / 1.3;
+  }
+
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(0.2, 0.6, 0.1, step(0.3, GetUV0().x));
+  }
+
+  LightTerms Light(MaterialInputs material, LightContext light) {
+    LightTerms t;
+    t.diffuse = light.radiance * WrapDiffuse(light) * material.base_color.rgb;
+    t.specular = vec3(0.0);
+    return t;
+  }
+}

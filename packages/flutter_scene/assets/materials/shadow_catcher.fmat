@@ -34,7 +34,7 @@ fragment {
   float CatcherSpotShadowVisibility(vec3 world_pos, vec3 n) {
     float visibility = 1.0;
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
-    if (frag_info.spot_shadow_params.x > 0.5) {
+    if (frag_info.shadow_atlas_params.x > 0.5) {
       // The same per-object or froxel slice the lit path walks.
       vec2 slice = PunctualLightSlice();
       int offset = int(slice.x + 0.5);
@@ -61,12 +61,12 @@ fragment {
           float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
           float weight = window * window * cone * cone;
           float spot_visibility =
-              SampleSpotShadow(light_row, int(l3.y + 0.5), world_pos, n);
+              SampleSpotShadow(light_row, world_pos, n);
           visibility *= 1.0 - weight * (1.0 - spot_visibility);
         } else {
           float weight = window * window;
           float point_visibility =
-              SamplePointShadow(light_row, l3.y, world_pos, n);
+              SamplePointShadow(light_row, world_pos, n);
           visibility *= 1.0 - weight * (1.0 - point_visibility);
         }
       }

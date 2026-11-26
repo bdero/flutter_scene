@@ -1,0 +1,23 @@
+// A lit cutout card for the `lit_cutout` smoke scene. A lit material with
+// alpha_to_coverage and no engine inputs ships its own depth-pass fragments
+// (camera depth, depth-normal, and shadow), so the card's holes have to show
+// up in its sun shadow and against the ground on every backend. The mask is
+// procedural so the scene needs no texture asset.
+
+material {
+  name: "LitCutout",
+  shading_model: lit,
+  alpha_to_coverage: true,
+  // Double-sided like foliage, so the sun-facing back side casts the shadow.
+  culling: none,
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    // A grid of round holes.
+    vec2 cell = fract(GetUV0() * 4.0) - 0.5;
+    float alpha = step(0.3, length(cell));
+    material.base_color = vec4(0.25, 0.6, 0.15, alpha);
+    material.roughness = 0.7;
+  }
+}

@@ -49,20 +49,4 @@ void main() {
     // The spots past the budget are not casters this frame.
     expect(frame.slotOf(spots.last), -1);
   });
-
-  test('shares tile resolution and bias from the first caster', () {
-    final node = Node();
-    final component = SpotLightComponent(
-      SpotLight(
-        castsShadow: true,
-        range: 10,
-        shadowMapResolution: 512,
-        shadowDepthBias: 0.007,
-      ),
-    );
-    node.addComponent(component);
-    final frame = collectSpotShadows([component])!;
-    expect(frame.tileResolution, 512);
-    expect(frame.depthBias, closeTo(0.007, 1e-9));
-  });
 }

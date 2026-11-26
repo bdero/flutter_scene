@@ -39,6 +39,11 @@ base class GpuContext {
     int mipLevelCount = 1,
   }) => _stub();
   bool supportsTextureCompression(TextureCompressionFamily family) => _stub();
+  GpuImageSurface createImageSurface(
+    int width,
+    int height, {
+    PixelFormat? format,
+  }) => _stub();
   CommandBuffer createCommandBuffer() => _stub();
   RenderPipeline createRenderPipeline(
     Shader vertexShader,
@@ -387,4 +392,42 @@ base class RenderPass {
   void setViewport(Viewport viewport) => _stub();
   void draw(int vertexCount, {int instanceCount = 1}) => _stub();
   void drawIndexed(int indexCount, {int instanceCount = 1}) => _stub();
+}
+
+enum GpuPresentStatus { success, suboptimal, outOfDate }
+
+sealed class GpuSurface {
+  GpuSurfaceFrame? acquireNextFrame();
+}
+
+sealed class GpuSurfaceFrame {
+  Texture get colorTexture;
+  GpuPresentStatus present(CommandBuffer commandBuffer);
+  void discard();
+}
+
+final class GpuImageSurface implements GpuSurface {
+  GpuImageSurface._() {
+    _stub();
+  }
+  int get width => _stub();
+  int get height => _stub();
+  PixelFormat get format => _stub();
+  int get debugBackingTextureCount => _stub();
+  ui.Image? get currentImage => _stub();
+  void resize(int width, int height) => _stub();
+  @override
+  GpuImageSurfaceFrame acquireNextFrame() => _stub();
+}
+
+final class GpuImageSurfaceFrame implements GpuSurfaceFrame {
+  GpuImageSurfaceFrame._() {
+    _stub();
+  }
+  @override
+  Texture get colorTexture => _stub();
+  @override
+  GpuPresentStatus present(CommandBuffer commandBuffer) => _stub();
+  @override
+  void discard() => _stub();
 }

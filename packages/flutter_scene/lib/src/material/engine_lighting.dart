@@ -150,7 +150,11 @@ class EngineLightingUniforms {
     fragInfo[128] = cascades.isEmpty ? 0.0 : 1.0;
     fragInfo[129] = light?.shadowDepthBias ?? 0.0;
     fragInfo[130] = light?.shadowNormalBias ?? 0.0;
-    fragInfo[131] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
+    final atlas = lighting.shadowAtlas;
+    final cascadeResolution = atlas != null && atlas.cascadeResolution > 0
+        ? atlas.cascadeResolution
+        : light?.shadowMapResolution;
+    fragInfo[131] = cascadeResolution == null ? 0.0 : 1.0 / cascadeResolution;
     fragInfo[134] = light?.shadowFadeRange ?? 0.0;
     fragInfo[135] = light?.shadowSoftness ?? 0.0;
     fragInfo[136] = cascades.length.toDouble();
@@ -277,15 +281,15 @@ class EngineLightingUniforms {
     fragInfo[205] = cameraPosition?.y ?? 0.0;
     fragInfo[206] = cameraPosition?.z ?? 0.0;
     fragInfo[207] = 0.0;
-    // spot_shadow_params [12..15] (more of the unused SH region): the shared
-    // spot-shadow parameters. x is the total non-cascade tile count (spot
-    // tiles then point-shadow tiles); 0 disables both spot and point shadow
-    // sampling, and the shader uses it to size the shared shadow atlas.
+    // shadow_atlas_params [12..15] (more of the unused SH region). x is the
+    // spot plus point-shadow tile count, 0 disabling both; yz one cascade
+    // tile's extent in atlas UV, and w the cascades per atlas row.
     fragInfo[12] = (lighting.spotShadowCount + lighting.pointShadowTileCount)
         .toDouble();
-    fragInfo[13] = lighting.spotShadowDepthBias;
-    fragInfo[14] = lighting.spotShadowNormalBias;
-    fragInfo[15] = lighting.spotShadowSoftness;
+    final cascadeExtent = atlas?.cascadeUvExtent;
+    fragInfo[13] = cascadeExtent?.x ?? 0.0;
+    fragInfo[14] = cascadeExtent?.y ?? 0.0;
+    fragInfo[15] = (atlas?.cascadeColumns ?? 0).toDouble();
     // scene_inputs [16..19] (more of the unused SH region): gates for the
     // material scene-input samplers (bound only into materials that declare
     // engine_inputs) and the engine time. The accumulated snapshot exists only

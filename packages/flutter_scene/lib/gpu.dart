@@ -19,6 +19,12 @@ library;
 
 export 'src/generated_assets/generated_asset_lookup.dart'
     show resolveShaderBundleKey;
+export 'src/gpu/external_targets.dart'
+    show
+        externalColorTargetsSupported,
+        nativeGraphicsContext,
+        textureToPlatformImage,
+        wrapExternalColorTarget;
 
 export 'src/gpu/gpu.dart'
     show
@@ -26,6 +32,12 @@ export 'src/gpu/gpu.dart'
         ShaderLibrary,
         loadShaderLibraryAsync,
         Texture,
+        PixelFormat,
+        ExternalTargetHandleKind,
+        // What an ExternalRenderTarget.surfaceFrame leases and reports.
+        GpuSurface,
+        GpuSurfaceFrame,
+        GpuPresentStatus,
         SamplerOptions,
         MinMagFilter,
         MipFilter,

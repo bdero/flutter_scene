@@ -127,6 +127,7 @@ export 'src/ambient_occlusion.dart'
         AmbientOcclusionSettings,
         SpecularAmbientOcclusionMode;
 export 'src/auto_exposure.dart' show AutoExposureSettings;
+export 'src/color_conversion.dart' show ColorToLinear;
 export 'src/coplanar_overlaps.dart' show CoplanarOverlap;
 export 'src/depth_conflicts.dart' show DepthConflict, DepthConflictReport;
 export 'src/depth_of_field.dart' show DepthOfField, DepthOfFieldQuality;
@@ -159,6 +160,7 @@ export 'src/camera.dart'
     show
         Camera,
         CameraProjection,
+        OffAxisProjection,
         OrthographicCamera,
         OrthographicContain,
         OrthographicCover,
@@ -317,7 +319,9 @@ export 'src/render/render_layers.dart'
 export 'src/render/selection_outline_pass.dart' show HighlightStyle;
 export 'src/render_texture.dart'
     show RenderTexture, RenderTextureSampling, RenderTextureUpdate;
-export 'src/render_view.dart' show RenderView;
+export 'src/external_render_target.dart'
+    show ExternalRenderTarget, FrameCompletion;
+export 'src/render_view.dart' show RenderView, RenderViewGroup;
 export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
 export 'src/render/planar_reflection.dart' show PlanarReflectionCamera;
@@ -332,6 +336,7 @@ export 'src/texture/external_texture.dart'
     show ExternalTexture, ExternalTextureSampling, ExternalTextureUpdate;
 export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
+export 'src/texture/data_texture.dart' show Texture2DArray, DataTextureFormat;
 export 'src/memory_pressure.dart'
     show releaseTransientRenderTargets, releaseRenderTargetsOnMemoryPressure;
 export 'src/memory_report.dart'
@@ -365,7 +370,8 @@ export 'src/render/env_prefilter.dart'
         prefilterEquirectRadiance,
         prefilterEquirectRadianceToCube;
 export 'src/texture/ktx2/ktx2.dart' show Ktx2FormatException;
-export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
+export 'src/runtime_importer/gltf_resources.dart'
+    show GltfResourceResolver, GltfTextureResolver;
 export 'src/scene_path.dart'
     show BezierPath, CatmullRomPath, PolylinePath, ScenePath, ScenePathFrame;
 export 'src/raycast.dart' show SceneRaycastHit, raycastNode, raycastNodeAll;
@@ -403,8 +409,10 @@ export 'src/widgets/scene_view.dart'
         SceneCameraBuilder,
         SceneErrorBuilder,
         SceneLoadingBuilder,
+        ScenePresentation,
         SceneScope,
         SceneTickCallback,
         SceneView,
         SceneViewsBuilder;
+export 'src/widgets/widget_host.dart' show WidgetHost;
 export 'src/tone_mapping.dart' show ToneMappingMode;

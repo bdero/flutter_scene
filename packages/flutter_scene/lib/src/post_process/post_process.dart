@@ -150,6 +150,12 @@ class BloomSettings {
   /// crosses between them.
   double? referenceSize;
 
+  /// How many levels the chain downsamples through, clamped to 3 to 6. Each
+  /// level below 6 drops one downsample and one upsample pass, and the widest
+  /// part of the glow with them. Brightness stays the same, so 4 gives a
+  /// tighter glow in seven passes instead of eleven.
+  int levels = 6;
+
   /// The brightness a source pixel softly compresses toward before it blooms,
   /// so an extreme highlight cannot flood the frame. Values well below it pass
   /// nearly unchanged. 0 turns compression off.

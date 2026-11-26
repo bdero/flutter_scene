@@ -69,9 +69,11 @@ class DepthPrepass extends RenderGraphPass {
     Vector3? cameraRight,
     Vector3? cameraUp,
     List<Plane> cullingPlanes = const [],
+    Frustum? cullingFrustum,
     Matrix4? cameraTransform,
     bool primaryView = false,
   }) : _primaryView = primaryView,
+       _cullingFrustum = cullingFrustum,
        _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -87,6 +89,7 @@ class DepthPrepass extends RenderGraphPass {
 
   final Matrix4? _cameraTransform;
   final bool _primaryView;
+  final Frustum? _cullingFrustum;
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -177,7 +180,7 @@ class DepthPrepass extends RenderGraphPass {
       renderPass,
       context.transientsBuffer,
       _cameraTransform ?? rasterViewTransformOf(_camera, _dimensions),
-      cullingFrustumOf(_camera, _dimensions),
+      _cullingFrustum ?? cullingFrustumOf(_camera, _dimensions),
       depthRasterOf(_camera),
       _camera.position,
       _cameraForward,
@@ -236,12 +239,14 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
     required Vector3 cameraForward,
     int layerMask = kRenderLayerAll,
     List<Plane> cullingPlanes = const [],
+    Frustum? cullingFrustum,
     bool primaryView = false,
   }) : _camera = camera,
        _renderScene = renderScene,
        _cameraForward = cameraForward,
        _layerMask = layerMask,
        _cullingPlanes = cullingPlanes,
+       _cullingFrustum = cullingFrustum,
        _primaryView = primaryView;
 
   final Camera _camera;
@@ -249,6 +254,7 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
   final Vector3 _cameraForward;
   final int _layerMask;
   final List<Plane> _cullingPlanes;
+  final Frustum? _cullingFrustum;
   // Whether this is a screen view, for mesh draw selectors, so the patch
   // draws what the color pass drew.
   final bool _primaryView;
@@ -275,7 +281,7 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
       linearDepth.width.toDouble(),
       linearDepth.height.toDouble(),
     );
-    final frustum = cullingFrustumOf(_camera, dimensions);
+    final frustum = _cullingFrustum ?? cullingFrustumOf(_camera, dimensions);
     final records = <RenderItem>[];
     _renderScene.cull(frustum, (item) {
       if (!item.drawsColor) return;

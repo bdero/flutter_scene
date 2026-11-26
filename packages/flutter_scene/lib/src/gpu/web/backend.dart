@@ -79,6 +79,33 @@ GpuContext get gpuContext => _backend.context;
 /// The active backend's host integration.
 GpuHost get gpuHost => _backend.host;
 
+/// Whether the active context creates 2D-array textures.
+bool get supportsTextureArrays => gpuContext.doesSupportTextureArrays;
+
+/// A [width] x [height] 2D-array texture of [layerCount] layers.
+Texture createTexture2DArray(
+  StorageMode storageMode,
+  int width,
+  int height,
+  int layerCount, {
+  PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+}) => gpuContext.createTexture(
+  storageMode,
+  width,
+  height,
+  format: format,
+  textureType: TextureType.texture2DArray,
+  enableRenderTargetUsage: false,
+  layerCount: layerCount,
+);
+
+/// Whether [texture] is a 2D-array texture.
+bool isTexture2DArray(Texture texture) =>
+    texture.textureType == TextureType.texture2DArray;
+
+/// The layers of a 2D-array [texture], or 1 for every other kind.
+int textureLayerCount(Texture texture) => texture.layerCount;
+
 abstract base class GpuContext {
   PixelFormat get defaultColorFormat;
   PixelFormat get defaultStencilFormat;
@@ -87,6 +114,7 @@ abstract base class GpuContext {
   bool get doesSupportOffscreenMSAA;
   bool get doesSupportFramebufferRenderMipmap;
   bool get doesSupportManuallyMippedTextures;
+  bool get doesSupportTextureArrays;
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes);
   DeviceBuffer createDeviceBufferWithCopy(ByteData data);
   HostBuffer createHostBuffer({
@@ -103,8 +131,16 @@ abstract base class GpuContext {
     bool enableShaderReadUsage = true,
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
+    int layerCount = 1,
   });
   bool supportsTextureCompression(TextureCompressionFamily family);
+
+  /// Creates a surface whose presented frames Flutter draws as a `ui.Image`.
+  GpuImageSurface createImageSurface(
+    int width,
+    int height, {
+    PixelFormat? format,
+  }) => GpuImageSurface._(this, width, height, format ?? defaultColorFormat);
   CommandBuffer createCommandBuffer();
   RenderPipeline createRenderPipeline(
     Shader vertexShader,
@@ -153,7 +189,13 @@ abstract base class Texture {
   bool get enableShaderReadUsage;
   bool get enableShaderWriteUsage;
   int get mipLevelCount;
+
+  /// The layers of a [TextureType.texture2DArray]; 1 for every other type.
+  int get layerCount;
   bool get isValid;
+
+  /// The slices [overwrite] addresses: 6 cube faces or the layers of an
+  /// array.
   int get sliceCount;
   int get bytesPerTexel;
   int getMipLevelSizeInBytes(int mipLevel);
@@ -278,6 +320,29 @@ abstract base class GpuHost {
   ///
   /// [buffer] must not be used again. Work already submitted is unaffected.
   void releaseBuffer(DeviceBuffer buffer);
+
+  /// The platform graphics context behind this backend (the
+  /// `WebGL2RenderingContext` on WebGL2), for a runtime that must bind it.
+  Object? get nativeGraphicsContext;
+
+  /// A snapshot of [texture] as a platform image another graphics context can
+  /// consume (an `ImageBitmap` on the web), or null where the backend has no
+  /// such object.
+  Object? textureToPlatformImage(Texture texture);
+
+  /// Shows [texture] on [canvas], an `HTMLCanvasElement` outside Flutter's
+  /// own canvas, upright and at the texture's size.
+  void presentToCanvas(Texture texture, Object canvas);
+
+  /// Wraps a platform color target this backend can draw into but did not
+  /// allocate. See [GpuCapabilities.externalColorTargets].
+  Texture wrapExternalColorTarget(
+    Object handle, {
+    required int width,
+    required int height,
+    required ExternalTargetHandleKind kind,
+    PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
+  });
 }
 
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) =>

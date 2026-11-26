@@ -234,7 +234,10 @@ spells the layer `depth_layer:`.
 
 `UnlitMaterial({TextureSource? colorTexture})`. `baseColorTexture` (field name differs from the ctor
 arg), `baseColorTextureTransform`, `baseColorTextureTexCoord` (0), `alphaMode` (`opaque`; `mask` not
-implemented, behaves as blend), `baseColorFactor` (white), `vertexColorWeight` (1.0). Fog applies.
+implemented, behaves as blend), `baseColorFactor` (linear, white; `setBaseColor(Color)` decodes a
+Flutter color), `vertexColorWeight` (1.0), `displayReferred` (false; true composites the surface past
+exposure, tone mapping, fog and bloom so its colors reach the screen unchanged). Fog applies unless
+display-referred.
 
 ### PhysicallyBasedMaterial
 
@@ -375,7 +378,7 @@ rayleighCoefficient = 2.0, mieCoefficient = 0.005, turbidity = 10.0, energy = 1.
 `Scene.exposure` (1.0; not 2.0), `Scene.toneMapping` (`ToneMappingMode.pbrNeutral`; also `aces`,
 `reinhard`, `linear`, `agx`), `Scene.agxWhite` (16.29), `Scene.agxContrast` (1.25). Static
 `Scene.physicalCameraExposure({required aperture, shutterSpeed, iso})` returns a multiplier to assign
-to `exposure`.
+to `exposure`. `ToneMappingMode.linear` at exposure 1.0 is identity, so unlit colors match widgets.
 
 ---
 
@@ -498,7 +501,10 @@ Two model-loading paths, do not conflate:
   `loadSceneSubtree`, `releaseScene`, `clearSceneTemplateCache`.
 - Runtime glTF (no hook, parses every load): `Node.fromGlbAsset(assetPath)`,
   `Node.fromGlbBytes(bytes)`, `Node.fromGltfBytes(gltfJson, {required resolveUri})`. Each synthesizes
-  a root node.
+  a root node. A GLB whose images sit beside it by relative URI needs `resolveUri` too, or they bind a
+  white placeholder. `resolveTexture: (uri, content) async => texture` hands back a finished
+  `Texture2D` instead, so one texture can be cached and shared across models; key the cache by
+  `(uri, content)`.
 
 Sibling loaders: `loadTexture` (`.fstex`), `loadFmatMaterial`/`loadFmatSky` (`.fmat`).
 

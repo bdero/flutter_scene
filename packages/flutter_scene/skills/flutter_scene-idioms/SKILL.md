@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-idioms
-version: 18
+version: 22
 description: Write correct flutter_scene code. Use this whenever building 3D with the flutter_scene Dart/Flutter engine (rendering a scene, geometry, materials, lighting, loading a .glb model, animation, custom shaders). It corrects the wrong assumptions models carry from three.js, Godot, and Unity, and names the APIs and traps that are specific to this engine.
 ---
 
@@ -109,6 +109,7 @@ Low-end and GLES-class GPUs (Raspberry Pi, web, integrated Linux) get a budget, 
 
 - **Horizontal camera and movement inversion (`forward.cross(up)` and `+Z` orbit tangents).** Because view space has `+Z` into the screen and `vector_math.cross` is right-handed, `forward.cross(up)` yields `-right` (screen-left), and an orbit camera placed at `target + (d * sin(a), y, d * cos(a))` has screen-right `(-cos(a), 0, sin(a))`, not `(cos(a), 0, -sin(a))`. Use `camera.right`, `camera.horizontalRight`, `camera.horizontalForward`, or `up.cross(forward).normalized()`.
 - **Custom `ShaderMaterial` output is linear HDR premultiplied by alpha.** No tone mapping or gamma in your shader; the `ResolvePass` applies exposure, tone mapping, and the display transform. Linearize sRGB texture samples yourself. See `MATERIALS.md`.
+- **Flutter colors are sRGB, engine color fields are linear.** Assigning a `Color`'s channels (or `vector_math`'s `Colors.*`) to `baseColorFactor`, `emissiveFactor`, a light's or fog's `color` washes out midtones. Use `material.setBaseColor(color)`, `setEmissiveColor`, `light.setColor`, `fog.setColor`, or `color.toLinearRgba()`/`toLinearRgb()`. Even then the default `pbrNeutral` tone curve moves unlit colors (white lands at 240). For flat content that must match widgets, set `scene.toneMapping = ToneMappingMode.linear`; to keep the curve for the rest of the scene, set `displayReferred = true` on those `UnlitMaterial`s instead (costs an extra layer and pass).
 - **Never hand-roll a per-triangle winding flip to fix glTF orientation.** The importers handle the coordinate conversion; a manual flip leaves normals and IBL wrong.
 - **Do not emit a vertex buffer at the wrong stride.** Unskinned is 72 bytes/vertex, skinned is 104; the attribute order is fixed. Use `GeometryBuilder`, do not guess the layout.
 - **Surfaces that share a plane flicker as the camera moves (z-fighting), and one screenshot can look fine.**

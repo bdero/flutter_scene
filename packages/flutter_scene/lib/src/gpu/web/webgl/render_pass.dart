@@ -13,7 +13,8 @@ const String _staleBundleHint =
     'worker, a CDN) may be serving a shader bundle from the previous build.';
 
 final class WebGlRenderPass extends RenderPass {
-  WebGlRenderPass._(this._gpuContext, this._target) {
+  WebGlRenderPass._(this._gpuContext, this._target)
+    : _flipY = !_target.colorAttachments.first.texture.webGl.isExternal {
     _bindFramebuffer();
     // A scissor is per pass too, and would clip the load action's clear.
     _gpuContext._gl.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
@@ -28,12 +29,28 @@ final class WebGlRenderPass extends RenderPass {
     // start of every pass encode.
     final gl = _gpuContext._gl;
     gl.disable(web.WebGL2RenderingContext.CULL_FACE);
-    gl.frontFace(web.WebGL2RenderingContext.CCW);
+    // Matches the cached clockwise default under this pass's flip.
+    gl.frontFace(
+      _flipY ? web.WebGL2RenderingContext.CCW : web.WebGL2RenderingContext.CW,
+    );
     gl.disable(web.WebGL2RenderingContext.STENCIL_TEST);
   }
 
   final WebGlContext _gpuContext;
   final RenderTarget _target;
+
+  // Whether this pass stores its target top-down by flipping clip-space Y,
+  // the shim's convention for its own textures (Impeller's for
+  // render-to-texture). False for an external target another system reads
+  // with GL's bottom-left origin: the shaders then draw unflipped, the
+  // winding is not mirrored, and viewport and scissor rectangles are
+  // measured from the bottom, which is what Impeller's GLES backend does for
+  // a wrapped framebuffer.
+  final bool _flipY;
+
+  // The bound color attachment's height, for converting a top-left viewport
+  // or scissor into GL's bottom-left origin when not flipping.
+  int _targetHeight = 0;
 
   WebGlRenderPipeline? _boundPipeline;
   web.WebGLVertexArrayObject? _vao;
@@ -56,6 +73,14 @@ final class WebGlRenderPass extends RenderPass {
 
   web.WebGLFramebuffer? _fbo;
   bool _finished = false;
+
+  bool? _blendEnabled;
+  (BlendOperation, BlendOperation)? _blendOperations;
+  (BlendFactor, BlendFactor, BlendFactor, BlendFactor)? _blendFactors;
+  bool? _depthWriteEnabled;
+  CompareFunction? _depthCompare;
+  CullMode _cullMode = CullMode.none;
+  WindingOrder _windingOrder = WindingOrder.clockwise;
 
   void _ensureVao() {
     final gl = _gpuContext._gl;
@@ -93,6 +118,24 @@ final class WebGlRenderPass extends RenderPass {
       );
     }
 
+    // A wrapped external framebuffer is complete already; bind it as is. Its
+    // depth is whatever the owner attached, so a depth attachment of ours
+    // cannot join it.
+    final external = color.webGl.externalFramebuffer;
+    if (external != null) {
+      if (depth != null) {
+        throw UnsupportedError(
+          'An external framebuffer brings its own depth attachment; render '
+          'the scene into a flutter_scene texture and copy into it instead.',
+        );
+      }
+      _fbo = external;
+      _targetHeight = color.height;
+      gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, external);
+      gl.viewport(0, 0, color.width, color.height);
+      return;
+    }
+
     // Configured framebuffers (including the completeness check, a
     // synchronous GPU round trip) are cached per attachment combination.
     final fbo = _gpuContext._framebufferFor(
@@ -103,12 +146,13 @@ final class WebGlRenderPass extends RenderPass {
       () => _createFramebuffer(gl, color, mipLevel, slice, depth),
     );
     _fbo = fbo;
+    _targetHeight = (color.height >> mipLevel).clamp(1, color.height).toInt();
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
     gl.viewport(
       0,
       0,
       (color.width >> mipLevel).clamp(1, color.width).toInt(),
-      (color.height >> mipLevel).clamp(1, color.height).toInt(),
+      _targetHeight,
     );
   }
 
@@ -125,7 +169,16 @@ final class WebGlRenderPass extends RenderPass {
     }
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
 
-    if (color.sampleCount == 1) {
+    if (color.textureType == TextureType.texture2DArray) {
+      // A layer attaches through its z offset.
+      gl.framebufferTextureLayer(
+        web.WebGL2RenderingContext.FRAMEBUFFER,
+        web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
+        color.webGl.glTexture,
+        mipLevel,
+        slice,
+      );
+    } else if (color.sampleCount == 1) {
       // For a cube the attachment target is the face; for 2D it is TEXTURE_2D.
       gl.framebufferTexture2D(
         web.WebGL2RenderingContext.FRAMEBUFFER,
@@ -223,6 +276,10 @@ final class WebGlRenderPass extends RenderPass {
     // draw resolve; the draw throws its error.
     if (webGlPipeline._linkError != null) return;
     gl.useProgram(webGlPipeline._program);
+    // Programs are shared between passes with either Y convention, so the
+    // flip is restated per bind.
+    final yFlip = webGlPipeline._yFlipLocation;
+    if (yFlip != null) gl.uniform1f(yFlip, _flipY ? -1.0 : 1.0);
     // Give every active uniform block a valid (zeroed) buffer up front, so a
     // block the caller never binds does not raise a used-but-unbound uniform
     // buffer error on this backend. Explicit bindUniform calls override it.
@@ -277,9 +334,14 @@ final class WebGlRenderPass extends RenderPass {
     _pendingVertexBindings.add(entry);
   }
 
-  /// Applies one recorded vertex-stream binding to the currently bound VAO:
-  /// binds the stream's GL buffer and points/enables its attributes.
-  void _applyVertexBinding(BufferView bufferView, int slot) {
+  /// Points the bound VAO's attributes for one vertex stream at its buffer.
+  /// [configureVao] also enables them and sets their divisor, which a new VAO
+  /// needs once and a cached one keeps.
+  void _applyVertexBinding(
+    BufferView bufferView,
+    int slot, {
+    required bool configureVao,
+  }) {
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline!;
     bufferView.buffer.webGl._bindForTarget(
@@ -300,7 +362,9 @@ final class WebGlRenderPass extends RenderPass {
             'Vertex shader has no input named "${attribute.name}"',
           );
         }
-        gl.enableVertexAttribArray(input.location);
+        if (configureVao) {
+          gl.enableVertexAttribArray(input.location);
+        }
         final name = attribute.format.name;
         final unsigned = name.startsWith('uint');
         if (unsigned || name.startsWith('sint')) {
@@ -325,7 +389,9 @@ final class WebGlRenderPass extends RenderPass {
             bufferView.offsetInBytes + attribute.offsetInBytes,
           );
         }
-        gl.vertexAttribDivisor(input.location, divisor);
+        if (configureVao) {
+          gl.vertexAttribDivisor(input.location, divisor);
+        }
       }
       return;
     }
@@ -333,7 +399,9 @@ final class WebGlRenderPass extends RenderPass {
     final inputs = pipeline.vertexShader.vertexInputs;
     final stride = pipeline.vertexShader.vertexStride;
     for (final input in inputs) {
-      gl.enableVertexAttribArray(input.location);
+      if (configureVao) {
+        gl.enableVertexAttribArray(input.location);
+      }
       gl.vertexAttribPointer(
         input.location,
         input.componentCount,
@@ -342,9 +410,11 @@ final class WebGlRenderPass extends RenderPass {
         stride,
         bufferView.offsetInBytes + input.offsetInBytes,
       );
-      // Divisor state lives in the VAO and may be left over from an
-      // instanced layout; reset it for vertex-rate inputs.
-      gl.vertexAttribDivisor(input.location, 0);
+      if (configureVao) {
+        // Divisor state lives in the VAO and may be left over from an
+        // instanced layout; reset it for vertex-rate inputs.
+        gl.vertexAttribDivisor(input.location, 0);
+      }
     }
   }
 
@@ -358,10 +428,8 @@ final class WebGlRenderPass extends RenderPass {
   /// (pipeline, buffers, offsets), so their full attribute state is captured
   /// in a VAO once and re-bound with a single call thereafter.
   ///
-  /// Instance-rate streams are excluded from the cache key and re-pointed on
-  /// the bound VAO every draw: they ride the per-frame bump allocator, so
-  /// their offset changes per draw and every instanced draw re-points them
-  /// anyway.
+  /// Instance-rate streams key only by slot, so a VAO enables them once and
+  /// re-points one only when its buffer or offset changes.
   void _applyVertexState({required bool needsIndex}) {
     if (_inlineVertexBufferView != null) {
       _ensureVao();
@@ -369,12 +437,17 @@ final class WebGlRenderPass extends RenderPass {
     }
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline!;
-    final key = StringBuffer()..write(identityHashCode(pipeline));
+    final key = StringBuffer()..write(pipeline._id);
     for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-      if (instanceRate) continue;
+      if (instanceRate) {
+        key
+          ..write('|i:')
+          ..write(slot);
+        continue;
+      }
       key
         ..write('|')
-        ..write(identityHashCode(view.buffer))
+        ..write(view.buffer.webGl._id)
         ..write(':')
         ..write(view.offsetInBytes)
         ..write(':')
@@ -384,39 +457,46 @@ final class WebGlRenderPass extends RenderPass {
     if (indexView != null) {
       key
         ..write('#')
-        ..write(identityHashCode(indexView.buffer))
+        ..write(indexView.buffer.webGl._id)
         ..write(':')
         ..write(indexView.offsetInBytes);
     }
     final cacheKey = key.toString();
     final cache = _gpuContext._vaoCache;
     // Remove-and-reinsert keeps the map in least-recently-used order.
-    var vao = cache.remove(cacheKey);
-    if (vao != null) {
-      cache[cacheKey] = vao;
-      gl.bindVertexArray(vao);
-    } else {
-      vao = gl.createVertexArray();
-      if (vao == null) {
-        throw StateError('Failed to create WebGL vertex array');
-      }
-      gl.bindVertexArray(vao);
+    final cached = cache.remove(cacheKey);
+    if (cached != null) {
+      cache[cacheKey] = cached;
+      gl.bindVertexArray(cached.vao);
       for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-        if (instanceRate) continue;
-        _applyVertexBinding(view, slot);
+        if (!instanceRate) continue;
+        if (cached.matchesInstanceBinding(slot, view)) continue;
+        _applyVertexBinding(view, slot, configureVao: false);
+        cached.recordInstanceBinding(slot, view);
       }
-      // ELEMENT_ARRAY_BUFFER binding is VAO state; capture it with the rest.
-      indexView?.buffer.webGl._bindForTarget(
-        web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
-      );
-      cache[cacheKey] = vao;
-      if (cache.length > WebGlContext._kMaxCachedVaos) {
-        final oldest = cache.keys.first;
-        gl.deleteVertexArray(cache.remove(oldest)!);
+      return;
+    }
+
+    final vao = gl.createVertexArray();
+    if (vao == null) {
+      throw StateError('Failed to create WebGL vertex array');
+    }
+    gl.bindVertexArray(vao);
+    final entry = _CachedVao(vao);
+    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
+      _applyVertexBinding(view, slot, configureVao: true);
+      if (instanceRate) {
+        entry.recordInstanceBinding(slot, view);
       }
     }
-    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-      if (instanceRate) _applyVertexBinding(view, slot);
+    // ELEMENT_ARRAY_BUFFER binding is VAO state; capture it with the rest.
+    indexView?.buffer.webGl._bindForTarget(
+      web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
+    );
+    cache[cacheKey] = entry;
+    if (cache.length > WebGlContext._kMaxCachedVaos) {
+      final oldest = cache.keys.first;
+      gl.deleteVertexArray(cache.remove(oldest)!.vao);
     }
   }
 
@@ -458,9 +538,7 @@ final class WebGlRenderPass extends RenderPass {
     // UNIFORM_BUFFER_OFFSET_ALIGNMENT.
     final blockBinding = pipeline._structBlockBindings[struct.name];
     if (blockBinding != null) {
-      final glBuffer = bufferView.buffer.webGl._bindForTarget(
-        web.WebGL2RenderingContext.UNIFORM_BUFFER,
-      );
+      final glBuffer = bufferView.buffer.webGl._ensureNonElementBuffer();
       // Bind at least the driver-reported block data size; the emplaced
       // length alone can be smaller than the driver's padded size, and a
       // too-small range makes the draw a no-op. DeviceBuffer pads its GL
@@ -604,7 +682,9 @@ final class WebGlRenderPass extends RenderPass {
           minFilter,
         );
       }
-      final magFilter = sampler.magFilter == MinMagFilter.nearest
+      final magFilter =
+          sampler.magFilter == MinMagFilter.nearest ||
+              texture.webGl._nearestOnly
           ? web.WebGL2RenderingContext.NEAREST
           : web.WebGL2RenderingContext.LINEAR;
       if (texture.webGl._lastMagFilter != magFilter) {
@@ -646,16 +726,19 @@ final class WebGlRenderPass extends RenderPass {
   }
 
   // The GL minification filter for [sampler]. Mipmap modes apply only when
-  // the texture actually has mip levels; a mipmap MIN_FILTER on a
-  // single-level texture is incomplete in GL and samples black.
+  // the texture actually has mip levels, and only nearest ones when it cannot
+  // be filtered; either mismatch leaves the texture incomplete and it samples
+  // black.
   static int _glMinFilter(SamplerOptions sampler, Texture texture) {
-    final nearest = sampler.minFilter == MinMagFilter.nearest;
+    final nearestOnly = texture.webGl._nearestOnly;
+    final nearest = sampler.minFilter == MinMagFilter.nearest || nearestOnly;
     if (texture.mipLevelCount <= 1) {
       return nearest
           ? web.WebGL2RenderingContext.NEAREST
           : web.WebGL2RenderingContext.LINEAR;
     }
-    return switch ((nearest, sampler.mipFilter)) {
+    final mipFilter = nearestOnly ? MipFilter.nearest : sampler.mipFilter;
+    return switch ((nearest, mipFilter)) {
       (true, MipFilter.nearest) =>
         web.WebGL2RenderingContext.NEAREST_MIPMAP_NEAREST,
       (true, MipFilter.linear) =>
@@ -714,6 +797,8 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setColorBlendEnable(bool enable, {int colorAttachmentIndex = 0}) {
+    if (_blendEnabled == enable) return;
+    _blendEnabled = enable;
     final gl = _gpuContext._gl;
     if (enable) {
       gl.enable(web.WebGL2RenderingContext.BLEND);
@@ -728,25 +813,47 @@ final class WebGlRenderPass extends RenderPass {
     int colorAttachmentIndex = 0,
   }) {
     final gl = _gpuContext._gl;
-    gl.blendEquationSeparate(
-      _glBlendOp(equation.colorBlendOperation),
-      _glBlendOp(equation.alphaBlendOperation),
-    );
-    gl.blendFuncSeparate(
-      _glBlendFactor(equation.sourceColorBlendFactor),
-      _glBlendFactor(equation.destinationColorBlendFactor),
-      _glBlendFactor(equation.sourceAlphaBlendFactor),
-      _glBlendFactor(equation.destinationAlphaBlendFactor),
-    );
+    if (_blendOperations?.$1 != equation.colorBlendOperation ||
+        _blendOperations?.$2 != equation.alphaBlendOperation) {
+      gl.blendEquationSeparate(
+        _glBlendOp(equation.colorBlendOperation),
+        _glBlendOp(equation.alphaBlendOperation),
+      );
+      _blendOperations = (
+        equation.colorBlendOperation,
+        equation.alphaBlendOperation,
+      );
+    }
+    if (_blendFactors?.$1 != equation.sourceColorBlendFactor ||
+        _blendFactors?.$2 != equation.destinationColorBlendFactor ||
+        _blendFactors?.$3 != equation.sourceAlphaBlendFactor ||
+        _blendFactors?.$4 != equation.destinationAlphaBlendFactor) {
+      gl.blendFuncSeparate(
+        _glBlendFactor(equation.sourceColorBlendFactor),
+        _glBlendFactor(equation.destinationColorBlendFactor),
+        _glBlendFactor(equation.sourceAlphaBlendFactor),
+        _glBlendFactor(equation.destinationAlphaBlendFactor),
+      );
+      _blendFactors = (
+        equation.sourceColorBlendFactor,
+        equation.destinationColorBlendFactor,
+        equation.sourceAlphaBlendFactor,
+        equation.destinationAlphaBlendFactor,
+      );
+    }
   }
 
   @override
   void setDepthWriteEnable(bool enable) {
+    if (_depthWriteEnabled == enable) return;
+    _depthWriteEnabled = enable;
     _gpuContext._gl.depthMask(enable);
   }
 
   @override
   void setDepthCompareOperation(CompareFunction compareFunction) {
+    if (_depthCompare == compareFunction) return;
+    _depthCompare = compareFunction;
     final gl = _gpuContext._gl;
     // GL skips depth writes while the test is disabled, so `always` keeps
     // the test on with GL_ALWAYS, as Impeller's GLES backend does.
@@ -822,6 +929,8 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setCullMode(CullMode cullMode) {
+    if (_cullMode == cullMode) return;
+    _cullMode = cullMode;
     final gl = _gpuContext._gl;
     switch (cullMode) {
       case CullMode.none:
@@ -847,11 +956,14 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setWindingOrder(WindingOrder windingOrder) {
-    // Inverted relative to the requested order: the generated GLES vertex
-    // shaders multiply gl_Position.y by `_impeller_y_flip = -1`, which mirrors
-    // triangle winding while storing render targets top-down.
+    if (_windingOrder == windingOrder) return;
+    _windingOrder = windingOrder;
+    // Inverted relative to the requested order while flipping: the generated
+    // GLES vertex shaders multiply gl_Position.y by `_impeller_y_flip = -1`,
+    // which mirrors triangle winding while storing render targets top-down.
+    final clockwise = windingOrder == WindingOrder.clockwise;
     _gpuContext._gl.frontFace(
-      windingOrder == WindingOrder.clockwise
+      clockwise == _flipY
           ? web.WebGL2RenderingContext.CCW
           : web.WebGL2RenderingContext.CW,
     );
@@ -928,15 +1040,30 @@ final class WebGlRenderPass extends RenderPass {
   void setScissor(Scissor scissor) {
     final gl = _gpuContext._gl;
     gl.enable(web.WebGL2RenderingContext.SCISSOR_TEST);
-    gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height);
+    gl.scissor(
+      scissor.x,
+      _glY(scissor.y, scissor.height),
+      scissor.width,
+      scissor.height,
+    );
   }
 
   @override
   void setViewport(Viewport viewport) {
     final gl = _gpuContext._gl;
-    gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+    gl.viewport(
+      viewport.x,
+      _glY(viewport.y, viewport.height),
+      viewport.width,
+      viewport.height,
+    );
     gl.depthRange(viewport.depthRange.zNear, viewport.depthRange.zFar);
   }
+
+  // A top-left rectangle's y in GL terms. While flipping, the flipped image
+  // puts the top at GL's bottom row, so the value passes through; an
+  // unflipped external target counts from the bottom.
+  int _glY(int y, int height) => _flipY ? y : _targetHeight - y - height;
 
   void _configureInlineVertexBuffer(int vertexCount) {
     final pipeline = _boundPipeline;

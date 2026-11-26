@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
@@ -170,10 +171,12 @@ class ShadowCatcherBakePass extends RenderGraphPass {
       pointShadowTileCount: shadowMap == null
           ? 0
           : _punctualLighting.pointShadowTileCount,
-      spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
-      spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
-      spotShadowSoftness: _punctualLighting.spotShadowSoftness,
       shadowMap: shadowMap,
+      shadowAtlas: shadowMap == null
+          ? null
+          : context.blackboard.get<ShadowAtlasLayout>(
+              kShadowAtlasLayoutBlackboardKey,
+            ),
       cascades: shadowMap == null ? const [] : _cascades,
       viewportSize: ui.Size(resolution.toDouble(), resolution.toDouble()),
     );

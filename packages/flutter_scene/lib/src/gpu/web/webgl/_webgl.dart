@@ -4,19 +4,22 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:web/web.dart' as web;
 
 import '../../../generated_assets/generated_asset_fetch_web.dart';
 import '../../shared/encoded_image_types.dart';
 import '../../shared/glsl_transpile.dart';
+import '../../shared/external_target.dart';
 import '../../shared/gpu_capabilities.dart';
 import '../../shared/shader_library_sources.dart';
 import '../_gpu.dart';
+import '../bitmap_presentation.dart';
 import '../shader_bundle_generated.dart' as fb;
 
 part 'backend.dart';

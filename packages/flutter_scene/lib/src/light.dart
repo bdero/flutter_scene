@@ -7,10 +7,12 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/color_conversion.dart';
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/generated_assets/lighting_features.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
+import 'package:flutter_scene/src/render/shadow_atlas_layout.dart';
 import 'package:flutter_scene/src/shaders.dart'
     show compiledOutLightingFeatures;
 import 'package:flutter_scene/src/render/punctual_lights.dart'
@@ -155,8 +157,13 @@ class DirectionalLight {
   /// +Z axis. Use [DirectionalLightComponent.aimed] for another local axis.
   Vector3 direction;
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color].
   double intensity;
@@ -612,8 +619,13 @@ class PointLight {
     this.shadowCasterChannelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the radiance at unit distance.
   double intensity;
@@ -643,12 +655,9 @@ class PointLight {
   /// expensive shadow type per light.
   bool castsShadow;
 
-  /// Pixel resolution this light asks for on each (square) cube face.
-  ///
-  /// The shared shadow atlas gives every tile one size, so this is only
-  /// honored when no directional cascade and no shadow-casting spot is
-  /// already setting it, and only for the first point caster. Otherwise the
-  /// faces render at half whatever tile size the atlas chose.
+  /// Pixel resolution of each (square) cube face. The faces render at this
+  /// size unless the frame's shadows overflow the shared atlas, which halves
+  /// every spot and point shadow until they fit.
   int shadowMapResolution;
 
   /// Near clip distance of each face's shadow frustum. Geometry closer to
@@ -773,8 +782,13 @@ class RectAreaLight {
     this.channelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the emitted radiance of the
   /// panel's surface. The received light also grows with the panel's area.
@@ -845,8 +859,13 @@ class SpotLight {
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
-  /// Linear RGB color of the light.
+  /// Linear RGB color of the light. Flutter colors are sRGB; set one with
+  /// [setColor].
   Vector3 color;
+
+  /// Sets [color] from a Flutter [ui.Color], decoding it from sRGB. The color
+  /// sets hue only; brightness comes from [intensity].
+  void setColor(ui.Color value) => color = value.toLinearRgb();
 
   /// Scalar multiplier applied to [color]; the radiance at unit distance.
   double intensity;
@@ -878,11 +897,9 @@ class SpotLight {
   /// room (shadow-casting spots are limited; the rest shade unshadowed).
   bool castsShadow;
 
-  /// Pixel resolution this spot asks for on its (square) shadow map tile.
-  ///
-  /// The shared shadow atlas gives every tile one size, so this is only
-  /// honored when no directional cascade is already setting it, and only for
-  /// the first spot caster.
+  /// Pixel resolution of this spot's (square) shadow map. It renders at this
+  /// size unless the frame's shadows overflow the shared atlas, which halves
+  /// every spot and point shadow until they fit.
   int shadowMapResolution;
 
   /// Near clip distance of the shadow frustum. Geometry closer to the light
@@ -1096,10 +1113,14 @@ class Lighting {
     this.spotShadowCount = 0,
     this.pointShadowTileCount = 0,
     this.rectAreaLightCount = 0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowDepthBias = 0.0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowNormalBias = 0.0,
+    @Deprecated('Each spot carries its own shadow parameters.')
     this.spotShadowSoftness = 0.0,
     this.shadowMap,
+    this.shadowAtlas,
     this.cascades = const [],
     this.ssaoMap,
     this.specularOcclusionMode = 0.0,
@@ -1233,25 +1254,37 @@ class Lighting {
   final int punctualIndexWidth;
   final int punctualIndexHeight;
 
-  /// Number of shadow-casting spots this frame; their tiles follow the
-  /// directional cascades in [shadowMap] and their matrices ride in
+  /// Number of shadow-casting spots this frame; their tiles are in
+  /// [shadowMap], and their matrices, tiles, and shadow parameters ride in
   /// [punctualParamsTexture]. Zero disables spot shadow sampling.
   final int spotShadowCount;
 
   /// Number of atlas tiles claimed by shadow-casting point lights this frame
-  /// (two per caster, each packing four quarter-tile cube faces); they follow
-  /// the spot tiles in [shadowMap]. Zero disables point shadow sampling.
+  /// (two per caster, each packing four quarter-tile cube faces) in
+  /// [shadowMap]. Zero disables point shadow sampling.
   final int pointShadowTileCount;
 
-  /// Shared spot-shadow sampling parameters.
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowDepthBias;
+
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowNormalBias;
+
+  /// Unused; each spot carries its own shadow parameters.
+  @Deprecated('Each spot carries its own shadow parameters.')
   final double spotShadowSoftness;
 
-  /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
-  /// cascade tiles as a horizontal strip) for [directionalLight], or
-  /// null when shadows are off for this frame. Sampled with [cascades].
+  /// The shared shadow atlas (a depth-in-`.r` texture holding the cascade,
+  /// spot, and point light tiles) for [directionalLight] and the punctual
+  /// lights, or null when shadows are off for this frame. Sampled with
+  /// [cascades].
   final gpu.Texture? shadowMap;
+
+  /// Where the tiles of [shadowMap] are.
+  @internal
+  final ShadowAtlasLayout? shadowAtlas;
 
   /// The shadow cascades matching [shadowMap], near-to-far, or empty
   /// when there is no shadow map this frame.
