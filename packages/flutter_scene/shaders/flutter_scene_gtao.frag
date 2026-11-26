@@ -66,6 +66,10 @@ uniform GtaoInfo {
   mat4 reproject;
   // xy: the NDC position of the view axis. z: 1 for an orthographic camera.
   vec4 proj_offset;
+  // Maps depth texture UV to the screen UV each texel was sampled at (xy
+  // scale, zw offset). Identity unless the base level subsamples a
+  // full-resolution prepass.
+  vec4 depth_uv;
 }
 gtao;
 
