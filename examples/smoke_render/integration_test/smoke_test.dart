@@ -224,6 +224,18 @@ void main() {
           reason: report.describe(limit: 4),
         );
       }
+      // A scene may bound off-hue pixels.
+      final maxHueOutliers = smoke.maxHueOutliers;
+      if (maxHueOutliers != null) {
+        final outliers = _hueOutliers(rgba);
+        // ignore: avoid_print
+        print('SMOKE ${smoke.id}: hueOutliers=$outliers');
+        expect(
+          outliers,
+          lessThanOrEqualTo(maxHueOutliers),
+          reason: 'pixels bluer than red in a warm and neutral scene',
+        );
+      }
       // A scene may pin counters instead of pixels.
       final expectedCounters = smoke.colorPassCounters;
       if (expectedCounters != null) {
@@ -1397,6 +1409,16 @@ _frameStats(ByteData rgba, int w, int h) {
     foregroundMeanLuma: fgCount == 0 ? 0.0 : fgLumaSum / fgCount,
     distinctColors: colors.length,
   );
+}
+
+/// Pixels clearly bluer than red (see `SmokeScene.maxHueOutliers`).
+int _hueOutliers(ByteData rgba) {
+  final bytes = rgba.buffer.asUint8List();
+  var count = 0;
+  for (var i = 0; i + 3 < bytes.length; i += 4) {
+    if (bytes[i + 2] > bytes[i] + 24) count++;
+  }
+  return count;
 }
 
 Future<Uint8List> _rgbaBytes(ui.Image image) async {

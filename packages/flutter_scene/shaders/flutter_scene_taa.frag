@@ -1,8 +1,9 @@
 // Temporal Anti-Aliasing (TAA) resolve shader.
 //
 // Performs 3x3 velocity dilation, camera reprojection from linear depth,
-// Catmull-Rom history sampling, YCoCg variance clipping, tone-mapped history
-// mix, and optional sharpening.
+// Catmull-Rom history sampling, then YCoCg variance clipping, the history
+// mix, and optional sharpening, all on tone-mapped color so extreme HDR
+// values stay stable.
 
 uniform TaaInfo {
   mat4 current_to_previous_view_projection;
@@ -58,6 +59,18 @@ vec3 UnToneMap(vec3 c) {
   c = max(vec3(0.0), c);
   float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
   return c / max(1.0 - luma, 1e-4);
+}
+
+// Moves [history] toward the neighborhood mean [mu] until it is inside
+// [box_min, box_max]. Unlike clamping each axis, the result lies between two
+// real colors, so no channel goes negative and gets zeroed into a new hue.
+vec3 ClipTowardMean(vec3 history, vec3 mu, vec3 box_min, vec3 box_max) {
+  vec3 offset = history - mu;
+  // Nudge flat axes off zero so the division below stays finite.
+  offset += step(abs(offset), vec3(1e-6)) * 1e-6;
+  vec3 room = mix(box_min - mu, box_max - mu, step(vec3(0.0), offset));
+  vec3 limit = max(room / offset, vec3(0.0));
+  return mu + offset * min(1.0, min(limit.x, min(limit.y, limit.z)));
 }
 
 // 5-tap Catmull-Rom history filter to prevent texture softening.
@@ -169,21 +182,28 @@ void main() {
     }
   }
 
-  // 5. Neighborhood sampling and variance clipping in YCoCg space.
-  vec3 current_center = textureLod(current_color, uv, 0.0).rgb;
+  // 5. Neighborhood statistics, tone-mapped like the mix below so one
+  // extreme HDR pixel cannot blow open the clip box, then variance clipping
+  // in YCoCg.
+  vec3 tm_curr = ToneMap(textureLod(current_color, uv, 0.0).rgb);
   vec3 m1 = vec3(0.0);
   vec3 m2 = vec3(0.0);
   vec3 neighbor_min = vec3(1e6);
   vec3 neighbor_max = vec3(-1e6);
+  float luma_min = 1e6;
+  float luma_max = 0.0;
 
-  vec3 cross_blur = vec3(0.0);
+  float cross_luma = 0.0;
   for (int dy = -1; dy <= 1; dy++) {
     for (int dx = -1; dx <= 1; dx++) {
       vec2 tap_uv = uv + vec2(float(dx), float(dy)) * texel_size;
-      vec3 col = textureLod(current_color, tap_uv, 0.0).rgb;
+      vec3 col = ToneMap(textureLod(current_color, tap_uv, 0.0).rgb);
+      float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
       if (abs(dx) + abs(dy) == 1) {
-        cross_blur += col;
+        cross_luma += luma;
       }
+      luma_min = min(luma_min, luma);
+      luma_max = max(luma_max, luma);
       vec3 ycocg = RGB2YCoCg(col);
       m1 += ycocg;
       m2 += ycocg * ycocg;
@@ -198,11 +218,11 @@ void main() {
   vec3 box_min = max(neighbor_min, mu - sigma * gamma);
   vec3 box_max = min(neighbor_max, mu + sigma * gamma);
 
-  // 6. History sampling and clamping.
-  vec3 history_sample = SampleCatmullRom(history_color, history_uv, texel_size).rgb;
-  vec3 history_ycocg = RGB2YCoCg(history_sample);
-  vec3 clamped_history_ycocg = clamp(history_ycocg, box_min, box_max);
-  vec3 clamped_history = max(vec3(0.0), YCoCg2RGB(clamped_history_ycocg));
+  // 6. History sampling and clipping. The Catmull-Rom lobes can undershoot
+  // beside a bright edge, so the sample is kept non-negative first.
+  vec3 history_sample = max(vec3(0.0), SampleCatmullRom(history_color, history_uv, texel_size).rgb);
+  vec3 history_ycocg = RGB2YCoCg(ToneMap(history_sample));
+  vec3 tm_hist = max(vec3(0.0), YCoCg2RGB(ClipTowardMean(history_ycocg, mu, box_min, box_max)));
 
   // 7. Tone-mapped mix.
   float vel_len = length(total_velocity_uv * info.screen_size.xy);
@@ -210,22 +230,25 @@ void main() {
   if (!history_valid) {
     weight = 1.0;
   }
-
-  vec3 tm_curr = ToneMap(current_center);
-  vec3 tm_hist = ToneMap(clamped_history);
   vec3 resolved_tm = mix(tm_hist, tm_curr, weight);
+
+  // 8. Optional sharpening of luminance only, tone-mapped and held inside
+  // the neighborhood's luminance range, then applied as one scale on every
+  // channel so the hue cannot change. Sharpening each channel in linear HDR
+  // overshot negative beside a far brighter pixel, and the clamp turned it
+  // blue or magenta in the history it feeds.
+  if (info.taa_settings.z > 0.0) {
+    float luma = dot(resolved_tm, vec3(0.2126, 0.7152, 0.0722));
+    float sharpened = clamp(luma + (luma - cross_luma * 0.25) * info.taa_settings.z,
+                            luma_min, luma_max);
+    resolved_tm *= sharpened / max(luma, 1e-6);
+  }
+
   float tm_luma = dot(resolved_tm, vec3(0.2126, 0.7152, 0.0722));
   if (tm_luma > 0.999) {
     resolved_tm *= 0.999 / tm_luma;
   }
   vec3 resolved = max(vec3(0.0), UnToneMap(resolved_tm));
-
-  // 8. Optional sharpening.
-  if (info.taa_settings.z > 0.0) {
-    vec3 blur = cross_blur * 0.25;
-    vec3 sharpened = resolved + (resolved - blur) * info.taa_settings.z;
-    resolved = max(vec3(0.0), sharpened);
-  }
 
   frag_color = vec4(resolved, 1.0);
 }
