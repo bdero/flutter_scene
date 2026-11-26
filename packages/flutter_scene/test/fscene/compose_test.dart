@@ -190,6 +190,37 @@ void main() {
     expect((wheel.transform as TrsTransform).translation, Vector3(5, 0, 0));
   });
 
+  test('expansion keeps node render order and shadow casting', () {
+    final prefab = _prefab();
+    final body = prefab.rootNodes.single..renderOrder = -2;
+    prefab.node(body.children.single)!.shadowCastingMode = 'off';
+    final wheelId = body.children.single;
+
+    final host = SceneDocument();
+    host.createNode(root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+      overrides: [
+        PropertyOverride(
+          target: wheelId,
+          path: 'renderOrder',
+          value: const DoubleValue(3),
+        ),
+      ],
+    );
+    expect(
+      prefabOverrideAspect('renderOrder'),
+      PrefabOverrideAspect.renderOrder,
+    );
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+    final node = composed.rootNodes.single;
+    // The merged root inherits the prefab root's order.
+    expect(node.renderOrder, -2);
+    final wheel = composed.node(node.children.single)!;
+    expect(wheel.renderOrder, 3);
+    expect(wheel.shadowCastingMode, 'off');
+  });
+
   test('applies an override inside a component list and map', () {
     final prefab = SceneDocument();
     final original = prefab.addResource(

@@ -566,6 +566,7 @@ FmatMaterial _build(
     'effects_depth',
     'depth_test',
     'depth_layer',
+    'render_order',
     'parameters',
     'varyings',
     'attributes',
@@ -721,6 +722,20 @@ FmatMaterial _build(
       );
     }
     depthLayer = depthLayerValue.toInt();
+  }
+
+  // `render_order` sorts this material's draws within their pass (see
+  // `Material.renderOrder`).
+  final renderOrderValue = tree['render_order'];
+  var renderOrder = 0.0;
+  if (renderOrderValue != null) {
+    if (renderOrderValue is! num || !renderOrderValue.isFinite) {
+      throw FmatException(
+        '`render_order` must be a number.',
+        fileName: fileName,
+      );
+    }
+    renderOrder = renderOrderValue.toDouble();
   }
 
   final parameters = _buildParameters(tree['parameters'], fileName);
@@ -926,6 +941,7 @@ FmatMaterial _build(
     effectsDepth: effectsDepth,
     depthTest: depthTest,
     depthLayer: depthLayer,
+    renderOrder: renderOrder,
     parameters: parameters,
     fragmentSource: body.content,
     fragmentSourceLine: body.startLine,

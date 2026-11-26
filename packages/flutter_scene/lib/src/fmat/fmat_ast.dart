@@ -290,6 +290,7 @@ class FmatMaterial {
     this.effectsDepth = false,
     this.depthTest = FmatDepthTest.lessEqual,
     this.depthLayer = 0,
+    this.renderOrder = 0,
     required this.parameters,
     required this.fragmentSource,
     required this.fragmentSourceLine,
@@ -353,6 +354,11 @@ class FmatMaterial {
   /// (`depth_layer:`, default 0): which surface wins where it and another lie
   /// in one plane.
   final int depthLayer;
+
+  /// The initial `Material.renderOrder` of materials built from this file
+  /// (`render_order:`, default 0): where its draws go within their pass,
+  /// lowest first.
+  final double renderOrder;
   final List<FmatParameter> parameters;
 
   /// The verbatim contents of the code block (`fragment { }` for a surface

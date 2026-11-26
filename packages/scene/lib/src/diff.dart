@@ -27,6 +27,7 @@ class NodeChange {
     this.name = false,
     this.layers = false,
     this.visible = false,
+    this.renderOrder = false,
     this.reparented = false,
     this.components = false,
     this.skin = false,
@@ -46,6 +47,9 @@ class NodeChange {
 
   /// The visibility flag changed.
   final bool visible;
+
+  /// The render order changed.
+  final bool renderOrder;
 
   /// The node's parent changed (it moved in the hierarchy).
   final bool reparented;
@@ -142,6 +146,7 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
       name: oldNode.name != newNode.name,
       layers: oldNode.layers != newNode.layers,
       visible: oldNode.visible != newNode.visible,
+      renderOrder: oldNode.renderOrder != newNode.renderOrder,
       reparented: oldParents[id] != newParents[id],
       components:
           !_componentsEqual(oldNode.components, newNode.components) ||
@@ -158,6 +163,7 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
         change.name ||
         change.layers ||
         change.visible ||
+        change.renderOrder ||
         change.reparented ||
         change.components ||
         change.skin) {

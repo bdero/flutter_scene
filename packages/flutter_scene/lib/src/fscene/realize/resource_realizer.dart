@@ -445,10 +445,7 @@ class ResourceRealizer {
     if (asset == null) {
       debugPrint('fscene: fmat material ${res.id} has no asset; using unlit');
       _materials[res.id] = tagResourceOrigin(
-        _unlit(res.properties)
-          ..name = res.name
-          ..depthBias = readDouble(res.properties, 'depthBias', 0)
-          ..depthLayer = readInt(res.properties, 'depthLayer', 0),
+        _withCommonProperties(_unlit(res.properties), res),
         document,
         res.id,
       );
@@ -458,14 +455,12 @@ class ResourceRealizer {
       final material = fmatMaterialLoader == null
           ? await loadFmatMaterial(asset.key, bundle: bundle)
           : await fmatMaterialLoader!(asset);
-      material
-        ..name = res.name
-        ..depthBias = readDouble(res.properties, 'depthBias', 0)
-        ..depthLayer = readInt(
-          res.properties,
-          'depthLayer',
-          material.declaredDepthLayer,
-        );
+      _withCommonProperties(
+        material,
+        res,
+        declaredDepthLayer: material.declaredDepthLayer,
+        declaredRenderOrder: material.declaredRenderOrder,
+      );
       // Apply the document's parameter overrides (scalars, vectors, colors,
       // and texture-resource references) over the sidecar defaults.
       applyFmatParameterOverrides(
@@ -477,10 +472,7 @@ class ResourceRealizer {
     } catch (e) {
       debugPrint('fscene: failed to load fmat ${res.id} ("${asset.key}"): $e');
       _materials[res.id] = tagResourceOrigin(
-        _unlit(res.properties)
-          ..name = res.name
-          ..depthBias = readDouble(res.properties, 'depthBias', 0)
-          ..depthLayer = readInt(res.properties, 'depthLayer', 0),
+        _withCommonProperties(_unlit(res.properties), res),
         document,
         res.id,
       );
@@ -492,14 +484,14 @@ class ResourceRealizer {
       final material = await PhysicallyBasedMaterial.fromDescriptor(
         _physicalDescriptor(res),
       );
-      material.name = res.name;
+      _withCommonProperties(material, res);
       _materials[res.id] = tagResourceOrigin(material, document, res.id);
     } catch (e) {
       debugPrint(
         'fscene: failed to realize physical material ${res.id}: $e; using PBR',
       );
       _materials[res.id] = tagResourceOrigin(
-        _pbr(res.properties)..name = res.name,
+        _withCommonProperties(_pbr(res.properties), res),
         document,
         res.id,
       );
@@ -841,10 +833,28 @@ class ResourceRealizer {
     if (res is! MaterialResource) {
       throw FsceneFormatException('Resource $id is not a material');
     }
-    return _materialForType(res)
+    return _withCommonProperties(_materialForType(res), res);
+  }
+
+  // Applies the name and the draw-placement properties every material type
+  // carries. An `.fmat` passes its own declarations as the defaults, so a
+  // document only stores what it overrides.
+  static T _withCommonProperties<T extends Material>(
+    T material,
+    MaterialResource res, {
+    int declaredDepthLayer = 0,
+    double declaredRenderOrder = 0,
+  }) {
+    final properties = res.properties;
+    return material
       ..name = res.name
-      ..depthBias = readDouble(res.properties, 'depthBias', 0)
-      ..depthLayer = readInt(res.properties, 'depthLayer', 0);
+      ..depthBias = readDouble(properties, 'depthBias', 0)
+      ..depthLayer = readInt(properties, 'depthLayer', declaredDepthLayer)
+      ..renderOrder = readDouble(
+        properties,
+        'renderOrder',
+        declaredRenderOrder,
+      );
   }
 
   Material _materialForType(MaterialResource res) {

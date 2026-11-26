@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3
+
+- `NodeSpec.renderOrder` carries a node's render order, delta-serialized, reported by `diffScene` (`NodeChange.renderOrder`), and overridable on prefab instances through the `renderOrder` path. An instance at the default order takes its prefab root's.
+- Prefab expansion keeps member nodes' `shadowCastingMode`.
+
 ## 0.4.2
 
 - `AnimationSpec.pathChannels` (`AnimationPathChannelSpec`) animates node properties beyond the transform by path, such as visibility, light color and intensity, material factors, and texture transforms.

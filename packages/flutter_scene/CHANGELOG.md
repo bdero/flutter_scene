@@ -24,6 +24,12 @@
 * On WebGPU, `textureToPlatformImage` returns an `ImageBitmap` instead of null.
 * On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.
 * WebGL2 reuses its present framebuffer and skips redundant vertex array and uniform buffer calls per draw.
+* `Material.renderOrder` (`.fmat` `render_order:`) sorts a material's draws ahead of `Node.renderOrder`, so a whole class of translucent overlays (road paint, shadow decals, markers) is ordered in one place.
+* `.fscene` documents carry `Node.renderOrder` and `Material.renderOrder`, and the editor sets a node's order from the inspector and the `setNodeRenderOrder` command.
+* `.fscene` documents keep an `UnlitMaterial`'s `alphaMode`, so a translucent unlit material no longer reloads opaque.
+* Physical materials realized from a `.fscene` keep their `depthBias` and `depthLayer`.
+* Nodes added by a `.fscene` hot reload keep their shadow casting mode.
+* Update `flutter_scene-idioms` skill (v23) with render order and stacked translucent overlays.
 
 ## 0.24.6
 

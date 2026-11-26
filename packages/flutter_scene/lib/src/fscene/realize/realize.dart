@@ -136,7 +136,8 @@ Node _realizeWith(
       Node(name: spec.name)
         ..layers = spec.layers
         ..visible = spec.visible
-        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode),
+        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode)
+        ..renderOrder = spec.renderOrder,
       spec.id,
     );
     applyTransformSpec(node, spec.transform);
@@ -286,6 +287,7 @@ NodeSpec _serializeNode(
     instance: lazyInstance,
     visible: node.visible,
     shadowCastingMode: node.shadowCastingMode.name,
+    renderOrder: node.renderOrder,
   );
   document.addNode(spec);
 

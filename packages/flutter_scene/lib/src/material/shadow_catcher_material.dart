@@ -295,6 +295,7 @@ class ShadowCatcherMaterial extends Material {
       ..name = name
       ..depthBias = depthBias
       ..depthLayer = depthLayer
+      ..renderOrder = renderOrder
       ..lodFade = lodFade
       ..lightListOffset = lightListOffset
       ..lightListCount = lightListCount;

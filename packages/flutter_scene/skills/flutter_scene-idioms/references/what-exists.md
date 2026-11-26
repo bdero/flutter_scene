@@ -50,7 +50,8 @@ Lookup: `getChildByName(name, {excludeAnimationPlayers})`, `getChildByNamePath`,
 
 Per-node flags: `visible` (true), `frustumCulled` (true), `layers` (`kRenderLayerDefault`, a 32-bit
 mask, NOT inherited), `castsShadows` (true, not inherited), `shadowStatic` (false), `raycastable`
-(true), `highlightColor` (`Vector4?`), `skin` (`Skin?`, set by importers).
+(true), `renderOrder` (0.0, lowest draws first within its pass after `Material.renderOrder`, NOT
+inherited), `highlightColor` (`Vector4?`), `skin` (`Skin?`, set by importers).
 
 Bounds: `combinedLocalBounds`, `combinedWorldBounds`, `markBoundsDirty()`, `isVisibleTo(camera,
 size)`. A `null` bounds means always-visible.
@@ -224,11 +225,13 @@ Attach via `LodComponent`. Shadow/depth passes always draw level 0.
 ## Materials and textures
 
 `Material` (abstract): `name`, `doubleSided` (false), `depthLayer` (0), `depthBias` (0.0),
-`setFragmentShader`, `setFragmentShaderName(name, {cubeName})`, `setRadianceCubeFragmentShader`,
+`renderOrder` (0.0), `setFragmentShader`, `setFragmentShaderName(name, {cubeName})`, `setRadianceCubeFragmentShader`,
 `isOpaque()`. `depthLayer` (-8..8) orders coplanar surfaces: a higher layer draws over a lower one
 in the same plane at any distance (an overlay on a wall or road gets 1). `depthBias` is a world-unit
 nudge toward the camera that buys fewer depth steps with distance; prefer `depthLayer`. `.fmat`
-spells the layer `depth_layer:`.
+spells the layer `depth_layer:`. `renderOrder` sorts the material's draws within their pass, lowest
+first, ahead of `Node.renderOrder` and the depth sort (`.fmat` `render_order:`); it pins which
+translucent surface blends over which.
 
 ### UnlitMaterial
 

@@ -72,6 +72,24 @@ void main() {
       expect(h.doc.roots, isEmpty);
     });
 
+    test('setNodeRenderOrder sets the order and undo restores it', () {
+      final h = _harness();
+      _run(h, 'createNode', {'name': 'Paint'});
+      final id = h.doc.roots.single;
+      _run(h, 'setNodeRenderOrder', {'nodeId': id.toToken(), 'order': -2});
+      expect(h.doc.node(id)!.renderOrder, -2);
+
+      h.history.undo();
+      expect(h.doc.node(id)!.renderOrder, 0);
+      expect(
+        () => _run(h, 'setNodeRenderOrder', {
+          'nodeId': id.toToken(),
+          'order': double.infinity,
+        }),
+        throwsA(isA<CommandException>()),
+      );
+    });
+
     test('createNode under a parent links into children', () {
       final h = _harness();
       _run(h, 'createNode', {'name': 'Parent'});

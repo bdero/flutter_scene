@@ -54,9 +54,22 @@ Check in motion, with numbers, not with a screenshot.
 
 The tells of a fight without tools: a material edit that changes nothing on screen (the other surface is winning there), a surface that looks right from one camera only, stripes or speckles that crawl as the camera moves, and flicker that only appears at grazing angles or far away.
 
+## Stacked translucent overlays
+
+`depthLayer` settles each overlay against the opaque surface under it. Blended surfaces write no depth, though, so between two translucent overlays (a shadow decal on a lane line) the one drawn last blends on top, and coplanar quads give the back-to-front sort nothing to go on. Set `Material.renderOrder` per kind of overlay, lowest first. The order spans the whole translucent pass, so an overlay ordered after glass also blends over glass standing in front of it; use negative orders for ground overlays and leave the rest at 0.
+
+```dart
+lanePaint.renderOrder = -3;
+shadowDecal.renderOrder = -2;
+markers.renderOrder = -1;
+for (final m in [lanePaint, shadowDecal, markers]) {
+  m.depthLayer = 1;
+}
+```
+
 ## Habits that do not work
 
-- **`Node.renderOrder` does not order opaque coplanar faces.** Depth decides between them, not draw order.
+- **Render order does not order opaque coplanar faces.** Depth decides between them, not draw order; `Material.renderOrder` and `Node.renderOrder` only decide which blended surface lands on top.
 - **Turning off the depth test** draws the overlay through everything in front of it.
 - **Forcing `doubleSided` broadly** exposes coincident back faces.
 - **Shrinking the far plane** barely changes precision; the near plane dominates, and the engine already fits it.
