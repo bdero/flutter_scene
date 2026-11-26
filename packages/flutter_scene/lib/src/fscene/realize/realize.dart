@@ -353,6 +353,13 @@ void _serializeAnimations(
       final nodeName = channel.bindTarget.nodeName;
       if (resolver is engine.PathTimelineResolver) {
         final target = engine.resolveAnimationTarget(root, nodeName);
+        final keyframes = _writeKeyframes(
+          document,
+          resolver.values,
+          resolver.inTangents,
+          resolver.outTangents,
+          Float32List.fromList,
+        );
         pathChannels.add(
           AnimationPathChannelSpec(
             target: (target != null ? ids[target] : null) ?? document.newId(),
@@ -362,30 +369,23 @@ void _serializeAnimations(
               document,
               Float32List.fromList(resolver.times),
             ),
-            keyframes: _floatsPayload(
-              document,
-              _keyframeFloats(
-                resolver,
-                resolver.values,
-                resolver.inTangents,
-                resolver.outTangents,
-                Float32List.fromList,
-              ),
-            ),
-            interpolation: _documentInterpolation(resolver.interpolation),
+            keyframes: keyframes.values,
+            interpolation: resolver.interpolation,
+            inTangents: keyframes.inTangents,
+            outTangents: keyframes.outTangents,
           ),
         );
         continue;
       }
       final AnimationProperty property;
       final engine.TimelineResolver timeline;
-      final Float32List keyframes;
+      final _Keyframes keyframes;
       switch (resolver) {
         case engine.TranslationTimelineResolver():
           property = AnimationProperty.translation;
           timeline = resolver;
-          keyframes = _keyframeFloats(
-            resolver,
+          keyframes = _writeKeyframes(
+            document,
             resolver.values,
             resolver.inTangents,
             resolver.outTangents,
@@ -394,8 +394,8 @@ void _serializeAnimations(
         case engine.RotationTimelineResolver():
           property = AnimationProperty.rotation;
           timeline = resolver;
-          keyframes = _keyframeFloats(
-            resolver,
+          keyframes = _writeKeyframes(
+            document,
             resolver.values,
             resolver.inTangents,
             resolver.outTangents,
@@ -404,8 +404,8 @@ void _serializeAnimations(
         case engine.ScaleTimelineResolver():
           property = AnimationProperty.scale;
           timeline = resolver;
-          keyframes = _keyframeFloats(
-            resolver,
+          keyframes = _writeKeyframes(
+            document,
             resolver.values,
             resolver.inTangents,
             resolver.outTangents,
@@ -430,8 +430,10 @@ void _serializeAnimations(
             document,
             Float32List.fromList(timeline.times),
           ),
-          keyframes: _floatsPayload(document, keyframes),
-          interpolation: _documentInterpolation(timeline.interpolation),
+          keyframes: keyframes.values,
+          interpolation: timeline.interpolation,
+          inTangents: keyframes.inTangents,
+          outTangents: keyframes.outTangents,
         ),
       );
     }
@@ -463,44 +465,28 @@ Float32List _packQuaternions(List<Quaternion> values) {
   return out;
 }
 
-// [timeline]'s keyframes packed as the document stores them. A cubic spline
-// keeps each keyframe's in-tangent and out-tangent on either side of its
-// value, as glTF lays them out.
-Float32List _keyframeFloats<T>(
-  engine.TimelineResolver timeline,
+// A channel's keyframe payloads, with tangents only for a cubic spline.
+typedef _Keyframes = ({
+  LocalId values,
+  LocalId? inTangents,
+  LocalId? outTangents,
+});
+
+_Keyframes _writeKeyframes<T>(
+  SceneDocument document,
   List<T> values,
   List<T>? inTangents,
   List<T>? outTangents,
   Float32List Function(List<T>) pack,
-) {
-  final packed = pack(values);
-  if (timeline.interpolation != engine.AnimationInterpolation.cubicSpline) {
-    return packed;
-  }
-  final count = timeline.times.length;
-  final width = count == 0 ? 0 : packed.length ~/ count;
-  final packedIn = pack(inTangents!);
-  final packedOut = pack(outTangents!);
-  final out = Float32List(count * width * 3);
-  for (var keyframe = 0; keyframe < count; keyframe++) {
-    final from = keyframe * width;
-    final to = from * 3;
-    out
-      ..setRange(to, to + width, packedIn, from)
-      ..setRange(to + width, to + width * 2, packed, from)
-      ..setRange(to + width * 2, to + width * 3, packedOut, from);
-  }
-  return out;
-}
-
-AnimationInterpolation _documentInterpolation(
-  engine.AnimationInterpolation interpolation,
-) => switch (interpolation) {
-  engine.AnimationInterpolation.step => AnimationInterpolation.step,
-  engine.AnimationInterpolation.linear => AnimationInterpolation.linear,
-  engine.AnimationInterpolation.cubicSpline =>
-    AnimationInterpolation.cubicSpline,
-};
+) => (
+  values: _floatsPayload(document, pack(values)),
+  inTangents: inTangents == null
+      ? null
+      : _floatsPayload(document, pack(inTangents)),
+  outTangents: outTangents == null
+      ? null
+      : _floatsPayload(document, pack(outTangents)),
+);
 
 LocalId _floatsPayload(SceneDocument document, Float32List floats) => document
     .addPayload(

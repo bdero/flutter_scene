@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
@@ -174,6 +175,12 @@ void main() {
               timeline: document.newId(),
               keyframes: document.newId(),
               interpolation: interpolation,
+              inTangents: interpolation == AnimationInterpolation.cubicSpline
+                  ? document.newId()
+                  : null,
+              outTangents: interpolation == AnimationInterpolation.cubicSpline
+                  ? document.newId()
+                  : null,
             ),
           ],
         ),
@@ -188,8 +195,25 @@ void main() {
           text,
         ).animations.values.single.channels.single;
         expect(channel.interpolation, interpolation);
+        final cubic = interpolation == AnimationInterpolation.cubicSpline;
+        expect(channel.inTangents != null, cubic);
+        expect(channel.outTangents != null, cubic);
         expect(writeFscene(readFscene(text)), text);
       }
+    });
+
+    test('a changed tangent payload is an animation change', () {
+      final base = document(AnimationInterpolation.cubicSpline);
+      final edited = readFscene(writeFscene(base));
+      final c = edited.animations.values.single.channels.single;
+      edited.addPayload(
+        PayloadSpec(
+          c.outTangents!,
+          encoding: PayloadEncoding.floats,
+          bytes: Uint8List.fromList(const [0, 0, 128, 63]),
+        ),
+      );
+      expect(diffScene(base, edited).animationsChanged, isTrue);
     });
 
     test('is written only when it is not linear', () {

@@ -26,6 +26,7 @@ import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/math_extensions.dart';
+import 'package:scene/scene.dart' show AnimationInterpolation;
 import 'package:vector_math/vector_math.dart';
 
 part 'animation/animated_path.dart';

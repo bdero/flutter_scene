@@ -18,20 +18,6 @@ enum AnimationProperty {
   path,
 }
 
-/// How a timeline moves from one keyframe to the next, as a glTF sampler's
-/// `interpolation` says.
-enum AnimationInterpolation {
-  /// Holds each keyframe's value until the next keyframe.
-  step,
-
-  /// Interpolates linearly, or spherically for rotations.
-  linear,
-
-  /// Follows a cubic Hermite spline shaped by each keyframe's in and out
-  /// tangents.
-  cubicSpline,
-}
-
 /// Identifies a single animation target as a (node name, property) pair.
 ///
 /// Channel resolution is name-based rather than reference-based so that

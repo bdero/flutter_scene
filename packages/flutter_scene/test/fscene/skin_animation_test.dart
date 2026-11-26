@@ -96,28 +96,18 @@ void main() {
     expect(root.createAnimationClip(animation!), isNotNull);
   });
 
-  test('splits a cubic spline channel\'s keyframes from its tangents', () {
+  SceneDocument blinkDocument({required bool withTangents}) {
     final doc = SceneDocument();
     final face = doc.createNode(name: 'Face', root: true);
-    final timeline = doc.addPayload(
-      PayloadSpec(
-        doc.newId(),
-        encoding: PayloadEncoding.floats,
-        bytes: _floatBytes([0.0, 1.0]),
-      ),
-    );
-    final keyframes = doc.addPayload(
-      PayloadSpec(
-        doc.newId(),
-        encoding: PayloadEncoding.floats,
-        // Two keyframes of two morph target weights, each keyframe an
-        // in-tangent, a value, and an out-tangent.
-        bytes: _floatBytes([
-          0, 0, 0, 1, 2, 3, //
-          4, 5, 1, 0, 0, 0, //
-        ]),
-      ),
-    );
+    LocalId floats(List<double> values) => doc
+        .addPayload(
+          PayloadSpec(
+            doc.newId(),
+            encoding: PayloadEncoding.floats,
+            bytes: _floatBytes(values),
+          ),
+        )
+        .id;
     doc.addAnimation(
       AnimationSpec(
         doc.newId(),
@@ -127,20 +117,36 @@ void main() {
             target: face.id,
             targetName: 'Face',
             property: AnimationProperty.weights,
-            timeline: timeline.id,
-            keyframes: keyframes.id,
+            timeline: floats([0.0, 1.0]),
+            // Two keyframes of two morph target weights.
+            keyframes: floats([0, 1, 1, 0]),
             interpolation: AnimationInterpolation.cubicSpline,
+            inTangents: withTangents ? floats([0, 0, 4, 5]) : null,
+            outTangents: withTangents ? floats([2, 3, 0, 0]) : null,
           ),
         ],
       ),
     );
+    return doc;
+  }
 
-    final resolver =
-        realizeScene(doc).parsedAnimations.single.channels.single.resolver
-            as engine.MorphWeightsTimelineResolver;
+  engine.MorphWeightsTimelineResolver blink(SceneDocument doc) =>
+      realizeScene(doc).parsedAnimations.single.channels.single.resolver
+          as engine.MorphWeightsTimelineResolver;
+
+  test('reads a cubic spline channel\'s tangents from their payloads', () {
+    final resolver = blink(blinkDocument(withTangents: true));
     expect(resolver.targetCount, 2);
+    expect(resolver.interpolation, AnimationInterpolation.cubicSpline);
     expect(resolver.values, [0, 1, 1, 0]);
     expect(resolver.inTangents, [0, 0, 4, 5]);
     expect(resolver.outTangents, [2, 3, 0, 0]);
+  });
+
+  test('plays a cubic spline channel without tangents as linear', () {
+    final resolver = blink(blinkDocument(withTangents: false));
+    expect(resolver.interpolation, AnimationInterpolation.linear);
+    expect(resolver.values, [0, 1, 1, 0]);
+    expect(resolver.inTangents, isNull);
   });
 }

@@ -235,6 +235,8 @@ void main() {
             timeline: prefab.newId(),
             keyframes: prefab.newId(),
             interpolation: AnimationInterpolation.cubicSpline,
+            inTangents: prefab.newId(),
+            outTangents: prefab.newId(),
           ),
         ],
         pathChannels: [
@@ -255,10 +257,11 @@ void main() {
 
     final composed = composeScene(host, resolve: _resolveTo(prefab));
     final animation = composed.animations.values.single;
-    expect(
-      animation.channels.single.interpolation,
-      AnimationInterpolation.cubicSpline,
-    );
+    final cubic = animation.channels.single;
+    expect(cubic.interpolation, AnimationInterpolation.cubicSpline);
+    expect(cubic.inTangents, isNotNull);
+    expect(cubic.outTangents, isNotNull);
+    expect(cubic.inTangents, isNot(cubic.outTangents));
     expect(
       animation.pathChannels.single.interpolation,
       AnimationInterpolation.step,

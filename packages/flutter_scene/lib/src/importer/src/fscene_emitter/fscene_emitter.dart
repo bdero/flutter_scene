@@ -375,21 +375,33 @@ void _buildAnimation(
       bufferData,
     );
     final interpolation = _interpolationOf(sampler);
+    final cubic = interpolation == AnimationInterpolation.cubicSpline;
     // A weights sampler is a flattened (frame x target) scalar stream; its
     // per-keyframe target count is the output/input length ratio, a third of
     // it for a cubic spline.
-    if (property == AnimationProperty.weights) {
-      final width = interpolation == AnimationInterpolation.cubicSpline ? 3 : 1;
-      if (times.isEmpty || values.length ~/ (times.length * width) == 0) {
-        continue;
-      }
-    }
-    // A cubic spline keeps glTF's in-tangent, value, and out-tangent per
-    // keyframe. The tangents convert as the values they shape do.
-    final keyframes = coordinatePolicy.convertAnimationValues(
+    final componentCount = switch (property) {
+      AnimationProperty.rotation => 4,
+      AnimationProperty.weights =>
+        times.isEmpty ? 0 : values.length ~/ (times.length * (cubic ? 3 : 1)),
+      _ => 3,
+    };
+    if (componentCount == 0) continue;
+    final gltf = splitGltfKeyframes(
       values,
-      targetPath: channel.targetPath,
+      componentCount: componentCount,
+      cubicSpline: cubic,
     );
+    // Tangents convert as the values they shape do.
+    LocalId? payload(Float32List? floats) => floats == null
+        ? null
+        : _floatPayload(
+            document,
+            coordinatePolicy.convertAnimationValues(
+              floats,
+              targetPath: channel.targetPath,
+            ),
+            PayloadEncoding.floats,
+          );
 
     channels.add(
       AnimationChannelSpec(
@@ -401,8 +413,10 @@ void _buildAnimation(
           Float32List.fromList(times),
           PayloadEncoding.floats,
         ),
-        keyframes: _floatPayload(document, keyframes, PayloadEncoding.floats),
+        keyframes: payload(gltf.values)!,
         interpolation: interpolation,
+        inTangents: payload(gltf.inTangents),
+        outTangents: payload(gltf.outTangents),
       ),
     );
   }
@@ -461,15 +475,12 @@ void _buildPathChannels(
     Float32List.fromList(times),
     PayloadEncoding.floats,
   );
-  final keyframes = _floatPayload(
-    document,
-    joinGltfKeyframes((
-      values: values,
-      inTangents: inTangents,
-      outTangents: outTangents,
-    ), componentCount: count),
-    PayloadEncoding.floats,
-  );
+  LocalId? payload(Float32List? floats) => floats == null
+      ? null
+      : _floatPayload(document, floats, PayloadEncoding.floats);
+  final keyframes = payload(values)!;
+  final inTangentsPayload = payload(inTangents);
+  final outTangentsPayload = payload(outTangents);
   for (final target in channel.pathTargets) {
     if (target.node < 0 || target.node >= nodeIds.length) continue;
     out.add(
@@ -483,6 +494,8 @@ void _buildPathChannels(
         timeline: timeline,
         keyframes: keyframes,
         interpolation: interpolation,
+        inTangents: inTangentsPayload,
+        outTangents: outTangentsPayload,
       ),
     );
   }

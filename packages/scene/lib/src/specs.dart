@@ -1240,8 +1240,7 @@ enum AnimationProperty {
 
   /// Drives the target's morph target weights. The keyframes payload is the
   /// flattened glTF shape, one weight per target per keyframe; the target
-  /// count is the keyframe count divided by the timeline length, or by three
-  /// times it for a [AnimationInterpolation.cubicSpline] channel.
+  /// count is the keyframe count divided by the timeline length.
   weights,
 }
 
@@ -1254,9 +1253,8 @@ enum AnimationInterpolation {
   /// Interpolates linearly, or spherically for rotations.
   linear,
 
-  /// Follows a cubic Hermite spline, evaluated as glTF's `CUBICSPLINE`. The
-  /// keyframes payload holds an in-tangent, a value, and an out-tangent per
-  /// keyframe, each as wide as a value, with tangents per second.
+  /// Follows a cubic Hermite spline, evaluated as glTF's `CUBICSPLINE`, with
+  /// tangents (per second) in the channel's `inTangents` and `outTangents`.
   cubicSpline,
 }
 
@@ -1275,6 +1273,8 @@ class AnimationChannelSpec {
     required this.timeline,
     required this.keyframes,
     this.interpolation = AnimationInterpolation.linear,
+    this.inTangents,
+    this.outTangents,
     this.unknown = const {},
   });
 
@@ -1295,12 +1295,18 @@ class AnimationChannelSpec {
   /// The binary chunk of keyframe times (seconds).
   final LocalId timeline;
 
-  /// The binary chunk of keyframe values, with each keyframe's tangents
-  /// around its value for a [AnimationInterpolation.cubicSpline] channel.
+  /// The binary chunk of keyframe values.
   final LocalId keyframes;
 
   /// How this channel moves between keyframes.
   final AnimationInterpolation interpolation;
+
+  /// The binary chunk of cubic spline in-tangents, one value wide per
+  /// keyframe. Set only for a [AnimationInterpolation.cubicSpline] channel.
+  final LocalId? inTangents;
+
+  /// The binary chunk of cubic spline out-tangents, laid out as [inTangents].
+  final LocalId? outTangents;
 }
 
 /// One animation channel driving a property of a target node that
@@ -1330,6 +1336,8 @@ class AnimationPathChannelSpec {
     required this.keyframes,
     AnimationInterpolation interpolation = AnimationInterpolation.linear,
     @Deprecated('Use interpolation instead.') bool step = false,
+    this.inTangents,
+    this.outTangents,
     this.unknown = const {},
   }) : interpolation = step ? AnimationInterpolation.step : interpolation;
 
@@ -1351,12 +1359,18 @@ class AnimationPathChannelSpec {
   final LocalId timeline;
 
   /// The binary chunk of keyframe values, the path's component count per
-  /// keyframe, with each keyframe's tangents around its value for a
-  /// [AnimationInterpolation.cubicSpline] channel.
+  /// keyframe.
   final LocalId keyframes;
 
   /// How this channel moves between keyframes.
   final AnimationInterpolation interpolation;
+
+  /// The binary chunk of cubic spline in-tangents, one value wide per
+  /// keyframe. Set only for a [AnimationInterpolation.cubicSpline] channel.
+  final LocalId? inTangents;
+
+  /// The binary chunk of cubic spline out-tangents, laid out as [inTangents].
+  final LocalId? outTangents;
 
   /// Whether each keyframe holds until the next instead of interpolating.
   ///
