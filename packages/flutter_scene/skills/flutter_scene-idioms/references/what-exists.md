@@ -403,6 +403,7 @@ looks blend via `EnvironmentSettings` (snapshot/lerp of the whole look) and `Env
 | Scene field | Type | Key fields (default) | Requires |
 | --- | --- | --- | --- |
 | `ambientOcclusion` | `AmbientOcclusionSettings` | `method` (obscurance/`groundTruth`), `radius` (0.33), `intensity` (1.0), `power` (1.5), `bentNormals` (false), `halfResolution` (true), `indirectLight` (0.0 = SSGI), `specularMode` | perspective camera |
+| `globalIllumination` | `GlobalIlluminationSettings` | world-space irradiance probe field: `volumeMode` (`followCamera`/`fitScene`), `resolution` (16, 8, 16), `extents`, `intensity` (1.0), `hysteresis` (0.95), `visibility` (0.7), `probeUpdateBudget` (0 = all), `feed` (`IrradianceFeed.screenSpace`; `rayTraced` traces probe rays in compute, sees off-screen emitters and sky, falls back to screen space without compute), `emissiveGiBoost` (1.0); `Scene.bakeIrradianceField` bakes it | any camera |
 | `screenSpaceReflections` | `ScreenSpaceReflectionsSettings` | `intensity` (1.0), `maxDistance` (24.4), `thickness` (0.46), `stride` (9.0), `maxSteps` (90), `blur` (0.3), `debugView` | perspective camera |
 | `fog` | `Fog` | `mode` (`FogMode.exponential`; also none/linear/exponentialSquared), `color`, `density` (0.02), `start`/`end`, needs both `enabled` AND non-none `mode` | any camera |
 | `godRays` | `GodRaysSettings` | `intensity` (1.0), `density` (0.5), `anisotropy` (0.7), `stepCount` (24), `maxDistance` (200), `color` | shadow-casting DirectionalLight + perspective camera |
