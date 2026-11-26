@@ -27,6 +27,18 @@
     "type": "compute",
     "file": "shaders/flutter_scene_gi_refit.comp"
   },
+  "ContactShadowsWavefront60": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_contact_shadows_wavefront_60.comp"
+  },
+  "ContactShadowsWavefront127": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_contact_shadows_wavefront_127.comp"
+  },
+  "ContactShadowsWavefront191": {
+    "type": "compute",
+    "file": "shaders/flutter_scene_contact_shadows_wavefront_191.comp"
+  },
   "GiMaterialTileFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_gi_material_tile.frag"

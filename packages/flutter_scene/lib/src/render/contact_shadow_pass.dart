@@ -6,6 +6,8 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/contact_shadows.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
+import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/contact_shadow_wavefront.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
@@ -104,6 +106,8 @@ class ContactShadowPass extends RenderGraphPass {
     int temporalNoiseFrame = 0,
     bool packDepth = false,
     bool halfResolution = false,
+    ContactShadowWavefront? wavefront,
+    int wavefrontMaxSamples = 60,
   }) : assert(channels.length <= kContactShadowChannels),
        _projection = projection,
        _settings = settings,
@@ -111,7 +115,9 @@ class ContactShadowPass extends RenderGraphPass {
        _channels = channels,
        _temporalNoiseFrame = temporalNoiseFrame,
        _packDepth = packDepth,
-       _halfResolution = halfResolution;
+       _halfResolution = halfResolution,
+       _wavefront = wavefront,
+       _wavefrontMaxSamples = wavefrontMaxSamples;
 
   final ProjectionParams _projection;
   final ContactShadowSettings _settings;
@@ -123,6 +129,11 @@ class ContactShadowPass extends RenderGraphPass {
   // Whether the mask is half the depth prepass's size (rounded down), each
   // texel marching from the depth texel at its center.
   final bool _halfResolution;
+
+  // Marches channel r in compute when set and ready, capped at this many
+  // samples per pixel.
+  final ContactShadowWavefront? _wavefront;
+  final int _wavefrontMaxSamples;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -155,6 +166,7 @@ class ContactShadowPass extends RenderGraphPass {
     required List<ContactShadowLight?> channels,
     int temporalNoiseFrame = 0,
     bool packDepth = false,
+    bool sunFromWavefront = false,
   }) {
     final info = Float32List(24 + 3 * 4 * kContactShadowChannels)
       ..[0] = width.toDouble()
@@ -177,7 +189,8 @@ class ContactShadowPass extends RenderGraphPass {
       ..[18] = settings.fadeRange
       ..[19] = settings.opacity.clamp(0.0, 1.0)
       ..[20] = steps.toDouble()
-      ..[21] = packDepth ? 1.0 : 0.0;
+      ..[21] = packDepth ? 1.0 : 0.0
+      ..[22] = sunFromWavefront ? 1.0 : 0.0;
     const vectors = 24;
     const params = vectors + 4 * kContactShadowChannels;
     const axes = params + 4 * kContactShadowChannels;
@@ -214,6 +227,19 @@ class ContactShadowPass extends RenderGraphPass {
     final height = _halfResolution
         ? math.max(1, linearDepth.height ~/ 2)
         : linearDepth.height;
+    // The primary directional light marches in compute where it can.
+    final sun = _channels.isEmpty ? null : _channels.first;
+    final sunShadows = sun?.type == ContactShadowLightType.directional
+        ? _wavefront?.encode(
+            context,
+            linearDepth: linearDepth,
+            towardLight: sun!.vector,
+            distance: sun.distance,
+            projection: _projection,
+            settings: _settings,
+            maxSampleCount: _wavefrontMaxSamples,
+          )
+        : null;
     final mask = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: width,
@@ -238,6 +264,7 @@ class ContactShadowPass extends RenderGraphPass {
       channels: _channels,
       temporalNoiseFrame: _temporalNoiseFrame,
       packDepth: _packDepth,
+      sunFromWavefront: sunShadows != null,
     );
     renderPass.bindUniform(
       _fragmentShader.cachedUniformSlot('ContactShadowInfo'),
@@ -246,6 +273,11 @@ class ContactShadowPass extends RenderGraphPass {
     renderPass.bindTexture(
       _fragmentShader.cachedUniformSlot('linear_depth'),
       linearDepth,
+      sampler: _nearestClamp,
+    );
+    renderPass.bindTexture(
+      _fragmentShader.cachedUniformSlot('sun_shadows'),
+      sunShadows ?? Material.getWhitePlaceholderTexture(),
       sampler: _nearestClamp,
     );
     drawCompat(renderPass, 6);

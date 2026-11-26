@@ -8,6 +8,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/contact_shadows.dart'
+    show ContactShadowMethod;
+// ignore: implementation_imports
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu_shim;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/radiance_layout.dart';
@@ -1498,6 +1501,10 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // search, the penumbra scaling, and the contact march across backends.
   SmokeScene('soft_shadows', () {
     final scene = Scene();
+    // Every backend marches the same way, so the parity checks compare like
+    // for like; contact_shadows_wavefront covers the compute march.
+    // ignore: invalid_use_of_internal_member
+    scene.contactShadows.methodOverride = ContactShadowMethod.fragment;
     scene.add(
       _directionalLightNode(
         vm.Vector3(-0.55, -1.0, -0.3),
@@ -1688,6 +1695,61 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // The primary directional light's contact shadows from the wavefront
+  // compute march, where the device runs compute (the fragment march
+  // elsewhere), with the sun's shadow map off so only the contact term
+  // darkens. A low sun rakes a row of pegs, a sphere, a box, and a coin, whose
+  // shadows must reach their full length without the march's per-ring seams.
+  // The parity checks skip it, since compute and non-compute lanes march
+  // differently.
+  SmokeScene('contact_shadows_wavefront', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.3;
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.8, -0.45, -0.35),
+        DirectionalLight(
+          intensity: 3.0,
+          contactShadows: true,
+          contactShadowDistance: 0.5,
+        ),
+      ),
+    );
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.75, 0.74, 0.70, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    void add(MeshGeometry geometry, vm.Vector3 position) => scene.add(
+      Node(mesh: Mesh(geometry, material))
+        ..localTransform = vm.Matrix4.translation(position),
+    );
+    add(PlaneGeometry(width: 4.0, depth: 3.2), vm.Vector3.zero());
+    add(CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5)), vm.Vector3(0.9, 0.25, -0.7));
+    add(
+      CylinderGeometry(bottomRadius: 0.18, topRadius: 0.18, height: 0.03),
+      vm.Vector3(-0.95, 0.025, 0.55),
+    );
+    for (var i = 0; i < 5; i++) {
+      add(
+        CylinderGeometry(
+          bottomRadius: 0.03,
+          topRadius: 0.03,
+          height: 0.5,
+          radialSegments: 12,
+        ),
+        vm.Vector3(-0.3 + i * 0.2, 0.25, 0.45),
+      );
+    }
+    add(SphereGeometry(radius: 0.3), vm.Vector3(-0.1, 0.3, -0.35));
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(2.6, 2.4, 3.2),
+        target: vm.Vector3(0, 0.2, -0.2),
+      ),
+    );
+  }, preload: () => Scene.preload(compute: true)),
   // Mixed shadow sizes in one atlas: 2048 cascades, a soft 512 spot, a sharp
   // 1024 spot, and a 256 point light. Four 2048 cascades plus a spot tile in
   // one row would pass 8192, so this guards the 2D packing and each light's

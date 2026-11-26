@@ -485,7 +485,7 @@ jobs:
           path: frames/webgpu
       - run: pip install --quiet pillow numpy
       - name: Compare WebGPU against WebGL2
-        run: python3 tools/webgpu_smoke/compare_frames.py frames/webgl2 frames/webgpu --diff-dir frames/diff
+        run: python3 tools/webgpu_smoke/compare_frames.py frames/webgl2 frames/webgpu --diff-dir frames/diff --skip contact_shadows_wavefront.png
       - name: Keep the differences
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
@@ -532,7 +532,7 @@ jobs:
       # deterministic, then drop the allowance; the hue check still guards
       # the resolve on every lane.
       - name: Compare Vulkan against GLES
-        run: python3 tools/webgpu_smoke/compare_frames.py frames/gles frames/vulkan --diff-dir frames/diff --allow prebaked_ibl.png=2.0 --allow taa.png=1.5
+        run: python3 tools/webgpu_smoke/compare_frames.py frames/gles frames/vulkan --diff-dir frames/diff --allow prebaked_ibl.png=2.0 --allow taa.png=1.5 --skip contact_shadows_wavefront.png
       - name: Keep the differences
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7

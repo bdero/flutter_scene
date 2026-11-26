@@ -106,6 +106,8 @@ import 'render/planar_reflection_pass.dart';
 import 'render/shadow_caster_selection.dart';
 import 'render/contact_shadow_channels.dart';
 import 'render/contact_shadow_pass.dart';
+import 'render/contact_shadow_wavefront.dart';
+import 'render/engine_compute_shaders.dart';
 import 'render/punctual_lights.dart';
 import 'render/point_shadow.dart';
 import 'render/spot_shadow.dart';
@@ -370,7 +372,8 @@ base class Scene implements SceneGraph {
   /// [PhysicallyBasedMaterial.parallaxScale], which load only when asked for
   /// since few scenes use them. [smaa] loads the tables
   /// [AntiAliasingMode.smaa] needs. [compute] loads the compute shaders
-  /// behind [IrradianceFeed.rayTraced] and compute skinning, where the device
+  /// behind [IrradianceFeed.rayTraced], compute skinning, and the wavefront
+  /// contact shadow march, where the device
   /// supports compute. Without this, a scene holds its last frame while one
   /// of its materials waits for those shaders, renders without SMAA until the
   /// tables arrive, and feeds the irradiance field from screen space until
@@ -763,6 +766,10 @@ base class Scene implements SceneGraph {
   // Which lights besides the primary directional light hold a contact
   // shadow mask channel this frame.
   final ContactShadowChannels _contactChannels = ContactShadowChannels();
+
+  // Marches the primary directional light's contact shadow in compute where
+  // the device runs it.
+  final ContactShadowWavefront _contactWavefront = ContactShadowWavefront();
 
   /// How many lights asked to cast a shadow last frame but got no slot in the
   /// shared shadow atlas, which caps shadow-casting spots and point lights
@@ -4779,6 +4786,15 @@ base class Scene implements SceneGraph {
             temporalNoiseFrame: taaState?.frameIndex ?? 0,
             packDepth: contactShadowLowTier,
             halfResolution: contactShadowLowTier,
+            wavefront:
+                contactShadows.methodOverride == ContactShadowMethod.fragment
+                ? null
+                : _contactWavefront,
+            wavefrontMaxSamples: switch (effectiveRenderQualityTier) {
+              RenderQualityTier.high => 191,
+              RenderQualityTier.medium => 127,
+              RenderQualityTier.low => 60,
+            },
           ),
         );
       }

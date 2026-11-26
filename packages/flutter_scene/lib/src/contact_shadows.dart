@@ -38,6 +38,11 @@ class ContactShadowSettings {
   /// How dark a full contact shadow is, from 0 (off) to 1.
   double opacity = 1.0;
 
+  /// Pins how the primary directional light marches, for comparing backends
+  /// frame by frame. Null picks the wavefront kernel wherever compute runs.
+  @internal
+  ContactShadowMethod? methodOverride;
+
   /// The steps per ray in effect for [tier].
   @internal
   int stepsFor(RenderQualityTier tier) {
@@ -45,6 +50,16 @@ class ContactShadowSettings {
     if (count != null) return count.clamp(2, maxContactShadowSteps);
     return tier == RenderQualityTier.high ? 16 : 8;
   }
+}
+
+/// How the primary directional light's contact shadow is marched. Not
+/// exported; see [ContactShadowSettings.methodOverride].
+enum ContactShadowMethod {
+  /// A per-pixel march in the fragment pass, on every backend.
+  fragment,
+
+  /// The wavefront compute kernel, where the device runs compute.
+  wavefront,
 }
 
 /// The march's constant loop bound (`MAX_CONTACT_STEPS` in

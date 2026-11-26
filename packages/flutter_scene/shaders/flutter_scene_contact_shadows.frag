@@ -13,6 +13,11 @@
 
 uniform highp sampler2D linear_depth;
 
+// The primary directional light's visibility in r, marched by the wavefront
+// compute kernel at linear_depth's resolution, when march.z is 1. A white
+// placeholder otherwise.
+uniform highp sampler2D sun_shadows;
+
 uniform ContactShadowInfo {
   // xy: the mask size in pixels. zw: its reciprocal.
   highp vec4 viewport;
@@ -30,7 +35,8 @@ uniform ContactShadowInfo {
   // opacity.
   highp vec4 settings;
   // x: steps per light. y: 1 packs each pixel's view depth into ba for the
-  // material's depth-aware upsample. zw unused.
+  // material's depth-aware upsample. z: 1 takes channel r from sun_shadows
+  // instead of marching it. w unused.
   highp vec4 march;
   // Per channel. xyz: the view-space direction toward a directional light,
   // or a point or spot light's view-space position. w: the light type (0
@@ -169,7 +175,9 @@ void main() {
                            max(info.settings.z, 1e-4),
                        0.0, 1.0);
     for (int i = 0; i < 4; i++) {
-      if (info.light_vector[i].w > 0.5) {
+      if (i == 0 && info.march.z > 0.5) {
+        visibility.r = texelFetch(sun_shadows, pixel, 0).r;
+      } else if (info.light_vector[i].w > 0.5) {
         float v = ContactVisibility(origin, normal, pixel, size,
                                     info.light_vector[i], info.light_params[i],
                                     info.light_axis[i].xyz, noise);

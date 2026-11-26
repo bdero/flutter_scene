@@ -359,6 +359,9 @@ vec3 DebugPhysical(MaterialInputs material, float channel) {
 
 // The contact shadow mask under this fragment: the primary directional light
 // darkens toward black, the lights in g, b, and a tint red, green, and blue.
+// TODO(contact-shadows-debug): generated .fmat shaders include this file
+// before the engine lighting, so they show the channel as unavailable; move
+// the include or forward-declare the mask there.
 vec3 DebugContactShadows() {
 #if defined(FLUTTER_SCENE_ENGINE_LIGHTING_DECLARED) && \
     !defined(FLUTTER_SCENE_SKIP_SHADOWS)

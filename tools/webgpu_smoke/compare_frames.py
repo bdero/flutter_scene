@@ -3,12 +3,14 @@
 
     compare_frames.py <reference_dir> <candidate_dir> [--diff-dir DIR]
         [--max-mean 1.0] [--max-outliers 0.5] [--allow NAME=OUTLIERS ...]
+        [--skip NAME ...]
 
 A scene passes when its mean absolute channel difference is at most
 --max-mean (0-255 scale) and at most --max-outliers percent of its pixels
 differ by more than 16 in any channel. --allow raises the outlier limit for
-one named scene, for a known difference that has its own TODO. Exits nonzero when a scene fails or
-is missing from either side. Needs Pillow and NumPy.
+one named scene, for a known difference that has its own TODO. --skip leaves out a scene the two
+sides render differently by design, which only its visual baselines judge. Exits nonzero when a
+scene fails or is missing from either side. Needs Pillow and NumPy.
 """
 
 import argparse
@@ -27,6 +29,7 @@ def main():
     parser.add_argument('--max-mean', type=float, default=1.0)
     parser.add_argument('--max-outliers', type=float, default=0.5)
     parser.add_argument('--allow', action='append', default=[])
+    parser.add_argument('--skip', action='append', default=[])
     args = parser.parse_args()
     allowed = {}
     for entry in args.allow:
@@ -36,7 +39,8 @@ def main():
     def frames(path):
         return {f for f in os.listdir(path) if f.endswith('.png')}
 
-    names = sorted(frames(args.reference) | frames(args.candidate))
+    names = sorted((frames(args.reference) | frames(args.candidate)) -
+                   set(args.skip))
     failures = []
     for name in names:
         a = os.path.join(args.reference, name)

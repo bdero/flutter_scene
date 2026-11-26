@@ -34,6 +34,7 @@
 * Contact shadows run in their own full-resolution pass instead of riding the ambient occlusion blur, so they stay sharp, fade at the screen edge and with distance, and no longer switch off under screen-space indirect light.
 * `PointLight.contactShadows` and `SpotLight.contactShadows` (with `contactShadowDistance`) add contact shadows for up to three lights besides the primary directional light, picked each frame by how large they look on screen.
 * `Scene.contactShadows` (`ContactShadowSettings`) sets the march's steps, thickness, distance fade, and opacity. Steps follow the quality tier, and the low tier marches the primary directional light alone at half resolution.
+* On compute backends, the primary directional light's contact shadow is marched by a wavefront compute kernel that shares each ray's depth reads across a workgroup, so it reaches farther with less grain and no temporal resolve. Other backends keep the fragment march.
 * `SurfaceDebugChannel.contactShadows` shows the contact shadow mask.
 * `Lighting.screenSpaceShadowMask` carries the mask to materials, and `Lighting.ssaoContactShadows` is deprecated.
 * Point and spot lights cost lit materials one texture unit instead of two. `Lighting.punctualIndexTexture` and `punctualIndexHeight` are deprecated, since the light-index entries ride in `punctualParamsTexture`.

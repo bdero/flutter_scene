@@ -1,0 +1,4 @@
+// The wavefront contact shadow march comparing each pixel against the 191
+// pixels before it on its line toward the light.
+#define SAMPLE_COUNT 191
+#include <contact_shadows_wavefront.glsl>
