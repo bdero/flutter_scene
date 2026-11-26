@@ -141,17 +141,27 @@ class ContactShadowWavefront {
       ..bindPipeline(kernel.pipeline)
       ..bindStorageBuffer(kernel.visibility, output)
       ..bindTexture(kernel.linearDepth, linearDepth, sampler: _nearestClamp);
-    for (final ring in rings) {
-      info
-        ..[4] = ring.radius.toDouble()
-        ..[5] = ring.start.toDouble()
-        ..[6] = ring.perimeter.toDouble();
+    final table = Float32List(kWavefrontRingTableSize * 4);
+    for (final dispatch in batchWavefrontRings(rings)) {
+      for (final (i, (radius, start, firstGroup, arcStart))
+          in dispatch.entries.indexed) {
+        table
+          ..[i * 4] = radius.toDouble()
+          ..[i * 4 + 1] = start.toDouble()
+          ..[i * 4 + 2] = firstGroup.toDouble()
+          ..[i * 4 + 3] = arcStart.toDouble();
+      }
+      info[4] = dispatch.entries.length.toDouble();
       pass
         ..bindUniform(
           kernel.info,
           context.transientsBuffer.emplace(ByteData.sublistView(info)),
         )
-        ..dispatch(ring.count);
+        ..bindUniform(
+          kernel.rings,
+          context.transientsBuffer.emplace(ByteData.sublistView(table)),
+        )
+        ..dispatch(dispatch.groups);
     }
     pass.end();
     commandBuffer.copyBufferToTexture(output, gpu.TextureRegion(target));
@@ -224,10 +234,12 @@ final class _Kernel {
     : pipeline = gpu.createComputePipeline(shader),
       visibility = gpu.getStorageBufferSlot(shader, 'Visibility'),
       linearDepth = shader.cachedUniformSlot('linear_depth'),
-      info = shader.cachedUniformSlot('WavefrontInfo');
+      info = shader.cachedUniformSlot('WavefrontInfo'),
+      rings = shader.cachedUniformSlot('WavefrontRings');
 
   final gpu.GpuComputePipeline pipeline;
   final gpu.GpuStorageBufferSlot visibility;
   final gpu.UniformSlot linearDepth;
   final gpu.UniformSlot info;
+  final gpu.UniformSlot rings;
 }

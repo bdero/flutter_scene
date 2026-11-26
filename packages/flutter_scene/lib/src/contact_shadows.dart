@@ -39,7 +39,8 @@ class ContactShadowSettings {
   double opacity = 1.0;
 
   /// Pins how the primary directional light marches, for comparing backends
-  /// frame by frame. Null picks the wavefront kernel wherever compute runs.
+  /// frame by frame. Null picks the wavefront kernel wherever compute runs,
+  /// except on [RenderQualityTier.low].
   @internal
   ContactShadowMethod? methodOverride;
 

@@ -13,13 +13,18 @@
 // the screen; each workgroup takes the WAVE_SIZE pixels of one line through
 // one ring, reads them plus the next ones toward the light into shared memory
 // once, and every pixel then compares against the SAMPLE_COUNT pixels before
-// it on its line. Deterministic, so it needs no temporal resolve.
+// it on its line. Every pixel has one writer, so the result is deterministic
+// and needs no temporal resolve.
 //
 // The ray from a receiver is lifted one thickness window toward the camera,
 // and a sample casts by how close its depth comes to that lifted ray. The
 // first HARD_SHADOW_SAMPLES cast alone; the rest average over four
 // interleaved buckets, which softens single-pixel occluders, and the last
-// FADE_OUT_SAMPLES before the march ends fade toward lit.
+// FADE_OUT_SAMPLES before the march ends fade toward lit. The buckets take
+// four samples a step, so SAMPLE_COUNT rounds down to whole steps.
+//
+// One dispatch covers up to RING_TABLE_SIZE rings, each workgroup finding
+// its ring in the WavefrontRings table.
 
 #ifndef SAMPLE_COUNT
 #define SAMPLE_COUNT 60
@@ -27,6 +32,8 @@
 #define WAVE_SIZE 64
 #define READ_COUNT (SAMPLE_COUNT / WAVE_SIZE + 2)
 #define HARD_SHADOW_SAMPLES 4
+// Rings per dispatch; keep in sync with kWavefrontRingTableSize.
+#define RING_TABLE_SIZE 128
 #define FADE_OUT_SAMPLES 8
 
 layout(local_size_x = 64) in;
@@ -47,9 +54,7 @@ uniform WavefrontInfo {
   // (0 for a directional light). w: 1 when the light is in front of the
   // camera, so rays run toward its pixel, -1 when behind, so they run away.
   highp vec4 light;
-  // x: the ring's outer radius in pixels (a multiple of WAVE_SIZE). y: the
-  // first perimeter position this dispatch covers. z: the perimeter's
-  // length, 8 times the radius. w unused.
+  // x: how many entries of the ring table this dispatch uses. yzw unused.
   highp vec4 ring;
   // xy: the depth texture's size. z: the output row stride in texels. w
   // unused.
@@ -71,9 +76,19 @@ uniform WavefrontInfo {
 }
 info;
 
+// The rings one dispatch covers, in workgroup order. x: the ring's outer
+// radius in pixels (a multiple of WAVE_SIZE). y: the first perimeter
+// position this entry covers. z: its first workgroup. w: the first
+// position of the ring's whole dispatched arc, or -1 when it is the full
+// ring.
+uniform WavefrontRings {
+  highp vec4 entries[RING_TABLE_SIZE];
+}
+rings;
+
 #include <view_projection.glsl>
 
-shared highp float stored_slope[READ_COUNT * WAVE_SIZE];
+shared highp float stored_inverse_depth[READ_COUNT * WAVE_SIZE];
 
 // The pixel offset from the light of perimeter position [p] on the square
 // ring of radius [radius]: top edge left to right, right edge top to bottom,
@@ -86,6 +101,17 @@ vec2 PerimeterOffset(float p, float radius) {
   return vec2(-radius, radius - (p - 3.0 * side));
 }
 
+// Where the line through perimeter position [p] crosses Chebyshev distance
+// [distance] from the light. The major axis is set exactly, so samples a
+// pixel apart, and rings, never round onto the same pixel.
+vec2 LinePosition(float p, float distance, float radius) {
+  vec2 offset = PerimeterOffset(p, radius);
+  vec2 scaled = offset * (distance / radius);
+  if (abs(offset.x) == radius) scaled.x = sign(offset.x) * distance;
+  if (abs(offset.y) == radius) scaled.y = sign(offset.y) * distance;
+  return info.light.xy + scaled;
+}
+
 // The distance from the light pixel, in ring units (the major axis), of
 // shared slot [slot]. Slots run along the ray, so a larger slot is nearer the
 // light in front of the camera, and farther from it behind.
@@ -96,35 +122,48 @@ float SlotDistance(float slot, float radius) {
 
 void main() {
   uint thread = gl_LocalInvocationID.x;
-  float radius = info.ring.x;
-  float perimeter = info.ring.z;
-  float p = mod(info.ring.y + float(gl_WorkGroupID.x), perimeter);
-  vec2 offset = PerimeterOffset(p, radius);
+  // This workgroup's ring, the last whose first workgroup is at or before it.
+  float group = float(gl_WorkGroupID.x);
+  int low = 0;
+  int high = int(info.ring.x) - 1;
+  while (low < high) {
+    int middle = (low + high + 1) / 2;
+    if (rings.entries[middle].z <= group) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  vec4 ring = rings.entries[low];
+  float radius = ring.x;
+  float perimeter = 8.0 * radius;
+  float p = mod(ring.y + group - ring.z, perimeter);
   vec2 depth_size = info.size.xy;
 
-  // Read this line's pixels into shared memory, each as the slope of its
-  // depth toward the light's.
+  // Read this line's pixels into shared memory as 1 / view depth, which
+  // varies linearly along the line.
   highp float own_depth = info.proj.w;
   ivec2 own_pixel = ivec2(-1);
   for (int i = 0; i < READ_COUNT; i++) {
     float slot = float(i * WAVE_SIZE) + float(thread);
     float distance = SlotDistance(slot, radius);
-    highp float slope = 1e10;
+    // Slots at or past the light's pixel never shadow.
+    highp float inverse_depth = 1e10;
     if (distance > 0.5) {
-      vec2 position = info.light.xy + offset * (distance / radius);
+      vec2 position = LinePosition(p, distance, radius);
       ivec2 pixel = ivec2(floor(position));
       highp float view_depth = info.proj.w;
       if (position.x >= 0.0 && position.y >= 0.0 &&
           position.x < depth_size.x && position.y < depth_size.y) {
         view_depth = texelFetch(linear_depth, pixel, 0).r;
       }
-      slope = (1.0 / max(view_depth, 1e-6) - info.light.z) / distance;
+      inverse_depth = 1.0 / max(view_depth, 1e-6);
       if (i == 0) {
         own_depth = view_depth;
         own_pixel = pixel;
       }
     }
-    stored_slope[int(slot)] = slope;
+    stored_inverse_depth[int(slot)] = inverse_depth;
   }
   // barrier() also orders the shared writes; a separate
   // memoryBarrierShared() emits an OpMemoryBarrier the WGSL translation
@@ -135,12 +174,28 @@ void main() {
       float(own_pixel.y) >= depth_size.y) {
     return;
   }
+  // Neighbouring lines converge toward the light and can cross the same
+  // pixel. The first of them in the ring writes it: this line skips a pixel
+  // the previous line also crosses, unless that line is not dispatched.
+  float previous = mod(p - 1.0 + perimeter, perimeter);
+  bool previous_dispatched = ring.w < 0.0 || p != ring.w;
+  if (previous_dispatched &&
+      all(equal(ivec2(floor(LinePosition(previous,
+                                         SlotDistance(float(thread), radius),
+                                         radius))),
+                own_pixel))) {
+    return;
+  }
   float result = 1.0;
   if (own_depth < info.proj.w && own_depth < info.settings.y) {
     float own_distance = SlotDistance(float(thread), radius);
-    highp float own_slope = stored_slope[thread];
+    highp float own_inverse = stored_inverse_depth[thread];
+    // The ray toward the light changes 1 / view depth by this much per
+    // sample.
+    highp float ray_rate =
+        (own_inverse - info.light.z) / own_distance * info.light.w;
     // The thickness window as a change of 1 / view depth at this receiver.
-    highp float window = info.settings.x / (own_depth * own_depth);
+    highp float inverse_window = own_depth * own_depth / info.settings.x;
 
     // How many samples the world-space march distance covers on screen.
     vec2 uv = (vec2(own_pixel) + 0.5) / depth_size;
@@ -155,32 +210,37 @@ void main() {
     }
     float fade_start = reach - float(FADE_OUT_SAMPLES);
 
+    // A sample's distance from the receiver's ray lifted one window toward
+    // the camera, in windows: |(sample - ray) / window - 1|, where the ray
+    // at sample j is own_inverse - j * ray_rate.
+    highp float base = own_inverse * inverse_window + 1.0;
+    highp float rate = ray_rate * inverse_window;
     float hard_shadow = 1.0;
+    for (int j = 1; j <= HARD_SHADOW_SAMPLES; j++) {
+      if (float(j) > reach) break;
+      hard_shadow = min(
+          hard_shadow,
+          abs(stored_inverse_depth[int(thread) + j] * inverse_window - base +
+              float(j) * rate));
+    }
+    // The rest four at a time, one per bucket, fading toward lit over the
+    // last FADE_OUT_SAMPLES before the reach.
     vec4 shadow = vec4(1.0);
-    for (int j = 1; j <= SAMPLE_COUNT; j++) {
-      float step_index = float(j);
-      if (step_index > reach) {
-        break;
-      }
-      float sample_distance = own_distance - step_index * info.light.w;
-      // How far the sample sits in front of this receiver's ray at its own
-      // distance, in windows, against the ray lifted one window.
-      highp float in_front =
-          sample_distance * (stored_slope[int(thread) + j] - own_slope);
-      float delta = abs(in_front / window - 1.0);
-      if (j <= HARD_SHADOW_SAMPLES) {
-        hard_shadow = min(hard_shadow, delta);
-      } else {
-        if (step_index > fade_start) {
-          delta += (step_index - fade_start) / float(FADE_OUT_SAMPLES + 1) *
-                   0.75;
-        }
-        int bucket = j - (j / 4) * 4;
-        if (bucket == 0) shadow.x = min(shadow.x, delta);
-        else if (bucket == 1) shadow.y = min(shadow.y, delta);
-        else if (bucket == 2) shadow.z = min(shadow.z, delta);
-        else shadow.w = min(shadow.w, delta);
-      }
+    vec4 steps = vec4(1.0, 2.0, 3.0, 4.0) + float(HARD_SHADOW_SAMPLES);
+    float fade_rate = 0.75 / float(FADE_OUT_SAMPLES + 1);
+    for (int j = HARD_SHADOW_SAMPLES + 1; j + 3 <= SAMPLE_COUNT; j += 4) {
+      if (float(j) > reach) break;
+      int at = int(thread) + j;
+      vec4 samples = vec4(stored_inverse_depth[at],
+                          stored_inverse_depth[at + 1],
+                          stored_inverse_depth[at + 2],
+                          stored_inverse_depth[at + 3]);
+      vec4 delta = abs(samples * inverse_window - base + steps * rate) +
+                   max(steps - fade_start, 0.0) * fade_rate;
+      // Samples past the reach in this group are lit.
+      delta += vec4(greaterThan(steps, vec4(reach))) * 1e10;
+      shadow = min(shadow, delta);
+      steps += 4.0;
     }
     float contrast = info.shaping.x;
     shadow = clamp(shadow * contrast + (1.0 - contrast), 0.0, 1.0);

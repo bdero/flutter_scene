@@ -4785,15 +4785,18 @@ base class Scene implements SceneGraph {
             temporalNoiseFrame: taaState?.frameIndex ?? 0,
             packDepth: contactShadowLowTier,
             halfResolution: contactShadowLowTier,
+            // The low tier's half-resolution march costs a fraction of a
+            // full-resolution wavefront.
             wavefront:
-                contactShadows.methodOverride == ContactShadowMethod.fragment
+                contactShadowLowTier ||
+                    contactShadows.methodOverride ==
+                        ContactShadowMethod.fragment
                 ? null
                 : _contactWavefront,
-            wavefrontMaxSamples: switch (effectiveRenderQualityTier) {
-              RenderQualityTier.high => 191,
-              RenderQualityTier.medium => 127,
-              RenderQualityTier.low => 60,
-            },
+            wavefrontMaxSamples:
+                effectiveRenderQualityTier == RenderQualityTier.high
+                ? 191
+                : 127,
           ),
         );
       }
