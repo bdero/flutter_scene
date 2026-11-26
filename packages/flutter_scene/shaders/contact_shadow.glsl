@@ -7,7 +7,8 @@
 //
 // The including shader must declare the `linear_depth` sampler and define
 // AO_INFO as the uniform block instance carrying `proj` (xy projection
-// scale, z near), `proj_offset` (see view_projection.glsl), and `contact` (xyz
+// scale, z near), `proj_offset` (see view_projection.glsl), `depth_uv` (see
+// ssao_geometry.glsl), and `contact` (xyz
 // view-space direction toward the light, w the march distance in world units,
 // 0 disables). Include ssao_geometry.glsl first.
 
@@ -33,7 +34,7 @@ float MarchContactShadow(vec3 origin, float noise) {
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
       break;
     }
-    float scene_z = texture(linear_depth, uv).r;
+    float scene_z = texture(linear_depth, DepthTextureUv(uv)).r;
     float delta = p.z - scene_z;
     if (delta > bias && delta < thickness) {
       // Taper by march distance so contact shadows fade out instead of

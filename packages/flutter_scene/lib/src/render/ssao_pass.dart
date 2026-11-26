@@ -36,6 +36,13 @@ const String _kSsaoDepthBlackboardKey = 'ssao_depth';
 // TODO(ssao-format): use R8 once it is renderable on Impeller GLES.
 const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8g8b8a8UNormInt;
 
+// Whether the final occlusion texture packs each texel's view depth into
+// its ba channels, which the lit material uses to upsample it against its
+// own depth. The bent normal and indirect-light layouts use those channels.
+bool _ambientOcclusionPacksDepth(AmbientOcclusionSettings settings) =>
+    !ambientOcclusionCarriesBentNormals(settings) &&
+    !ambientOcclusionCarriesIndirectLight(settings);
+
 /// The render size of the ambient-occlusion chain for a full-resolution
 /// target of [dimensions], halved (floored, minimum 1) when
 /// [AmbientOcclusionSettings.halfResolution] is set.
@@ -165,14 +172,15 @@ class SsaoPass extends RenderGraphPass {
   @override
   String get name => 'SsaoPass';
 
-  // Downsamples [source] into a half-size (rounded down) depth level via the
-  // depth-downsample shader (rotated-grid subsample). Used to build the chain.
+  // Downsamples [source] into a half-size (rounded down) depth level, taking
+  // source texel (2x, 2y) or, with [rotatedGrid], the rotated-grid subsample.
   gpu.Texture _downsampleDepth(
     RenderGraphContext context,
     gpu.Texture source,
     int width,
-    int height,
-  ) {
+    int height, {
+    bool rotatedGrid = true,
+  }) {
     final target = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: width,
@@ -193,6 +201,11 @@ class SsaoPass extends RenderGraphPass {
       source,
       sampler: _nearestClamp,
     );
+    final info = Float32List(4)..[0] = rotatedGrid ? 1.0 : 0.0;
+    renderPass.bindUniform(
+      _downsampleShader.cachedUniformSlot('DownsampleInfo'),
+      context.transientsBuffer.emplace(ByteData.sublistView(info)),
+    );
     drawCompat(renderPass, 6);
     rendererSubmissions.submit(commandBuffer);
     return target;
@@ -212,11 +225,27 @@ class SsaoPass extends RenderGraphPass {
     // (aoWidth x aoHeight) 1:1. When the depth prepass runs at full resolution
     // (e.g. for TAA, SSR, or irradiance fields), downsample it to the pass size so
     // nearest-filtered lookups land on exact texel centers instead of texel
-    // seams between adjacent fragments.
-    final baseDepth =
-        (linearDepth.width == aoWidth && linearDepth.height == aoHeight)
-        ? linearDepth
-        : _downsampleDepth(context, linearDepth, aoWidth, aoHeight);
+    // seams between adjacent fragments. A fixed texel keeps planes planar;
+    // [depthUv] maps each base texel to the screen UV it was taken from.
+    final subsampled =
+        linearDepth.width != aoWidth || linearDepth.height != aoHeight;
+    final baseDepth = subsampled
+        ? _downsampleDepth(
+            context,
+            linearDepth,
+            aoWidth,
+            aoHeight,
+            rotatedGrid: false,
+          )
+        : linearDepth;
+    final depthUv = subsampled
+        ? <double>[
+            2.0 * aoWidth / linearDepth.width,
+            2.0 * aoHeight / linearDepth.height,
+            -0.5 / linearDepth.width,
+            -0.5 / linearDepth.height,
+          ]
+        : const <double>[1.0, 1.0, 0.0, 0.0];
 
     // Build the depth mip chain from baseDepth so the occlusion samples a
     // coarser level the further each tap reaches. When disabled the three slots
@@ -278,7 +307,7 @@ class SsaoPass extends RenderGraphPass {
     // The ground-truth path appends the mat4 reprojection for the
     // indirect-light history sample; both end with the projection offset.
     final offsetIndex = groundTruth ? 40 : 24;
-    final info = Float32List(offsetIndex + 4)
+    final info = Float32List(offsetIndex + 8)
       ..[0] = aoWidth.toDouble()
       ..[1] = aoHeight.toDouble()
       ..[2] = 1.0 / aoWidth
@@ -289,7 +318,8 @@ class SsaoPass extends RenderGraphPass {
       ..[7] = projection.far
       ..[offsetIndex] = projection.offsetX
       ..[offsetIndex + 1] = projection.offsetY
-      ..[offsetIndex + 2] = projection.orthographicFlag;
+      ..[offsetIndex + 2] = projection.orthographicFlag
+      ..setRange(offsetIndex + 4, offsetIndex + 8, depthUv);
     if (groundTruth) {
       // Must match the GtaoInfo layout in flutter_scene_gtao.frag.
       info
@@ -380,11 +410,17 @@ class SsaoBlurPass extends RenderGraphPass {
   SsaoBlurPass({
     required ui.Size dimensions,
     required AmbientOcclusionSettings settings,
+    bool orthographic = false,
   }) : _dimensions = dimensions,
-       _settings = settings;
+       _settings = settings,
+       _orthographic = orthographic;
 
   final ui.Size _dimensions;
   final AmbientOcclusionSettings _settings;
+
+  // Whether the depth is from an orthographic camera, where planes are
+  // linear in depth rather than in its reciprocal.
+  final bool _orthographic;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -408,8 +444,8 @@ class SsaoBlurPass extends RenderGraphPass {
         ? gpu.PixelFormat.r16g16b16a16Float
         : _aoFormat;
 
-    // The plane-aware filter removes the local slope before this threshold is
-    // applied, so it can reject real depth steps much more tightly.
+    // The floor of the blur's depth tolerance, which is otherwise relative to
+    // depth. Keeps close-up and orthographic surfaces filtering.
     final depthScale = math.max(_settings.radius * 0.05, 1e-3);
 
     gpu.Texture blur(
@@ -435,14 +471,17 @@ class SsaoBlurPass extends RenderGraphPass {
       renderPass.setColorBlendEnable(false);
       bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
 
-      final info = Float32List(8)
+      // Must match the BlurInfo layout in flutter_scene_ssao_blur.frag.
+      final info = Float32List(12)
         ..[0] = 1.0 / aoWidth
         ..[1] = 1.0 / aoHeight
         ..[2] = depthScale
         ..[3] = finalPass ? 1.0 : 0.0
         ..[4] = axisX
         ..[5] = axisY
-        ..[6] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0;
+        ..[6] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0
+        ..[7] = _ambientOcclusionPacksDepth(_settings) ? 1.0 : 0.0
+        ..[8] = _orthographic ? 1.0 : 0.0;
       renderPass.bindUniform(
         _fragmentShader.cachedUniformSlot('BlurInfo'),
         context.transientsBuffer.emplace(ByteData.sublistView(info)),

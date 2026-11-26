@@ -4610,7 +4610,11 @@ base class Scene implements SceneGraph {
           ),
         );
         graph.addPass(
-          SsaoBlurPass(dimensions: pixelSize, settings: ambientOcclusion),
+          SsaoBlurPass(
+            dimensions: pixelSize,
+            settings: ambientOcclusion,
+            orthographic: projection.orthographic,
+          ),
         );
       }
       if (wantIrradianceField) {

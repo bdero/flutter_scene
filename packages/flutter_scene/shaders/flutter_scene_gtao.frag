@@ -66,6 +66,10 @@ uniform GtaoInfo {
   mat4 reproject;
   // xy: the NDC position of the view axis. z: 1 for an orthographic camera.
   vec4 proj_offset;
+  // Maps depth texture UV to the screen UV each texel was sampled at (xy
+  // scale, zw offset). Identity unless the base level subsamples a
+  // full-resolution prepass.
+  vec4 depth_uv;
 }
 gtao;
 
@@ -337,6 +341,11 @@ void main() {
     }
   }
 
+  // TODO(ssao-headroom): horizon noise overshoots 1 on grazing surfaces, and
+  // clamping here biases them slightly dark. Storing visibility / 1.5 and
+  // clamping after the blur measured about 1% brighter there but added
+  // banding, since the RGBA8 intermediate loses a third of its precision.
+  // Keep the overshoot once the blur has a higher-precision intermediate.
   float visibility = clamp(visibility_sum / float(slice_count), 0.0, 1.0);
   if (gi_intensity > 0.0) {
     // Radiance in rgb, shaped visibility in a; the material composites the
