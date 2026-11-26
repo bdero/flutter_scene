@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/depth_conflicts.dart'
     as depth_conflicts
     show DepthConflictReport, probeDepthConflicts;
 import 'package:flutter_scene/src/render/compute_skinning.dart';
+import 'package:flutter_scene/src/render/engine_compute_shaders.dart';
 import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/near_fit.dart';
@@ -365,26 +366,32 @@ base class Scene implements SceneGraph {
   /// [ShadowCatcherMaterial]. [parallaxOcclusion] loads the shaders behind
   /// [PhysicallyBasedMaterial.parallaxScale], which load only when asked for
   /// since few scenes use them. [smaa] loads the tables
-  /// [AntiAliasingMode.smaa] needs. Without this, a scene holds its last frame while one of its
-  /// materials waits for those shaders, and renders without SMAA until the
-  /// tables arrive. Await it before a one-shot render or capture that uses
-  /// either. It also waits for the shader reflection a [ShaderMaterial]
-  /// created beforehand reads to check its stage interfaces on Apple
-  /// platforms.
+  /// [AntiAliasingMode.smaa] needs. [compute] loads the compute shaders
+  /// behind [IrradianceFeed.rayTraced] and compute skinning, where the device
+  /// supports compute. Without this, a scene holds its last frame while one
+  /// of its materials waits for those shaders, renders without SMAA until the
+  /// tables arrive, and feeds the irradiance field from screen space until
+  /// the compute shaders do. Await it before a one-shot render or capture
+  /// that uses any of them. It also waits for the shader reflection a
+  /// [ShaderMaterial] created beforehand reads to check its stage interfaces
+  /// on Apple platforms.
   ///
   /// Safe to call more than once. Retries a load that failed, and completes
-  /// with its error.
+  /// with its error, except the compute shaders, whose failure is reported
+  /// once and leaves their features on their fallback paths.
   /// {@category Assets and loading}
   static Future<void> preload({
     bool physicalMaterials = true,
     bool parallaxOcclusion = false,
     bool smaa = false,
+    bool compute = false,
   }) async {
     await Future.wait([
       initializeStaticResources(),
       if (physicalMaterials) initializePhysicalMaterialResources(),
       if (parallaxOcclusion) initializeParallaxShaderLibrary(),
       if (smaa) SmaaPass.initializeStaticResources(),
+      if (compute) EngineComputeShaders.whenLoaded(),
       ?stageInterfacesLoad,
     ]);
   }
@@ -442,8 +449,15 @@ base class Scene implements SceneGraph {
               AntiAliasingMode.smaa,
         );
     final smaa = wantsSmaa ? SmaaPass.request() : null;
-    await Future.wait([?physical, ?parallax, ?interfaces, ?smaa]);
+    final compute = _wantsTracedIrradiance
+        ? EngineComputeShaders.whenLoaded()
+        : null;
+    await Future.wait([?physical, ?parallax, ?interfaces, ?smaa, ?compute]);
   }
+
+  bool get _wantsTracedIrradiance =>
+      globalIllumination.enabled &&
+      globalIllumination.feed == IrradianceFeed.rayTraced;
 
   /// Computes the linear exposure multiplier for a physical pinhole
   /// camera, the way photographers reason about it: [aperture] (f-stops),
@@ -4595,6 +4609,10 @@ base class Scene implements SceneGraph {
         wantIrradianceField &&
         _irradianceTrace.availableFor(globalIllumination);
     final wantScreenSpaceIrradiance = wantIrradianceField && !tracedIrradiance;
+    // Screen space stands in until the compute shaders land.
+    if (wantScreenSpaceIrradiance && _wantsTracedIrradiance) {
+      _repaintWhenLoaded(EngineComputeShaders.pendingLoad);
+    }
     final wantSceneColorHistory =
         wantIndirectLight || wantScreenSpaceIrradiance;
     // The occlusion texture's channels carry radiance while indirect light

@@ -20,12 +20,8 @@ import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 // ignore: implementation_imports
-import 'package:flutter_scene/src/render/engine_compute_shaders.dart';
-// ignore: implementation_imports
 import 'package:flutter_scene/src/render/frame_transients.dart'
     show rendererSubmissions;
-// ignore: implementation_imports
-import 'package:flutter_scene/src/render/irradiance_trace.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
@@ -39,8 +35,7 @@ void main() {
   testWidgets('the traced feed lights the room from its walls', (tester) async {
     await tester.pumpWidget(const SizedBox.expand());
     await tester.pump();
-    await Scene.preload(smaa: true);
-    await tester.runAsync(EngineComputeShaders.whenLoaded);
+    await tester.runAsync(() => Scene.preload(smaa: true, compute: true));
     final room = kSmokeScenes.firstWhere((s) => s.id == 'irradiance_field');
 
     final report = <String, Object?>{'compute': gpu.supportsCompute};
@@ -51,9 +46,12 @@ void main() {
       required bool gi,
       required bool traced,
     }) async {
-      tracedIrradianceEnabled = traced;
       final setup = room.setup();
-      final scene = setup.scene..globalIllumination.enabled = gi;
+      final scene = setup.scene
+        ..globalIllumination.enabled = gi
+        ..globalIllumination.feed = traced
+            ? IrradianceFeed.rayTraced
+            : IrradianceFeed.screenSpace;
       final key = GlobalKey();
       await tester.pumpWidget(
         MaterialApp(
@@ -136,7 +134,6 @@ void main() {
     if (gpu.supportsCompute) {
       report['traced'] = await render('traced', gi: true, traced: true);
     }
-    tracedIrradianceEnabled = false;
 
     binding.reportData = {
       ...captures,

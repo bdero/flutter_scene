@@ -22,14 +22,10 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/compute_skinning.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/render/engine_compute_shaders.dart';
-// ignore: implementation_imports
 import 'package:flutter_scene/src/render/frame_transients.dart'
     show rendererSubmissions;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/gi_scene.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/render/irradiance_trace.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
@@ -46,8 +42,7 @@ void main() {
   ) async {
     await tester.pumpWidget(const SizedBox.expand());
     await tester.pump();
-    await Scene.preload(smaa: true);
-    await tester.runAsync(EngineComputeShaders.whenLoaded);
+    await tester.runAsync(() => Scene.preload(smaa: true, compute: true));
     final report = <String, Object?>{'compute': gpu.supportsCompute};
     final captures = <String, String>{};
     void finish() {
@@ -72,8 +67,9 @@ void main() {
       ({Scene scene, Camera camera}) setup, {
       required bool gi,
     }) async {
-      tracedIrradianceEnabled = gi;
-      final scene = setup.scene..globalIllumination.enabled = gi;
+      final scene = setup.scene
+        ..globalIllumination.enabled = gi
+        ..globalIllumination.feed = IrradianceFeed.rayTraced;
       final key = GlobalKey();
       await tester.pumpWidget(
         MaterialApp(
@@ -180,7 +176,6 @@ void main() {
       await skinnedRoom(),
       gi: true,
     );
-    tracedIrradianceEnabled = false;
     finish();
 
     expect(texturedMeasure.stats?.textures, greaterThanOrEqualTo(1));
