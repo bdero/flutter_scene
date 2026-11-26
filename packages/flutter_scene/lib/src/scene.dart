@@ -4607,6 +4607,7 @@ base class Scene implements SceneGraph {
                 : 0.0,
             sceneRadiance: wantIndirectLight ? _ssgiHistoryColor : null,
             ssgiReprojection: ssgiReprojection,
+            temporalNoiseFrame: taaState?.frameIndex ?? 0,
           ),
         );
         graph.addPass(

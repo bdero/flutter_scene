@@ -16,6 +16,7 @@
 * An R8 or RG8 texture whose size is not a multiple of 4 bytes uploads on WebGPU under dart2wasm instead of throwing a `RangeError`.
 * SMAA's edge pass skips writing pixels with no edge.
 * Half-resolution ground-truth ambient occlusion no longer stipples grazing walls and floors. Its blur follows sloped surfaces, and lit materials upsample it against their own depth.
+* Ambient occlusion shifts its sampling noise each frame under TAA, so the temporal resolve averages away more of its grain.
 
 ## 0.24.6
 

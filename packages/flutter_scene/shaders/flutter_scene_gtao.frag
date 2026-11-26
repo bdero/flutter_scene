@@ -65,6 +65,7 @@ uniform GtaoInfo {
   // rendered instead of dragging a frame behind the camera.
   mat4 reproject;
   // xy: the NDC position of the view axis. z: 1 for an orthographic camera.
+  // w: the frame's index into the temporal noise sequence, 0 without TAA.
   vec4 proj_offset;
   // Maps depth texture UV to the screen UV each texel was sampled at (xy
   // scale, zw offset). Identity unless the base level subsamples a
@@ -212,12 +213,16 @@ void main() {
       ViewProjectionDepthFactor(origin.z, gtao.proj_offset.xyz);
   float step_radius = screen_radius / (float(step_count) + 1.0);
 
-  // Spatial-only noise: the slice fan rotates per pixel and the march start
-  // jitters per pixel with a decorrelated hash, trading banding for grain
-  // the bilateral blur removes.
-  float direction_noise = InterleavedGradientNoise(gl_FragCoord.xy);
-  float offset_noise =
-      InterleavedGradientNoise(gl_FragCoord.xy + vec2(47.0, 17.0));
+  // The slice fan rotates per pixel and the march start jitters per pixel
+  // with a decorrelated hash, trading banding for grain the bilateral blur
+  // removes. Under TAA both also shift per frame, so it accumulates more
+  // directions.
+  vec2 temporal = TemporalNoiseOffset(gtao.proj_offset.w);
+  float direction_noise =
+      fract(InterleavedGradientNoise(gl_FragCoord.xy) + temporal.x);
+  float offset_noise = fract(
+      InterleavedGradientNoise(gl_FragCoord.xy + vec2(47.0, 17.0)) +
+      temporal.y);
 
   float contact_visibility = 1.0;
   if (gtao.contact.w > 0.0) {

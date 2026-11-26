@@ -36,6 +36,10 @@ const String _kSsaoDepthBlackboardKey = 'ssao_depth';
 // TODO(ssao-format): use R8 once it is renderable on Impeller GLES.
 const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8g8b8a8UNormInt;
 
+// Frames before the temporal noise offsets repeat. Short enough that TAA's
+// history sees most of the cycle, so the converged result stays steady.
+const int _kTemporalNoiseCycle = 16;
+
 // Whether the final occlusion texture packs each texel's view depth into
 // its ba channels, which the lit material uses to upsample it against its
 // own depth. The bent normal and indirect-light layouts use those channels.
@@ -131,13 +135,15 @@ class SsaoPass extends RenderGraphPass {
     double contactDistance = 0.0,
     gpu.Texture? sceneRadiance,
     Matrix4? ssgiReprojection,
+    int temporalNoiseFrame = 0,
   }) : _dimensions = dimensions,
        _settings = settings,
        _projection = projection,
        _contactDirectionView = contactDirectionView,
        _contactDistance = contactDistance,
        _sceneRadiance = sceneRadiance,
-       _ssgiReprojection = ssgiReprojection;
+       _ssgiReprojection = ssgiReprojection,
+       _temporalNoiseFrame = temporalNoiseFrame;
 
   final ui.Size _dimensions;
   final AmbientOcclusionSettings _settings;
@@ -155,6 +161,10 @@ class SsaoPass extends RenderGraphPass {
   // Maps the gather's view-space positions to the radiance history's clip
   // space (last frame's view-projection times the current view-to-world).
   final Matrix4? _ssgiReprojection;
+
+  // Shifts the sampling noise per frame so TAA accumulates more directions.
+  // 0 keeps it fixed.
+  final int _temporalNoiseFrame;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -319,6 +329,8 @@ class SsaoPass extends RenderGraphPass {
       ..[offsetIndex] = projection.offsetX
       ..[offsetIndex + 1] = projection.offsetY
       ..[offsetIndex + 2] = projection.orthographicFlag
+      ..[offsetIndex + 3] = (_temporalNoiseFrame % _kTemporalNoiseCycle)
+          .toDouble()
       ..setRange(offsetIndex + 4, offsetIndex + 8, depthUv);
     if (groundTruth) {
       // Must match the GtaoInfo layout in flutter_scene_gtao.frag.
