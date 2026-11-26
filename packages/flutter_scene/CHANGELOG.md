@@ -10,6 +10,7 @@
 * `Color.toLinearRgba()`/`toLinearRgb()` (`ColorToLinear`) and the `setBaseColor`, `setEmissiveColor`, and `setColor` setters convert a Flutter color, Display P3 included, to the engine's linear values.
 * BREAKING: A display-referred `UnlitMaterial` reads `baseColorFactor` and vertex colors as linear like every other path, so a non-white tint written as display values renders lighter. Set it with `setBaseColor` to keep the widget color.
 * BREAKING: `PolylineGeometry` extends `Geometry`, not `MeshGeometry`, and a raycast no longer hits it.
+* A `Scene` disposed while waiting on the GPU no longer stays registered for pacing, and raising `maxGpuFramesInFlight` wakes it right away.
 * BREAKING: `SpotShadowInfo` drops the deprecated `firstTile`, `totalTiles`, and `tileResolution`, and `rects` is required.
 * A GLB's images referenced by relative URI load through `resolveUri` on `Node.fromGlbBytes`, `Node.fromGlbAsset`, and `importGlb`, instead of falling back to the placeholder.
 * Depth of field samples depth with nearest filtering, so it no longer reads zero depth on devices that cannot filter 32-bit float textures.
