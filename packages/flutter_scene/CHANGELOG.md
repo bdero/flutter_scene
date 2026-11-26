@@ -15,9 +15,12 @@
 * Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
 * An R8 or RG8 texture whose size is not a multiple of 4 bytes uploads on WebGPU under dart2wasm instead of throwing a `RangeError`.
 * SMAA's edge pass skips writing pixels with no edge.
+* Half-resolution ground-truth ambient occlusion no longer stipples grazing walls and floors. Its blur follows sloped surfaces, and lit materials upsample it against their own depth.
+* Ambient occlusion shifts its sampling noise each frame under TAA, so the temporal resolve averages away more of its grain.
+* Ground-truth ambient occlusion no longer darkens grazing surfaces, since its blur runs in half float and clamps only at the end.
+* Screen-space indirect light no longer caps its red channel at 1.
 * `SceneView(webPresentation: ScenePresentation.domCanvas)` shows a web view's frames on a DOM canvas behind its Flutter content, skipping the per-frame copy into Flutter's renderer. Ancestor filters and shader masks do not apply to it, and widget captures miss it.
 * On WebGPU, `textureToPlatformImage` returns an `ImageBitmap` instead of null.
-* Half-resolution ground-truth ambient occlusion no longer stipples grazing walls and floors. Its blur follows sloped surfaces, and lit materials upsample it against their own depth.
 * On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.
 * WebGL2 reuses its present framebuffer and skips redundant vertex array and uniform buffer calls per draw.
 

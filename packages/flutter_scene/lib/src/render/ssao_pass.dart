@@ -36,6 +36,14 @@ const String _kSsaoDepthBlackboardKey = 'ssao_depth';
 // TODO(ssao-format): use R8 once it is renderable on Impeller GLES.
 const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8g8b8a8UNormInt;
 
+// The raw occlusion and the blur's intermediate are half float, so
+// visibility keeps its overshoot above 1 until the final blur clamps it.
+const gpu.PixelFormat _aoIntermediateFormat = gpu.PixelFormat.r16g16b16a16Float;
+
+// Frames before the temporal noise offsets repeat. Short enough that TAA's
+// history sees most of the cycle, so the converged result stays steady.
+const int _kTemporalNoiseCycle = 16;
+
 // Whether the final occlusion texture packs each texel's view depth into
 // its ba channels, which the lit material uses to upsample it against its
 // own depth. The bent normal and indirect-light layouts use those channels.
@@ -131,13 +139,15 @@ class SsaoPass extends RenderGraphPass {
     double contactDistance = 0.0,
     gpu.Texture? sceneRadiance,
     Matrix4? ssgiReprojection,
+    int temporalNoiseFrame = 0,
   }) : _dimensions = dimensions,
        _settings = settings,
        _projection = projection,
        _contactDirectionView = contactDirectionView,
        _contactDistance = contactDistance,
        _sceneRadiance = sceneRadiance,
-       _ssgiReprojection = ssgiReprojection;
+       _ssgiReprojection = ssgiReprojection,
+       _temporalNoiseFrame = temporalNoiseFrame;
 
   final ui.Size _dimensions;
   final AmbientOcclusionSettings _settings;
@@ -155,6 +165,10 @@ class SsaoPass extends RenderGraphPass {
   // Maps the gather's view-space positions to the radiance history's clip
   // space (last frame's view-projection times the current view-to-world).
   final Matrix4? _ssgiReprojection;
+
+  // Shifts the sampling noise per frame so TAA accumulates more directions.
+  // 0 keeps it fixed.
+  final int _temporalNoiseFrame;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -280,7 +294,7 @@ class SsaoPass extends RenderGraphPass {
       TransientTextureDescriptor.color(
         width: aoWidth,
         height: aoHeight,
-        format: indirect ? gpu.PixelFormat.r16g16b16a16Float : _aoFormat,
+        format: _aoIntermediateFormat,
         debugName: 'ssao_raw',
       ),
     );
@@ -319,6 +333,8 @@ class SsaoPass extends RenderGraphPass {
       ..[offsetIndex] = projection.offsetX
       ..[offsetIndex + 1] = projection.offsetY
       ..[offsetIndex + 2] = projection.orthographicFlag
+      ..[offsetIndex + 3] = (_temporalNoiseFrame % _kTemporalNoiseCycle)
+          .toDouble()
       ..setRange(offsetIndex + 4, offsetIndex + 8, depthUv);
     if (groundTruth) {
       // Must match the GtaoInfo layout in flutter_scene_gtao.frag.
@@ -459,7 +475,7 @@ class SsaoBlurPass extends RenderGraphPass {
         TransientTextureDescriptor.color(
           width: aoWidth,
           height: aoHeight,
-          format: blurFormat,
+          format: finalPass ? blurFormat : _aoIntermediateFormat,
           debugName: debugName,
         ),
       );
@@ -481,7 +497,8 @@ class SsaoBlurPass extends RenderGraphPass {
         ..[5] = axisY
         ..[6] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0
         ..[7] = _ambientOcclusionPacksDepth(_settings) ? 1.0 : 0.0
-        ..[8] = _orthographic ? 1.0 : 0.0;
+        ..[8] = _orthographic ? 1.0 : 0.0
+        ..[9] = ambientOcclusionCarriesIndirectLight(_settings) ? 1.0 : 0.0;
       renderPass.bindUniform(
         _fragmentShader.cachedUniformSlot('BlurInfo'),
         context.transientsBuffer.emplace(ByteData.sublistView(info)),
