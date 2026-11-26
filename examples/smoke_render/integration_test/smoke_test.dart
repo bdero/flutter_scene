@@ -438,6 +438,7 @@ void main() {
     if (!kIsWeb || _webGpuBackend) return;
     await Scene.preload(smaa: true);
     final session = await emulatedXrSession();
+    addTearDown(() => endEmulatedXrSession(session));
     final scene = buildEmulatedXrScene();
     final frame = await renderEmulatedFrames(scene, session);
     final target = frame.target!;
@@ -503,7 +504,7 @@ void main() {
       scaled,
       await _rgbaBytes(scaledFlat.color.asImage()),
     );
-    await session.end();
+    await endEmulatedXrSession(session);
 
     final half = width ~/ 2;
     final sessionDiff = _meanAbsDiff(emulated, reference);

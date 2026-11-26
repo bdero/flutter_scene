@@ -24,7 +24,6 @@ import 'package:flutter_scene/src/texture/half_float.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
-import 'package:flutter_scene_xr/flutter_scene_xr.dart' show XrFrame;
 import 'package:smoke_render/emulated_xr_smoke.dart';
 import 'package:smoke_render/synthetic_morph_glb.dart';
 import 'package:vector_math/vector_math.dart' as vm;
@@ -1163,27 +1162,32 @@ Future<void> loadTracedGi() async {
   );
 }
 
-// The frame the emulated session last rendered, drawn by webxr_emulated_pair.
-XrFrame? _emulatedFrame;
+// The scene webxr_emulated_pair rendered, and the frame it drew.
+({Scene scene, Camera camera})? _emulatedScene;
+ui.Image? _emulatedImage;
 
-// The stereo scene, rendered through the shared emulated session as soon as
-// it is built. The paint shows the frame once it exists.
-({Scene scene, Camera camera}) _emulatedXrScene() {
-  final built = _stereoScene();
-  _emulatedFrame = null;
-  emulatedXrSession()
-      .then((session) => renderEmulatedFrames(built.scene, session))
-      .then((frame) => _emulatedFrame = frame);
-  return built;
+// Renders the stereo scene through an emulated session and keeps the frame
+// as an image. The session ends here, so the scenes after this one do not
+// render under it.
+Future<void> _renderEmulatedXr() async {
+  final built = _emulatedScene = _stereoScene();
+  final session = await emulatedXrSession();
+  try {
+    final frame = await renderEmulatedFrames(built.scene, session);
+    _emulatedImage?.dispose();
+    _emulatedImage = frame.target!.color.asImage();
+  } finally {
+    await endEmulatedXrSession(session);
+  }
 }
 
 /// The stereo scene on its own, for the emulated-session comparison test.
 Scene buildEmulatedXrScene() => _stereoScene().scene;
 
-void _drawTarget(Canvas canvas, Size size, ExternalRenderTarget target) {
+void _drawImage(Canvas canvas, Size size, ui.Image image) {
   canvas.drawImageRect(
-    target.color.asImage(),
-    Rect.fromLTWH(0, 0, target.width.toDouble(), target.height.toDouble()),
+    image,
+    Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
     Offset.zero & size,
     Paint()..filterQuality = FilterQuality.medium,
   );
@@ -1194,17 +1198,17 @@ const bool _webGpuBackend = bool.fromEnvironment('flutter_scene.webgpu');
 
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // The stereo scene through an emulated WebXR session: the real runtime,
-  // its layer and the presentation path, with the frame's color target
-  // drawn onto the canvas. The smoke test compares it with the same pair
-  // placed by hand. The runtime draws with the WebGL2 backend only.
+  // its layer and the presentation path, with the frame drawn onto the
+  // canvas. The smoke test compares it with the same pair placed by hand.
+  // The runtime draws with the WebGL2 backend only.
   if (kIsWeb && !_webGpuBackend)
     SmokeScene(
       'webxr_emulated_pair',
-      _emulatedXrScene,
-      preload: emulatedXrSession,
+      () => _emulatedScene!,
+      preload: _renderEmulatedXr,
       paint: (scene, head, canvas, size) {
-        final target = _emulatedFrame?.target;
-        if (target != null) _drawTarget(canvas, size, target);
+        final image = _emulatedImage;
+        if (image != null) _drawImage(canvas, size, image);
       },
     ),
   // Two off-axis eyes in one view group, rendered into one caller-owned
