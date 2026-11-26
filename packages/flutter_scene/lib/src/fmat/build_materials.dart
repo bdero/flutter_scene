@@ -144,6 +144,7 @@ const _frameworkShaderFiles = <String>[
   'pbr.glsl',
   'scene_inputs.glsl',
   'smaa.glsl',
+  'ssao_depth_pack.glsl',
   'ssao_geometry.glsl',
   'texture.glsl',
   'tone_mapping.glsl',

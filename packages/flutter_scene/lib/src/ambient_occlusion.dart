@@ -133,9 +133,13 @@ class AmbientOcclusionSettings {
   /// when [visibilityBitmask] is disabled.
   bool bentNormals = false;
 
-  /// Evaluates the occlusion buffer at half resolution and bilaterally
-  /// upsamples it, cutting the occlusion pixel work to a quarter at the
-  /// cost of fine detail. Recommended on mobile.
+  /// Evaluates the occlusion buffer at half resolution, cutting the
+  /// occlusion pixel work to a quarter at the cost of fine detail.
+  /// Recommended on mobile.
+  ///
+  /// Lit materials upsample it against their own depth, so occlusion does not
+  /// bleed across silhouettes. With [bentNormals] or [indirectLight] the
+  /// buffer has no room for depth and is upsampled bilinearly instead.
   bool halfResolution = true;
 
   /// Renders the depth prepass at full resolution and samples it through a

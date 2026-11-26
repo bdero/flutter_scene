@@ -53,11 +53,12 @@ uniform highp sampler2D irradiance_field;
 // active.
 uniform RadianceSampler prefiltered_radiance_b;
 #endif
-// Screen-space ambient occlusion (occlusion factor in .r). A white
-// placeholder is bound when occlusion is disabled, so the sample is a
-// no-op; frag_info.ssao_params.x gates it regardless.
+// Screen-space ambient occlusion (occlusion factor in .r, and the packed
+// depth in .ba unless they carry a bent normal or the indirect-light layout
+// is active). A white placeholder is bound when occlusion is disabled, so the
+// sample is a no-op; frag_info.ssao_params.x gates it regardless.
 #ifndef FLUTTER_SCENE_SKIP_SSAO
-uniform sampler2D ssao_texture;
+uniform highp sampler2D ssao_texture;
 #endif
 // A shadow catcher's no-shadow variant compiles its spot loop out, leaving
 // the punctual textures with no live reference, so it declares neither.
