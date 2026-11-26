@@ -334,11 +334,9 @@ final class WebGlRenderPass extends RenderPass {
     _pendingVertexBindings.add(entry);
   }
 
-  /// Applies one recorded vertex-stream binding to the currently bound VAO:
-  /// binds the stream's GL buffer and points its attributes. When
-  /// [configureVao] is true (newly created VAO), also enables each attribute
-  /// array and sets its instance divisor; cached VAO hits retain both states
-  /// and only re-point buffer/offset when the bound [BufferView] changes.
+  /// Points the bound VAO's attributes for one vertex stream at its buffer.
+  /// [configureVao] also enables them and sets their divisor, which a new VAO
+  /// needs once and a cached one keeps.
   void _applyVertexBinding(
     BufferView bufferView,
     int slot, {
@@ -430,12 +428,8 @@ final class WebGlRenderPass extends RenderPass {
   /// (pipeline, buffers, offsets), so their full attribute state is captured
   /// in a VAO once and re-bound with a single call thereafter.
   ///
-  /// Instance-rate slot indices are included in the VAO key so their attribute
-  /// enable and divisor=1 states are configured once on VAO creation. On a
-  /// cached VAO hit, an instance stream whose `(buffer, offset)` matches what
-  /// that VAO already points at needs no GL calls at all (e.g. retained
-  /// `InstancedMesh` buffers); when a pooled transient buffer changes, only
-  /// `bindBuffer` and `vertexAttrib[I]Pointer` are re-issued.
+  /// Instance-rate streams key only by slot, so a VAO enables them once and
+  /// re-points one only when its buffer or offset changes.
   void _applyVertexState({required bool needsIndex}) {
     if (_inlineVertexBufferView != null) {
       _ensureVao();

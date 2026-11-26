@@ -82,7 +82,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   final WebGlContext _gpuContext;
   static int _nextId = 0;
 
-  /// Monotonic identifier used in cached-VAO keys and instance-slot tracking.
+  /// Identifies this buffer in VAO cache keys; never reused.
   final int _id = ++_nextId;
 
   late final Uint8List _staging;
@@ -171,10 +171,8 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
     return buffer;
   }
 
-  /// Internal: returns the resident non-element GL buffer without issuing a
-  /// `bindBuffer` call when it already exists, creating and uploading it on
-  /// first use. Used by [WebGlRenderPass.bindUniform] right before
-  /// `bindBufferRange`, which binds both the indexed slot and `UNIFORM_BUFFER`.
+  /// The non-element GL buffer, created on first use but otherwise not bound,
+  /// for `bindBufferRange`, which binds `UNIFORM_BUFFER` itself.
   web.WebGLBuffer _ensureNonElementBuffer() {
     assert(_valid, 'A released DeviceBuffer was bound.');
     final existing = _glOtherBuffer;

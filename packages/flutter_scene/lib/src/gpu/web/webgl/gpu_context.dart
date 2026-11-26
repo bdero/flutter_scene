@@ -586,8 +586,7 @@ extension type _ExtClipControl._(JSObject _) implements JSObject {
   external void clipControlEXT(int origin, int depth);
 }
 
-/// Cached VAO paired with the last `(bufferId, offset)` bound to each
-/// instance-rate vertex slot on that VAO.
+/// A cached VAO and the `(buffer id, offset)` each instance slot points at.
 final class _CachedVao {
   _CachedVao(this.vao);
 
