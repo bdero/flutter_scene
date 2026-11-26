@@ -33,10 +33,15 @@ const double kEmulatedFar = 1000.0;
 
 XrSession? _session;
 
-/// The one immersive session the smoke run shares, started on first use with
-/// the head at [kEmulatedHeadPosition]. Poses are read in the floor space; a
-/// `local` space is rebased to the head at request time, which would put the
-/// head at the origin.
+// Bounds every wait on the emulated runtime, so a stalled session fails its
+// test instead of the whole run. Generous because the first frames compile
+// the lit shaders, which a software rasterizer takes seconds over.
+const Duration _emulatedXrTimeout = Duration(seconds: 60);
+
+/// The running immersive session, or a new one with the head at
+/// [kEmulatedHeadPosition] once the last has ended. Poses are read in the
+/// floor space; a `local` space is rebased to the head at request time,
+/// which would put the head at the origin.
 Future<XrSession> emulatedXrSession() async {
   final existing = _session;
   if (existing != null && !existing.isEnded) return existing;
@@ -44,12 +49,20 @@ Future<XrSession> emulatedXrSession() async {
     position: kEmulatedHeadPosition,
     orientation: kEmulatedHeadOrientation,
   );
-  return _session = await XrRuntime.instance.requestSession(
-    const XrSessionRequest(
-      mode: XrSessionMode.immersiveVr,
-      referenceSpaces: [XrReferenceSpaceType.localFloor],
-    ),
-  );
+  return _session = await XrRuntime.instance
+      .requestSession(
+        const XrSessionRequest(
+          mode: XrSessionMode.immersiveVr,
+          referenceSpaces: [XrReferenceSpaceType.localFloor],
+        ),
+      )
+      .timeout(_emulatedXrTimeout);
+}
+
+/// Ends [session] unless it already has, so no later test renders under it.
+Future<void> endEmulatedXrSession(XrSession session) async {
+  if (session.isEnded) return;
+  await session.end().timeout(_emulatedXrTimeout);
 }
 
 /// Renders [scene] through [session] for [frames] display frames with a fresh
@@ -70,7 +83,7 @@ Future<XrFrame> renderEmulatedFrames(
     done.complete(frame);
   });
   return done.future.timeout(
-    const Duration(seconds: 10),
+    _emulatedXrTimeout,
     onTimeout: () {
       subscription.cancel();
       throw TimeoutException(
