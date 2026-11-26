@@ -126,6 +126,69 @@ void main() {
     expect(again.findAnimationByName('move'), isNotNull);
   });
 
+  test('stepped and cubic channels round-trip through the live graph', () {
+    const node = LocalId(5, 1);
+    const times = LocalId(5, 2);
+    const translations = LocalId(5, 3);
+    const visibility = LocalId(5, 4);
+    // Two keyframes, each an in-tangent, a value, and an out-tangent.
+    const keyframes = <double>[
+      0, 0, 0, 0, 0, 0, 0, 1, 0, //
+      0, 0, 0, 0, 2, 0, 0, 0, 0, //
+    ];
+    final doc = SceneDocument();
+    doc.addNode(NodeSpec(id: node, name: 'cube'), root: true);
+    for (final (id, floats) in [
+      (times, const <double>[0, 2]),
+      (translations, keyframes),
+      (visibility, const <double>[1, 0]),
+    ]) {
+      doc.addPayload(
+        PayloadSpec(
+          id,
+          encoding: PayloadEncoding.floats,
+          bytes: _floatBytes(floats),
+        ),
+      );
+    }
+    doc.addAnimation(
+      AnimationSpec(
+        const LocalId(5, 5),
+        name: 'hop',
+        channels: [
+          AnimationChannelSpec(
+            target: node,
+            targetName: 'cube',
+            property: AnimationProperty.translation,
+            timeline: times,
+            keyframes: translations,
+            interpolation: AnimationInterpolation.cubicSpline,
+          ),
+        ],
+        pathChannels: [
+          AnimationPathChannelSpec(
+            target: node,
+            targetName: 'cube',
+            path: 'visible',
+            timeline: times,
+            keyframes: visibility,
+            interpolation: AnimationInterpolation.step,
+          ),
+        ],
+      ),
+    );
+
+    final restored = serializeScene(realizeScene(doc));
+    final animation = restored.animations.values.single;
+    final channel = animation.channels.single;
+    expect(channel.interpolation, AnimationInterpolation.cubicSpline);
+    // The tangents come back on either side of each value.
+    expect(restored.payload(channel.keyframes)!.bytes, _floatBytes(keyframes));
+    final path = animation.pathChannels.single;
+    expect(path.interpolation, AnimationInterpolation.step);
+    expect(restored.payload(path.keyframes)!.bytes, _floatBytes([1, 0]));
+  });
+
   test('a lazy placeholder serializes as its instance reference', () {
     final doc = SceneDocument();
     doc.addNode(

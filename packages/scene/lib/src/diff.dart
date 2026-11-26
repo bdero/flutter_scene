@@ -339,7 +339,8 @@ bool _animationsChanged(
       final newChannel = newAnimation.channels[i];
       if (oldChannel.target != newChannel.target ||
           oldChannel.targetName != newChannel.targetName ||
-          oldChannel.property != newChannel.property) {
+          oldChannel.property != newChannel.property ||
+          oldChannel.interpolation != newChannel.interpolation) {
         return true;
       }
       if (retargeted.contains(newChannel.target)) return true;
@@ -360,7 +361,7 @@ bool _animationsChanged(
       if (oldChannel.target != newChannel.target ||
           oldChannel.targetName != newChannel.targetName ||
           oldChannel.path != newChannel.path ||
-          oldChannel.step != newChannel.step) {
+          oldChannel.interpolation != newChannel.interpolation) {
         return true;
       }
       if (retargeted.contains(newChannel.target)) return true;

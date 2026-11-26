@@ -362,28 +362,55 @@ void _serializeAnimations(
               document,
               Float32List.fromList(resolver.times),
             ),
-            keyframes: _floatsPayload(document, resolver.values),
-            step: resolver.interpolation == engine.AnimationInterpolation.step,
+            keyframes: _floatsPayload(
+              document,
+              _keyframeFloats(
+                resolver,
+                resolver.values,
+                resolver.inTangents,
+                resolver.outTangents,
+                Float32List.fromList,
+              ),
+            ),
+            interpolation: _documentInterpolation(resolver.interpolation),
           ),
         );
         continue;
       }
       final AnimationProperty property;
-      final List<double> times;
+      final engine.TimelineResolver timeline;
       final Float32List keyframes;
       switch (resolver) {
         case engine.TranslationTimelineResolver():
           property = AnimationProperty.translation;
-          times = resolver.times;
-          keyframes = _packVec3(resolver.values);
+          timeline = resolver;
+          keyframes = _keyframeFloats(
+            resolver,
+            resolver.values,
+            resolver.inTangents,
+            resolver.outTangents,
+            _packVec3,
+          );
         case engine.RotationTimelineResolver():
           property = AnimationProperty.rotation;
-          times = resolver.times;
-          keyframes = _packQuaternions(resolver.values);
+          timeline = resolver;
+          keyframes = _keyframeFloats(
+            resolver,
+            resolver.values,
+            resolver.inTangents,
+            resolver.outTangents,
+            _packQuaternions,
+          );
         case engine.ScaleTimelineResolver():
           property = AnimationProperty.scale;
-          times = resolver.times;
-          keyframes = _packVec3(resolver.values);
+          timeline = resolver;
+          keyframes = _keyframeFloats(
+            resolver,
+            resolver.values,
+            resolver.inTangents,
+            resolver.outTangents,
+            _packVec3,
+          );
         default:
           debugPrint(
             'fscene: animation "${animation.name}" channel with a custom '
@@ -399,8 +426,12 @@ void _serializeAnimations(
           target: (target != null ? ids[target] : null) ?? document.newId(),
           targetName: nodeName,
           property: property,
-          timeline: _floatsPayload(document, Float32List.fromList(times)),
+          timeline: _floatsPayload(
+            document,
+            Float32List.fromList(timeline.times),
+          ),
           keyframes: _floatsPayload(document, keyframes),
+          interpolation: _documentInterpolation(timeline.interpolation),
         ),
       );
     }
@@ -431,6 +462,45 @@ Float32List _packQuaternions(List<Quaternion> values) {
   }
   return out;
 }
+
+// [timeline]'s keyframes packed as the document stores them. A cubic spline
+// keeps each keyframe's in-tangent and out-tangent on either side of its
+// value, as glTF lays them out.
+Float32List _keyframeFloats<T>(
+  engine.TimelineResolver timeline,
+  List<T> values,
+  List<T>? inTangents,
+  List<T>? outTangents,
+  Float32List Function(List<T>) pack,
+) {
+  final packed = pack(values);
+  if (timeline.interpolation != engine.AnimationInterpolation.cubicSpline) {
+    return packed;
+  }
+  final count = timeline.times.length;
+  final width = count == 0 ? 0 : packed.length ~/ count;
+  final packedIn = pack(inTangents!);
+  final packedOut = pack(outTangents!);
+  final out = Float32List(count * width * 3);
+  for (var keyframe = 0; keyframe < count; keyframe++) {
+    final from = keyframe * width;
+    final to = from * 3;
+    out
+      ..setRange(to, to + width, packedIn, from)
+      ..setRange(to + width, to + width * 2, packed, from)
+      ..setRange(to + width * 2, to + width * 3, packedOut, from);
+  }
+  return out;
+}
+
+AnimationInterpolation _documentInterpolation(
+  engine.AnimationInterpolation interpolation,
+) => switch (interpolation) {
+  engine.AnimationInterpolation.step => AnimationInterpolation.step,
+  engine.AnimationInterpolation.linear => AnimationInterpolation.linear,
+  engine.AnimationInterpolation.cubicSpline =>
+    AnimationInterpolation.cubicSpline,
+};
 
 LocalId _floatsPayload(SceneDocument document, Float32List floats) => document
     .addPayload(

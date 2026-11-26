@@ -950,6 +950,8 @@ Map<String, dynamic> _encodeAnimation(
         'property': ch.property.name,
         'timeline': idKey(ch.timeline),
         'keyframes': idKey(ch.keyframes),
+        if (ch.interpolation != AnimationInterpolation.linear)
+          'interpolation': ch.interpolation.name,
         ...ch.unknown,
       },
   ],
@@ -962,7 +964,8 @@ Map<String, dynamic> _encodeAnimation(
           'path': ch.path,
           'timeline': idKey(ch.timeline),
           'keyframes': idKey(ch.keyframes),
-          if (ch.step) 'step': true,
+          if (ch.interpolation != AnimationInterpolation.linear)
+            'interpolation': ch.interpolation.name,
           ...ch.unknown,
         },
     ],
@@ -1920,12 +1923,14 @@ AnimationChannelSpec _decodeChannel(Map<String, dynamic> json) =>
       property: AnimationProperty.values.byName(json['property'] as String),
       timeline: LocalId.parse(json['timeline'] as String),
       keyframes: LocalId.parse(json['keyframes'] as String),
+      interpolation: _decodeInterpolation(json['interpolation']),
       unknown: _rest(json, const {
         'target',
         'targetName',
         'property',
         'timeline',
         'keyframes',
+        'interpolation',
       }),
     );
 
@@ -1936,16 +1941,25 @@ AnimationPathChannelSpec _decodePathChannel(Map<String, dynamic> json) =>
       path: json['path'] as String,
       timeline: LocalId.parse(json['timeline'] as String),
       keyframes: LocalId.parse(json['keyframes'] as String),
-      step: json['step'] as bool? ?? false,
+      // Documents written before interpolation marked a held channel `step`.
+      interpolation: _decodeInterpolation(
+        json['interpolation'] ?? (json['step'] == true ? 'step' : null),
+      ),
       unknown: _rest(json, const {
         'target',
         'targetName',
         'path',
         'timeline',
         'keyframes',
+        'interpolation',
         'step',
       }),
     );
+
+// A channel's interpolation, linear when the document leaves it out.
+AnimationInterpolation _decodeInterpolation(Object? name) => name == null
+    ? AnimationInterpolation.linear
+    : AnimationInterpolation.values.byName(name as String);
 
 PayloadSpec _decodePayload(LocalId id, Map<String, dynamic> json) =>
     PayloadSpec(

@@ -22,7 +22,8 @@ import 'package:flutter_scene/src/importer/in_memory_import.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:scene/scene.dart' show SceneDocument, readFsceneb, writeFsceneb;
+import 'package:scene/scene.dart'
+    show AnimationInterpolation, SceneDocument, readFsceneb, writeFsceneb;
 import 'package:vector_math/vector_math.dart';
 
 import 'support/gpu_available.dart';
@@ -438,7 +439,8 @@ void main() {
     expect(
       [
         for (final c in animation.pathChannels)
-          '${names[c.target]}:${c.path}${c.step ? ' (step)' : ''}',
+          '${names[c.target]}:${c.path}'
+              '${c.interpolation == AnimationInterpolation.step ? ' (step)' : ''}',
       ],
       [
         'Mesh:primitives/0/material/baseColorFactor',

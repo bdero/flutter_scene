@@ -374,22 +374,20 @@ void _buildAnimation(
       doc.bufferViews,
       bufferData,
     );
-    final isCubic = sampler.interpolation == 'CUBICSPLINE';
+    final interpolation = _interpolationOf(sampler);
     // A weights sampler is a flattened (frame x target) scalar stream; its
-    // per-keyframe component count is the output/input length ratio.
-    final componentCount = switch (property) {
-      AnimationProperty.rotation => 4,
-      AnimationProperty.weights =>
-        times.isEmpty ? 0 : values.length ~/ (times.length * (isCubic ? 3 : 1)),
-      _ => 3,
-    };
-    if (property == AnimationProperty.weights && componentCount == 0) continue;
+    // per-keyframe target count is the output/input length ratio, a third of
+    // it for a cubic spline.
+    if (property == AnimationProperty.weights) {
+      final width = interpolation == AnimationInterpolation.cubicSpline ? 3 : 1;
+      if (times.isEmpty || values.length ~/ (times.length * width) == 0) {
+        continue;
+      }
+    }
+    // A cubic spline keeps glTF's in-tangent, value, and out-tangent per
+    // keyframe. The tangents convert as the values they shape do.
     final keyframes = coordinatePolicy.convertAnimationValues(
-      selectGltfKeyframeValues(
-        values,
-        componentCount: componentCount,
-        cubicSpline: isCubic,
-      ),
+      values,
       targetPath: channel.targetPath,
     );
 
@@ -404,6 +402,7 @@ void _buildAnimation(
           PayloadEncoding.floats,
         ),
         keyframes: _floatPayload(document, keyframes, PayloadEncoding.floats),
+        interpolation: interpolation,
       ),
     );
   }
@@ -433,32 +432,44 @@ void _buildPathChannels(
     return;
   }
   final sampler = animation.samplers[channel.sampler];
+  final interpolation = _interpolationOf(sampler);
   final times = readAccessorAsFloat32(
     doc.accessors[sampler.input],
     doc.bufferViews,
     bufferData,
   );
   final count = channel.pathComponentCount;
-  final keyframes = convertGltfPathKeyframes(
-    channel,
-    doc.lights,
-    selectGltfKeyframeValues(
-      readAccessorAsFloat32(
-        doc.accessors[sampler.output],
-        doc.bufferViews,
-        bufferData,
-      ),
-      componentCount: count,
-      cubicSpline: sampler.interpolation == 'CUBICSPLINE',
+  final gltf = splitGltfKeyframes(
+    readAccessorAsFloat32(
+      doc.accessors[sampler.output],
+      doc.bufferViews,
+      bufferData,
     ),
+    componentCount: count,
+    cubicSpline: interpolation == AnimationInterpolation.cubicSpline,
   );
-  if (times.isEmpty || keyframes.length != times.length * count) return;
+  final values = convertGltfPathKeyframes(channel, doc.lights, gltf.values);
+  if (times.isEmpty || values.length != times.length * count) return;
+  Float32List? convertTangents(Float32List? tangents) => tangents == null
+      ? null
+      : convertGltfPathTangents(channel, doc.lights, tangents, gltf.values);
+  final inTangents = convertTangents(gltf.inTangents);
+  final outTangents = convertTangents(gltf.outTangents);
+
   final timeline = _floatPayload(
     document,
     Float32List.fromList(times),
     PayloadEncoding.floats,
   );
-  final values = _floatPayload(document, keyframes, PayloadEncoding.floats);
+  final keyframes = _floatPayload(
+    document,
+    joinGltfKeyframes((
+      values: values,
+      inTangents: inTangents,
+      outTangents: outTangents,
+    ), componentCount: count),
+    PayloadEncoding.floats,
+  );
   for (final target in channel.pathTargets) {
     if (target.node < 0 || target.node >= nodeIds.length) continue;
     out.add(
@@ -470,11 +481,19 @@ void _buildPathChannels(
         ),
         path: target.path,
         timeline: timeline,
-        keyframes: values,
-        step: sampler.interpolation == 'STEP',
+        keyframes: keyframes,
+        interpolation: interpolation,
       ),
     );
   }
+}
+
+AnimationInterpolation _interpolationOf(GltfAnimationSampler sampler) {
+  return switch (sampler.interpolation) {
+    'STEP' => AnimationInterpolation.step,
+    'CUBICSPLINE' => AnimationInterpolation.cubicSpline,
+    _ => AnimationInterpolation.linear,
+  };
 }
 
 LocalId _floatPayload(

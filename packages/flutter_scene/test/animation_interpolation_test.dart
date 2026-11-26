@@ -1,6 +1,7 @@
 // Covers STEP and CUBICSPLINE keyframe interpolation: the timeline resolvers'
-// modes, and the runtime importer carrying each glTF sampler's interpolation
-// and tangents through, pointer channels included.
+// modes, and both importers carrying each glTF sampler's interpolation and
+// tangents through, pointer channels included. The offline importer carries
+// them through a `.fscene` document.
 
 import 'dart:convert';
 import 'dart:math';
@@ -16,12 +17,18 @@ import 'package:flutter_scene/src/animation.dart'
         DecomposedTransform,
         PropertyResolver;
 // ignore: implementation_imports
+import 'package:flutter_scene/src/fscene/realize/realize.dart';
+// ignore: implementation_imports
 import 'package:flutter_scene/src/importer/gltf.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/gltf_light_units.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/importer/in_memory_import.dart';
+// ignore: implementation_imports
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:scene/scene.dart'
+    show LocalId, SceneDocument, readFsceneb, writeFsceneb;
 import 'package:vector_math/vector_math.dart';
 
 // A node's animation state at rest, with its rotation fully covered as an
@@ -171,10 +178,22 @@ Map<String, Object?> _gltf() {
   };
 }
 
-Future<Node> _import() => importGltf(
-  Uint8List.fromList(utf8.encode(jsonEncode(_gltf()))),
-  resolveUri: (uri) async => fail('fetched $uri'),
+Uint8List _bytes() => Uint8List.fromList(utf8.encode(jsonEncode(_gltf())));
+
+Future<Node> _runtimeImport() =>
+    importGltf(_bytes(), resolveUri: (uri) async => fail('fetched $uri'));
+
+// Through the binary container, as a preprocessed asset loads.
+SceneDocument _offlineDocument() => readFsceneb(
+  writeFsceneb(
+    importGltfToSceneDocument(
+      _bytes(),
+      resolveUri: (uri) => fail('fetched $uri'),
+    ),
+  ),
 );
+
+Future<Node> _offlineImport() async => realizeScene(_offlineDocument());
 
 // Evaluates the import's animation at [time] seconds.
 void _poseAt(Node root, double time) {
@@ -284,48 +303,89 @@ void main() {
     });
   });
 
-  group('the runtime importer', () {
-    test('keeps each sampler\'s interpolation', () async {
-      final root = await _import();
-      _poseAt(root, 1);
-      double heightOf(String name) =>
-          root.getChildByName(name)!.localTransform.getTranslation().y;
+  for (final (importer, import) in [
+    ('runtime importer', _runtimeImport),
+    ('offline importer', _offlineImport),
+  ]) {
+    group('the $importer', () {
+      test('keeps each sampler\'s interpolation', () async {
+        final root = await import();
+        _poseAt(root, 1);
+        double heightOf(String name) =>
+            root.getChildByName(name)!.localTransform.getTranslation().y;
 
-      // Halfway between keyframes at y = 0 and y = 2.
-      expect(heightOf('Stepped'), 0);
-      expect(heightOf('Linear'), closeTo(1, 1e-6));
-      // The out-tangent of 1 per second, over two seconds, adds 0.25.
-      expect(heightOf('Cubic'), closeTo(1.25, 1e-6));
+        // Halfway between keyframes at y = 0 and y = 2.
+        expect(heightOf('Stepped'), 0);
+        expect(heightOf('Linear'), closeTo(1, 1e-6));
+        // The out-tangent of 1 per second, over two seconds, adds 0.25.
+        expect(heightOf('Cubic'), closeTo(1.25, 1e-6));
 
-      // Halfway through a quarter turn about Y.
-      final spun = root.getChildByName('Spun')!.localTransform;
-      final right = spun.rotated3(Vector3(1, 0, 0));
-      expect(right.x, closeTo(cos(pi / 4), 1e-6));
-      expect(right.z, closeTo(-sin(pi / 4), 1e-6));
+        // Halfway through a quarter turn about Y. The offline importer bakes
+        // it into native coordinates, which turn it the other way about Y.
+        final spun = root.getChildByName('Spun')!.localTransform;
+        final right = spun.rotated3(Vector3(1, 0, 0));
+        expect(right.x, closeTo(cos(pi / 4), 1e-6));
+        expect(right.z.abs(), closeTo(sin(pi / 4), 1e-6));
+      });
+
+      test('converts a cubic pointer channel\'s tangents', () async {
+        final root = await import();
+        final light = root
+            .getChildByName('Spot')!
+            .getComponent<SpotLightComponent>()!
+            .light;
+        _poseAt(root, 1);
+
+        // The glTF spline reaches an intensity of 10 at the midpoint, where
+        // linear interpolation would give 7.5.
+        final color = Vector3(0, 1, 0);
+        final expected =
+            color *
+            gltfLightIntensity(
+              GltfPunctualLight(type: 'spot', color: color, intensity: 10),
+            );
+        final actual = light.color * light.intensity;
+        for (var i = 0; i < 3; i++) {
+          expect(actual[i], closeTo(expected[i], 1e-6));
+        }
+      });
     });
+  }
 
-    test('converts a cubic pointer channel\'s tangents', () async {
-      final root = await _import();
-      final light = root
-          .getChildByName('Spot')!
-          .getComponent<SpotLightComponent>()!
-          .light;
-      _poseAt(root, 1);
+  group('the offline importer', () {
+    test('writes each sampler\'s interpolation into its document', () {
+      final document = _offlineDocument();
+      final animation = document.animations.values.single;
+      final names = {
+        for (final node in document.nodes.values) node.id: node.name,
+      };
+      expect(
+        [
+          for (final c in animation.channels)
+            '${names[c.target]}:${c.interpolation.name}',
+          for (final c in animation.pathChannels)
+            '${names[c.target]}:${c.path}:${c.interpolation.name}',
+        ],
+        [
+          'Stepped:step',
+          'Linear:linear',
+          'Cubic:cubicSpline',
+          'Spun:cubicSpline',
+          'Spot:light/intensity:cubicSpline',
+        ],
+      );
 
-      // The glTF spline reaches an intensity of 10 at the midpoint, where
-      // linear interpolation would give 7.5.
-      final color = Vector3(0, 1, 0);
-      final expected =
-          color *
-          gltfLightIntensity(
-            GltfPunctualLight(type: 'spot', color: color, intensity: 10),
-          );
-      final actual = light.color * light.intensity;
-      for (var i = 0; i < 3; i++) {
-        expect(actual[i], closeTo(expected[i], 1e-6));
-      }
+      Float32List floatsOf(LocalId payload) => Uint8List.fromList(
+        document.payload(payload)!.bytes!,
+      ).buffer.asFloat32List();
+      // A cubic spline keeps glTF's in-tangent, value, and out-tangent per
+      // keyframe.
+      expect(floatsOf(animation.channels[2].keyframes), _accessors[2].$2);
+      expect(floatsOf(animation.pathChannels.single.keyframes), hasLength(6));
     });
+  });
 
+  group('convertGltfPathTangents', () {
     test('converts a light color tangent as its keyframe converts', () {
       final channel = GltfAnimationChannel(
         sampler: 0,

@@ -276,6 +276,14 @@ class TranslationTimelineResolver extends TimelineResolver {
   /// The keyframe values. Read by the scene serializer.
   List<Vector3> get values => List.unmodifiable(_values);
 
+  /// The cubic spline in-tangents, if any. Read by the scene serializer.
+  List<Vector3>? get inTangents =>
+      _inTangents == null ? null : List.unmodifiable(_inTangents);
+
+  /// The cubic spline out-tangents, if any. Read by the scene serializer.
+  List<Vector3>? get outTangents =>
+      _outTangents == null ? null : List.unmodifiable(_outTangents);
+
   TranslationTimelineResolver._(
     List<double> times,
     this._values,
@@ -322,6 +330,14 @@ class RotationTimelineResolver extends TimelineResolver {
 
   /// The keyframe values. Read by the scene serializer.
   List<Quaternion> get values => List.unmodifiable(_values);
+
+  /// The cubic spline in-tangents, if any. Read by the scene serializer.
+  List<Quaternion>? get inTangents =>
+      _inTangents == null ? null : List.unmodifiable(_inTangents);
+
+  /// The cubic spline out-tangents, if any. Read by the scene serializer.
+  List<Quaternion>? get outTangents =>
+      _outTangents == null ? null : List.unmodifiable(_outTangents);
 
   RotationTimelineResolver._(
     List<double> times,
@@ -398,6 +414,14 @@ class ScaleTimelineResolver extends TimelineResolver {
   /// The keyframe values. Read by the scene serializer.
   List<Vector3> get values => List.unmodifiable(_values);
 
+  /// The cubic spline in-tangents, if any. Read by the scene serializer.
+  List<Vector3>? get inTangents =>
+      _inTangents == null ? null : List.unmodifiable(_inTangents);
+
+  /// The cubic spline out-tangents, if any. Read by the scene serializer.
+  List<Vector3>? get outTangents =>
+      _outTangents == null ? null : List.unmodifiable(_outTangents);
+
   ScaleTimelineResolver._(
     List<double> times,
     this._values,
@@ -456,6 +480,14 @@ class MorphWeightsTimelineResolver extends TimelineResolver {
   /// The flattened keyframe values ([targetCount] per keyframe). Read by
   /// the scene serializer.
   Float32List get values => Float32List.fromList(_values);
+
+  /// The flattened cubic spline in-tangents, if any.
+  Float32List? get inTangents =>
+      _inTangents == null ? null : Float32List.fromList(_inTangents);
+
+  /// The flattened cubic spline out-tangents, if any.
+  Float32List? get outTangents =>
+      _outTangents == null ? null : Float32List.fromList(_outTangents);
 
   MorphWeightsTimelineResolver._(
     List<double> times,
@@ -526,6 +558,16 @@ class PathTimelineResolver extends TimelineResolver {
   /// The flattened keyframe values ([componentCount] per keyframe). Read by
   /// the scene serializer.
   Float32List get values => Float32List.fromList(_values);
+
+  /// The flattened cubic spline in-tangents, if any. Read by the scene
+  /// serializer.
+  Float32List? get inTangents =>
+      _inTangents == null ? null : Float32List.fromList(_inTangents);
+
+  /// The flattened cubic spline out-tangents, if any. Read by the scene
+  /// serializer.
+  Float32List? get outTangents =>
+      _outTangents == null ? null : Float32List.fromList(_outTangents);
 
   PathTimelineResolver._(
     this.path,

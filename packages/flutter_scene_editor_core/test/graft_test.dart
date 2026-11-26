@@ -190,6 +190,67 @@ void main() {
       expect(copied.morphTargets!.deltas, isNot(deltas.id));
       _expectNoDanglingRefs(target);
     });
+
+    test('an animation keeps each channel\'s interpolation', () {
+      final source = SceneDocument(allocator: IdAllocator(session: 7));
+      LocalId floats(List<double> values) => source
+          .addPayload(
+            PayloadSpec(
+              source.newId(),
+              encoding: PayloadEncoding.floats,
+              bytes: Float32List.fromList(values).buffer.asUint8List(),
+              length: values.length * 4,
+            ),
+          )
+          .id;
+      final lamp = source.createNode(name: 'Lamp', root: true);
+      final times = floats([0, 1]);
+      source.addAnimation(
+        AnimationSpec(
+          source.newId(),
+          name: 'Flicker',
+          channels: [
+            AnimationChannelSpec(
+              target: lamp.id,
+              targetName: 'Lamp',
+              property: AnimationProperty.translation,
+              timeline: times,
+              // Each keyframe an in-tangent, a value, and an out-tangent.
+              keyframes: floats(List<double>.filled(18, 0)),
+              interpolation: AnimationInterpolation.cubicSpline,
+            ),
+          ],
+          pathChannels: [
+            AnimationPathChannelSpec(
+              target: lamp.id,
+              targetName: 'Lamp',
+              path: 'visible',
+              timeline: times,
+              keyframes: floats([1, 0]),
+              interpolation: AnimationInterpolation.step,
+            ),
+          ],
+        ),
+      );
+
+      final target = SceneDocument(allocator: IdAllocator(session: 8));
+      final graft = graftDocumentRecords(target, source);
+      Transaction(
+        name: 'Import',
+        records: graft.records,
+      ).apply(DocumentMutator(target));
+
+      final animation = target.animations.values.single;
+      expect(
+        animation.channels.single.interpolation,
+        AnimationInterpolation.cubicSpline,
+      );
+      expect(
+        animation.pathChannels.single.interpolation,
+        AnimationInterpolation.step,
+      );
+      _expectNoDanglingRefs(target);
+    });
   });
 }
 

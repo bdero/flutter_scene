@@ -1240,8 +1240,24 @@ enum AnimationProperty {
 
   /// Drives the target's morph target weights. The keyframes payload is the
   /// flattened glTF shape, one weight per target per keyframe; the target
-  /// count is the keyframe count divided by the timeline length.
+  /// count is the keyframe count divided by the timeline length, or by three
+  /// times it for a [AnimationInterpolation.cubicSpline] channel.
   weights,
+}
+
+/// How an animation channel moves between its keyframes.
+/// {@category Documents}
+enum AnimationInterpolation {
+  /// Holds each keyframe's value until the next keyframe.
+  step,
+
+  /// Interpolates linearly, or spherically for rotations.
+  linear,
+
+  /// Follows a cubic Hermite spline, evaluated as glTF's `CUBICSPLINE`. The
+  /// keyframes payload holds an in-tangent, a value, and an out-tangent per
+  /// keyframe, each as wide as a value, with tangents per second.
+  cubicSpline,
 }
 
 /// One animation channel: a keyframe timeline driving one [property] of one
@@ -1258,6 +1274,7 @@ class AnimationChannelSpec {
     required this.property,
     required this.timeline,
     required this.keyframes,
+    this.interpolation = AnimationInterpolation.linear,
     this.unknown = const {},
   });
 
@@ -1278,8 +1295,12 @@ class AnimationChannelSpec {
   /// The binary chunk of keyframe times (seconds).
   final LocalId timeline;
 
-  /// The binary chunk of keyframe values.
+  /// The binary chunk of keyframe values, with each keyframe's tangents
+  /// around its value for a [AnimationInterpolation.cubicSpline] channel.
   final LocalId keyframes;
+
+  /// How this channel moves between keyframes.
+  final AnimationInterpolation interpolation;
 }
 
 /// One animation channel driving a property of a target node that
@@ -1307,9 +1328,10 @@ class AnimationPathChannelSpec {
     required this.path,
     required this.timeline,
     required this.keyframes,
-    this.step = false,
+    AnimationInterpolation interpolation = AnimationInterpolation.linear,
+    @Deprecated('Use interpolation instead.') bool step = false,
     this.unknown = const {},
-  });
+  }) : interpolation = step ? AnimationInterpolation.step : interpolation;
 
   /// Keys this build of the engine does not recognize, kept verbatim so a
   /// document written by a newer engine or an extension survives a load and
@@ -1329,11 +1351,18 @@ class AnimationPathChannelSpec {
   final LocalId timeline;
 
   /// The binary chunk of keyframe values, the path's component count per
-  /// keyframe.
+  /// keyframe, with each keyframe's tangents around its value for a
+  /// [AnimationInterpolation.cubicSpline] channel.
   final LocalId keyframes;
 
+  /// How this channel moves between keyframes.
+  final AnimationInterpolation interpolation;
+
   /// Whether each keyframe holds until the next instead of interpolating.
-  final bool step;
+  ///
+  /// A two-state view of [interpolation], which also reaches cubic splines.
+  @Deprecated('Use interpolation instead.')
+  bool get step => interpolation == AnimationInterpolation.step;
 }
 
 /// A named animation: a set of channels driving target nodes.
