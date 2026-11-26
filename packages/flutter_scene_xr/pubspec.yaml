@@ -28,7 +28,7 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-  flutter_scene: ^0.24.0
+  flutter_scene: ^0.24.4
   flutter_scene_input: ^0.1.0
   vector_math: ^2.1.4
   # WebXR Device API bindings for the web runtime.
