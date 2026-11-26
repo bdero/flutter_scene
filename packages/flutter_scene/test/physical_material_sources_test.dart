@@ -205,8 +205,9 @@ void main() {
       }
       // Pinned so a new engine sampler shows up as a failure here rather than
       // as a rejected skinned draw on a minimum-spec driver. The irradiance
-      // field left this untouched because it rides the coefficient texture.
-      expect(worst, 14);
+      // field left this untouched because it rides the coefficient texture,
+      // and the light-index entries share the punctual lights' texture.
+      expect(worst, 13);
     } finally {
       temp.deleteSync(recursive: true);
     }
@@ -510,10 +511,9 @@ void main() {
       expect(_hasNamedResource(full, 'shadow_map'), isTrue);
       expect(_hasNamedResource(slim, 'shadow_map'), isFalse);
       // The twins must stay bind-compatible outside the shadow atlas: the
-      // punctual light textures survive the define, so a shadow-less scene
+      // punctual light texture survives the define, so a shadow-less scene
       // still shades its point and spot lights.
       expect(_hasNamedResource(slim, 'punctual_lights'), isTrue);
-      expect(_hasNamedResource(slim, 'punctual_index'), isTrue);
     } finally {
       temp.deleteSync(recursive: true);
     }

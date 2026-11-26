@@ -4,8 +4,7 @@
 //
 // Requires, declared before this file is included: the FragInfo uniform block
 // (as `frag_info`) and the `shadow_map` (unless FLUTTER_SCENE_SKIP_SHADOWS),
-// `punctual_lights`, and `punctual_index` samplers from
-// material_engine_lighting.glsl.
+// and `punctual_lights` samplers from material_engine_lighting.glsl.
 
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
 // Places a tile UV (v up, as `ndc * 0.5 + 0.5`) in the atlas tile whose
@@ -350,26 +349,24 @@ float SampleShadow(highp vec3 world_pos, vec3 n) {
 // only punctual consumer is the spot loop the guard above removed), so the
 // fetch helpers compile out with them.
 #if !defined(FLUTTER_SCENE_SHADOW_CATCHER) || !defined(FLUTTER_SCENE_SKIP_SHADOWS)
-// Reads column `col` (0..11) of light `light_index`'s row from the
-// punctual_lights parameters texture (12 texels wide, punctual_dims.x rows
-// tall). Fetched by computed UV rather than a dynamically-indexed uniform
-// array, which stays portable across every compiled dialect.
+// Reads column `col` (0..11) of light `light_index`'s row in the punctual
+// texture. Fetched rather than read from a dynamically-indexed uniform array,
+// which stays portable across every compiled dialect.
 highp vec4 FetchPunctualTexel(int light_index, int col) {
-  highp vec2 uv = vec2((float(col) + 0.5) / 12.0,
-                 (float(light_index) + 0.5) / frag_info.punctual_dims.x);
-  return textureLod(punctual_lights, uv, 0.0);
+  return texelFetch(punctual_lights, ivec2(col, light_index), 0);
 }
 
-// Reads the full texel of entry `j` in the light-index texture (`j` decomposed
-// to a texel with the width/height in punctual_dims.yz). A froxel-table entry
-// carries its records offset in .r and light count in .g; a record carries a
-// light row in .r.
+// Reads light-index entry `j`, which sits right of the 12 light-row columns,
+// punctual_dims.y entries per row. A froxel-table entry carries its records
+// offset in .r and light count in .g; a record carries a light row in .r.
+// The row is found in float math (biased half an entry so the division
+// cannot round down a row), keeping integer division out of the transpile.
 highp vec4 FetchPunctualEntry(int j) {
   highp float width = frag_info.punctual_dims.y;
   highp float fj = float(j);
-  highp vec2 uv = vec2((mod(fj, width) + 0.5) / width,
-                 (floor(fj / width) + 0.5) / frag_info.punctual_dims.z);
-  return textureLod(punctual_index, uv, 0.0);
+  highp float row = floor((fj + 0.5) / width);
+  return texelFetch(punctual_lights,
+                    ivec2(int(fj - row * width + 0.5) + 12, int(row + 0.5)), 0);
 }
 
 // Reads entry `j` of the per-object light-index buffer (or a froxel record),
@@ -377,7 +374,7 @@ highp vec4 FetchPunctualEntry(int j) {
 highp float FetchPunctualIndex(int j) { return FetchPunctualEntry(j).r; }
 
 // The punctual-light slice this fragment shades, as (records offset, light
-// count) into the punctual_index texture. In froxel mode (froxel_grid.z > 0)
+// count) into the punctual texture's entries. In froxel mode (froxel_grid.z > 0)
 // the slice comes from the fragment's froxel, derived from the camera basis
 // (not gl_FragCoord, whose vertical origin differs across backends):
 // view-space position via the camera axes, then tile mapping through the

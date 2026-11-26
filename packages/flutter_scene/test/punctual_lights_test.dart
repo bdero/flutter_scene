@@ -351,4 +351,56 @@ void main() {
       ]),
     );
   });
+
+  group('punctual texture', () {
+    test('entries fill the columns right of the light rows', () {
+      // 3 lights, 7 entries: 3 entries per row keeps them within 3 rows.
+      final shape = PunctualLightBuffer.punctualTextureShape(3, 7);
+      expect(shape.entryWidth, 3);
+      expect(shape.width, 15);
+      expect(shape.height, 3);
+
+      final params = Float32List(3 * _floatsPerLight);
+      for (var i = 0; i < params.length; i++) {
+        params[i] = 1000.0 + i;
+      }
+      final entries = Float32List(7 * 4);
+      for (var j = 0; j < 7; j++) {
+        entries[j * 4] = j.toDouble();
+        entries[j * 4 + 1] = 100.0 + j;
+      }
+      final data = PunctualLightBuffer.packPunctualTexture(
+        params,
+        entries,
+        entryWidth: shape.entryWidth,
+        width: shape.width,
+        height: shape.height,
+      );
+      expect(data.length, 15 * 3 * 4);
+      // Light 2, column 5: the same addressing as FetchPunctualTexel.
+      double texel(int x, int y, int c) => data[(y * 15 + x) * 4 + c];
+      expect(texel(5, 2, 1), params[2 * _floatsPerLight + 5 * 4 + 1]);
+      // Entry j sits at (12 + j % width, j ~/ width), as FetchPunctualEntry
+      // finds it.
+      for (var j = 0; j < 7; j++) {
+        expect(texel(12 + j % 3, j ~/ 3, 0), j.toDouble());
+        expect(texel(12 + j % 3, j ~/ 3, 1), 100.0 + j);
+      }
+      expect(texel(12 + 1, 2, 0), 0.0);
+    });
+
+    test('a long entry list grows the height, capped at 2048 wide', () {
+      final shape = PunctualLightBuffer.punctualTextureShape(1, 5000);
+      expect(shape.width, 2048);
+      expect(shape.entryWidth, 2036);
+      expect(shape.height, 3);
+    });
+
+    test('no entries still addresses one column', () {
+      final shape = PunctualLightBuffer.punctualTextureShape(4, 0);
+      expect(shape.entryWidth, 1);
+      expect(shape.width, 13);
+      expect(shape.height, 4);
+    });
+  });
 }

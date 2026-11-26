@@ -1145,9 +1145,11 @@ class Lighting {
     this.directionalLight,
     this.directionalLightDirection,
     this.punctualParamsTexture,
+    @Deprecated('The light-index entries ride in punctualParamsTexture.')
     this.punctualIndexTexture,
     this.punctualParamsCount = 0,
     this.punctualIndexWidth = 0,
+    @Deprecated('The light-index entries ride in punctualParamsTexture.')
     this.punctualIndexHeight = 0,
     this.froxels,
     this.spotShadowCount = 0,
@@ -1265,33 +1267,35 @@ class Lighting {
   /// consumers fall back to [DirectionalLight.direction] in that case.
   final Vector3? directionalLightDirection;
 
-  /// The per-frame parameters texture holding every additional analytic light
-  /// (point and spot lights, plus any directional lights past the first
-  /// shadowed one), one per RGBA32F row, or null when there are none. Built by
-  /// `PunctualLightBuffer` and shared across every lit draw this frame; a draw
-  /// reads only the rows its per-object index slice selects.
+  /// The punctual data texture: every additional analytic light (point and
+  /// spot lights, plus any directional lights past the first shadowed one) as
+  /// a 12-texel RGBA32F row in columns `[0, 12)`, and the light-index entries
+  /// row-major in the [punctualIndexWidth] columns after them. Null when there
+  /// are no such lights. Built by `PunctualLightBuffer` and shared across
+  /// every lit draw this view; a draw reads only the rows its slice of
+  /// entries selects (each item's `[lightListOffset, +lightListCount)`, or the
+  /// fragment's froxel in froxel mode).
   final gpu.Texture? punctualParamsTexture;
 
-  /// The per-frame light-index texture: each item's
-  /// `[lightListOffset, +lightListCount)` slice indexes into
-  /// [punctualParamsTexture]. Null when no item is reached by any light.
-  /// In froxel mode ([froxels] non-null) callers set this to the froxel data
-  /// texture instead, which the shader reads through the same sampler.
+  /// Unused. The light-index entries ride in [punctualParamsTexture].
+  @Deprecated('The light-index entries ride in punctualParamsTexture.')
   final gpu.Texture? punctualIndexTexture;
 
   /// This view's froxel clustering, or null when the view shades through the
   /// per-object light lists (a degenerate projection, non-uniform light
-  /// channels, or clustering disabled). When set, [punctualIndexTexture] and
-  /// its dimensions describe the froxel data texture.
+  /// channels, or clustering disabled). When set, [punctualParamsTexture]
+  /// carries the froxel structure as its entries.
   final FroxelLighting? froxels;
 
   /// Number of light rows in [punctualParamsTexture]. Zero leaves punctual
   /// lighting off (only [directionalLight] and the ambient term contribute).
   final int punctualParamsCount;
 
-  /// Dimensions of [punctualIndexTexture], for the shader's fetch-coordinate
-  /// normalization.
+  /// How many light-index entries one row of [punctualParamsTexture] holds.
   final int punctualIndexWidth;
+
+  /// Unused. The light-index entries ride in [punctualParamsTexture].
+  @Deprecated('The light-index entries ride in punctualParamsTexture.')
   final int punctualIndexHeight;
 
   /// Number of shadow-casting spots this frame; their tiles are in

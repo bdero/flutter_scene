@@ -709,12 +709,12 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // Additional analytic lights (point, spot, and directional lights past the
   // first). The scene may hold any number of lights; per-object culling (or
   // the froxel lookup below) gives this fragment a contiguous slice of the
-  // light-index buffer, and the loop shades only that slice. Every fetch is a
-  // computed-UV texture read, so no uniform array is dynamically indexed.
+  // light-index entries, and the loop shades only that slice. Every read is a
+  // texel fetch, so no uniform array is dynamically indexed.
   //
-  // punctual_dims.x is the parameters-texture row count; 0 means the scene has
-  // no punctual lights this frame, so ignore any stale per-object count (and
-  // never divide by the zero texture height in the fetch helpers).
+  // punctual_dims.x is the light row count; 0 means the scene has no
+  // punctual lights this frame, so ignore any stale per-object count (and
+  // never divide by the zero entry width in the fetch helpers).
   //
   // Froxel mode (froxel_grid.z > 0): the fragment's light slice comes from
   // its froxel instead of the per-draw uniforms (PunctualLightSlice in
@@ -732,7 +732,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // can unroll it and the budget is a CPU-side data choice
   // (kMaxPunctualLights per object, kMaxFroxelLights per froxel).
   for (int i = 0; i < punctual_count; i++) {
-    // Resolve this slot to a light row through the per-object index buffer.
+    // Resolve this slot to a light row through its light-index entry.
     int light_row = int(FetchPunctualIndex(punctual_offset + i) + 0.5);
     highp vec4 l0 = FetchPunctualTexel(light_row, 0); // position.xyz, type
     highp vec4 l1 = FetchPunctualTexel(light_row, 1); // color.rgb, inverse range

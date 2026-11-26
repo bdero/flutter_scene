@@ -46,33 +46,34 @@ const int kMaxFroxelLights = 255;
 //          extent zw), or a point light's two tiles' top-left corners.
 //   col 9: a spot's depth bias, normal bias, softness, and inverse tile
 //          resolution, or a point light's tile extent in xy.
-// The shader reads these by computed UV, sidestepping the GLSL ES 1.00 ban on
-// dynamically indexing a uniform array in a fragment shader. The shadow data
-// rides here rather than in its own texture so no extra sampler is needed
-// (the lit shader is at the backend's sampler limit).
+// The shader fetches these texels directly, sidestepping the GLSL ES 1.00 ban
+// on dynamically indexing a uniform array in a fragment shader. The shadow
+// data rides here rather than in its own texture so no extra sampler is
+// needed (the lit shader is at the backend's sampler limit).
 const int _texelsPerLight = 12;
 const int _floatsPerLight = _texelsPerLight * 4;
 
-// The per-object light-index buffer is packed into a 2D texture at most this
-// many texels wide (each texel one light index in .r), so a large scene's
-// index buffer stays within the max texture width; the height grows instead.
-const int _indexTexMaxWidth = 2048;
+// The light-index entries (a per-object index buffer or a view's froxel table,
+// one entry per texel) share the light rows' texture, row-major in the columns
+// right of them, so the lit shader spends one sampler on both. The texture
+// stays within the 2048 max width WebGL2 guarantees; its height grows instead.
+const int _punctualTexMaxWidth = 2048;
+const int _entryMaxWidth = _punctualTexMaxWidth - _texelsPerLight;
 
 const double _typeDirectional = 0.0;
 const double _typePoint = 1.0;
 const double _typeSpot = 2.0;
 const double _typeArea = 3.0;
 
-/// The GPU-side punctual lighting for a frame: the parameters texture holding
-/// every scene light, the per-object light-index texture, and their dimensions
-/// (needed by the shader to normalize its fetch coordinates).
+/// The GPU-side punctual lighting for a frame: one RGBA32F data texture
+/// holding every scene light (a 12-texel row each, columns `[0, 12)`) and the
+/// per-object light-index entries (row-major in columns
+/// `[12, 12 + entryWidth)`), plus what the shader needs to address them.
 class PunctualLighting {
   const PunctualLighting({
-    required this.paramsTexture,
-    required this.indexTexture,
+    required this.texture,
     required this.paramsCount,
-    required this.indexWidth,
-    required this.indexHeight,
+    required this.entryWidth,
     this.spotShadowCount = 0,
     this.pointShadowTileCount = 0,
     this.rectAreaLightCount = 0,
@@ -81,11 +82,9 @@ class PunctualLighting {
 
   /// An empty result (no punctual lights this frame).
   const PunctualLighting.empty()
-    : paramsTexture = null,
-      indexTexture = null,
+    : texture = null,
       paramsCount = 0,
-      indexWidth = 0,
-      indexHeight = 0,
+      entryWidth = 0,
       spotShadowCount = 0,
       pointShadowTileCount = 0,
       rectAreaLightCount = 0,
@@ -97,27 +96,22 @@ class PunctualLighting {
   /// scene disabled it).
   final PunctualLightBuffer? internalBuffer;
 
-  /// All scene lights, one per row (RGBA32F, `paramsCount` rows), or null when
-  /// there are none.
-  final gpu.Texture? paramsTexture;
+  /// The light rows and the per-object index entries (each item's
+  /// `[lightListOffset, +lightListCount)` slice of entries names light rows),
+  /// or null when there are no lights.
+  final gpu.Texture? texture;
 
-  /// The flattened per-object light-index buffer (each item's
-  /// `[lightListOffset, +lightListCount)` slice indexes into [paramsTexture]),
-  /// or null when no item is reached by any light.
-  final gpu.Texture? indexTexture;
-
-  /// Number of light rows in [paramsTexture].
+  /// Number of light rows in [texture].
   final int paramsCount;
+
+  /// How many entries one row of [texture] holds right of the light rows.
+  final int entryWidth;
 
   /// How many of those rows are rect area lights.
   final int rectAreaLightCount;
 
-  /// Dimensions of [indexTexture], for the shader's fetch-coordinate math.
-  final int indexWidth;
-  final int indexHeight;
-
   /// Number of shadow-casting spots this frame (their tiles, matrices, and
-  /// shadow parameters ride in the params texture). Zero disables spot shadow
+  /// shadow parameters ride in the light rows). Zero disables spot shadow
   /// sampling.
   final int spotShadowCount;
 
@@ -208,17 +202,16 @@ class _TextureRing {
 /// light state and the per-loop light budget applies per froxel instead of
 /// per object (a level-spanning mesh is no longer special).
 ///
-/// [texture] packs the whole structure into one RGBA32F data texture bound on
-/// the same sampler as the per-object index buffer: texels
+/// [texture] is this view's punctual texture: the frame's light rows plus the
+/// froxel structure as its entries (see [PunctualLighting]). Entries
 /// `[0, nx * ny * nz)` are the froxel table (records offset in `.r`, light
-/// count in `.g`, offsets absolute into the same texture), and the records
-/// (light row in `.r`) follow. Depth slices are exponential;
+/// count in `.g`, offsets absolute entry indices), and the records (light row
+/// in `.r`) follow. Depth slices are exponential;
 /// `slice = floor(log2(viewDepth) * zScale + zBias)`, clamped.
 class FroxelLighting {
   const FroxelLighting({
     required this.texture,
-    required this.width,
-    required this.height,
+    required this.entryWidth,
     required this.nx,
     required this.ny,
     required this.nz,
@@ -228,8 +221,9 @@ class FroxelLighting {
   });
 
   final gpu.Texture texture;
-  final int width;
-  final int height;
+
+  /// How many entries one row of [texture] holds right of the light rows.
+  final int entryWidth;
   final int nx;
   final int ny;
   final int nz;
@@ -258,9 +252,14 @@ class _PackedLights {
 /// One instance lives on the `Scene` and is rebuilt once per frame (the
 /// light-object assignment is view-independent).
 class PunctualLightBuffer {
-  final _TextureRing _paramsRing = _TextureRing();
-  final _TextureRing _indexRing = _TextureRing();
+  final _TextureRing _ring = _TextureRing();
+  // Row and entry capacities only grow (until [releaseTextures]), so the
+  // texture shape, and with it the ring's textures, survives frames whose
+  // light or entry counts move around.
+  int _rowCapacity = 0;
   int _indexCapacity = 0;
+  int _froxelCapacity = 0;
+  Float32List? _froxelScratch;
 
   bool _warnedOverflow = false;
 
@@ -365,55 +364,99 @@ class PunctualLightBuffer {
       return true;
     }());
 
-    final paramsTexture = _paramsRing.upload(
-      _texelsPerLight,
-      count,
-      packed.params,
-    );
-
+    _rowCapacity = _grow(_rowCapacity, count);
     final indexLength = cull.indices.length;
-    if (indexLength == 0) {
-      // Every item was culled out (lights exist but reach nothing this frame).
-      return PunctualLighting(
-        paramsTexture: paramsTexture,
-        indexTexture: null,
-        paramsCount: count,
-        indexWidth: 0,
-        indexHeight: 0,
-        spotShadowCount: spotTileCount,
-        pointShadowTileCount: pointTileCount,
-        rectAreaLightCount: areas.length,
-        internalBuffer: _froxelsEligible ? this : null,
-      );
-    }
-
-    // Keep capacity as light lists shrink so their textures stay reusable.
-    if (indexLength > _indexCapacity) {
-      _indexCapacity = math.max(1, _indexCapacity);
-      while (_indexCapacity < indexLength) {
-        _indexCapacity *= 2;
-      }
-    }
-    final indexWidth = math.min(_indexCapacity, _indexTexMaxWidth);
-    final indexHeight = (_indexCapacity + indexWidth - 1) ~/ indexWidth;
-    // RGBA32F; the light index rides in .r, the rest is unread padding.
-    final indexData = Float32List(indexWidth * indexHeight * 4);
+    _indexCapacity = _grow(_indexCapacity, indexLength);
+    final shape = punctualTextureShape(_rowCapacity, _indexCapacity);
+    final entries = Float32List(indexLength * 4);
     for (var i = 0; i < indexLength; i++) {
-      indexData[i * 4] = cull.indices[i].toDouble();
+      entries[i * 4] = cull.indices[i].toDouble();
     }
-    final indexTexture = _indexRing.upload(indexWidth, indexHeight, indexData);
-
+    final texture = _ring.upload(
+      shape.width,
+      shape.height,
+      packPunctualTexture(
+        packed.params,
+        entries,
+        entryWidth: shape.entryWidth,
+        width: shape.width,
+        height: shape.height,
+      ),
+    );
     return PunctualLighting(
-      paramsTexture: paramsTexture,
-      indexTexture: indexTexture,
+      texture: texture,
       paramsCount: count,
-      indexWidth: indexWidth,
-      indexHeight: indexHeight,
+      entryWidth: shape.entryWidth,
       spotShadowCount: spotTileCount,
       pointShadowTileCount: pointTileCount,
       rectAreaLightCount: areas.length,
       internalBuffer: _froxelsEligible ? this : null,
     );
+  }
+
+  /// Doubles [capacity] until it holds [length] (at least 1).
+  static int _grow(int capacity, int length) {
+    var grown = math.max(1, capacity);
+    while (grown < length) {
+      grown *= 2;
+    }
+    return grown;
+  }
+
+  /// The punctual texture's shape for [rows] light rows and [entries]
+  /// light-index entries: the entries fill the columns right of the 12-texel
+  /// light rows, as wide as keeps them within the rows' height (capped by the
+  /// max texture width).
+  @visibleForTesting
+  static ({int entryWidth, int width, int height}) punctualTextureShape(
+    int rows,
+    int entries,
+  ) {
+    final safeRows = math.max(1, rows);
+    final entryWidth = ((entries + safeRows - 1) ~/ safeRows).clamp(
+      1,
+      _entryMaxWidth,
+    );
+    final height = math.max(safeRows, (entries + entryWidth - 1) ~/ entryWidth);
+    return (
+      entryWidth: entryWidth,
+      width: _texelsPerLight + entryWidth,
+      height: height,
+    );
+  }
+
+  /// Lays [params] (12 texels per light) and [entries] (one texel each) out
+  /// as the punctual texture's `width` x `height` RGBA32F texels.
+  @visibleForTesting
+  static Float32List packPunctualTexture(
+    Float32List params,
+    Float32List entries, {
+    required int entryWidth,
+    required int width,
+    required int height,
+    Float32List? into,
+  }) {
+    final length = width * height * 4;
+    final data = into != null && into.length == length
+        ? (into..fillRange(0, length, 0.0))
+        : Float32List(length);
+    final rows = params.length ~/ _floatsPerLight;
+    for (var row = 0; row < rows; row++) {
+      data.setRange(
+        row * width * 4,
+        row * width * 4 + _floatsPerLight,
+        params,
+        row * _floatsPerLight,
+      );
+    }
+    final entryCount = entries.length ~/ 4;
+    for (var start = 0; start < entryCount; start += entryWidth) {
+      final run = math.min(entryWidth, entryCount - start);
+      final row = start ~/ entryWidth;
+      final at = (row * width + _texelsPerLight) * 4;
+      data.setRange(at, at + run * 4, entries, start * 4);
+    }
+    return data;
   }
 
   // Froxel grid shape and depth window. 16 x 9 tiles x 16 exponential depth
@@ -425,7 +468,6 @@ class PunctualLightBuffer {
   static const int froxelCountZ = 16;
   static const double _froxelNear = 0.25;
   static const double _froxelFar = 100.0;
-  static const int _froxelTexWidth = 1024;
 
   // Several views build froxels in one frame (screen views, probe faces), and
   // how many is a property of the scene, so this ring sizes itself to the
@@ -452,9 +494,11 @@ class PunctualLightBuffer {
 
   /// Drops every texture the buffer keeps across frames.
   void releaseTextures() {
-    _paramsRing.clear();
-    _indexRing.clear();
+    _ring.clear();
+    _rowCapacity = 0;
     _indexCapacity = 0;
+    _froxelCapacity = 0;
+    _froxelScratch = null;
     _froxelRing.clear();
     _cachedFroxels = null;
     _froxelCacheEpoch = -1;
@@ -462,8 +506,7 @@ class PunctualLightBuffer {
 
   /// Whether any ring holds a texture.
   @internal
-  bool get debugHoldsTextures =>
-      !_paramsRing.isEmpty || !_indexRing.isEmpty || !_froxelRing.isEmpty;
+  bool get debugHoldsTextures => !_ring.isEmpty || !_froxelRing.isEmpty;
 
   final Vector3 _cachePosition = Vector3.zero();
   final Vector3 _cacheForward = Vector3.zero();
@@ -509,15 +552,21 @@ class PunctualLightBuffer {
       maxPerFroxel: kMaxFroxelLights,
     );
     _overflowedItemCount += result.overflowedFroxels;
-    final texture = _froxelRing.upload(
-      _froxelTexWidth,
-      result.height,
+    _froxelCapacity = _grow(_froxelCapacity, result.data.length ~/ 4);
+    final shape = punctualTextureShape(_rowCapacity, _froxelCapacity);
+    final data = packPunctualTexture(
+      _lastParams!,
       result.data,
+      entryWidth: shape.entryWidth,
+      width: shape.width,
+      height: shape.height,
+      into: _froxelScratch,
     );
+    _froxelScratch = data;
+    final texture = _froxelRing.upload(shape.width, shape.height, data);
     final froxels = FroxelLighting(
       texture: texture,
-      width: _froxelTexWidth,
-      height: result.height,
+      entryWidth: shape.entryWidth,
       nx: froxelCountX,
       ny: froxelCountY,
       nz: froxelCountZ,
@@ -538,7 +587,7 @@ class PunctualLightBuffer {
   /// The GPU-independent froxelization: assigns [lights] to froxels for a
   /// view at [cameraPosition] looking along [forward] (with [right]/[up]
   /// completing the basis) and packs the froxel table plus deduplicated
-  /// records into an RGBA32F texel array [_froxelTexWidth] wide. Pure so the
+  /// records into a flat array of RGBA32F entries. Pure so the
   /// slice math and conservative assignment can be unit tested.
   ///
   /// Tiles follow [projection], so perspective, orthographic, and off-center
@@ -555,7 +604,6 @@ class PunctualLightBuffer {
   @visibleForTesting
   static ({
     Float32List data,
-    int height,
     double zScale,
     double zBias,
     double depthOffset,
@@ -703,8 +751,7 @@ class PunctualLightBuffer {
     }
 
     final total = froxelCount + records.length;
-    final height = (total + _froxelTexWidth - 1) ~/ _froxelTexWidth;
-    final data = Float32List(_froxelTexWidth * height * 4);
+    final data = Float32List(total * 4);
     for (var i = 0; i < froxelCount; i++) {
       data[i * 4] = table[i].$1.toDouble();
       data[i * 4 + 1] = table[i].$2.toDouble();
@@ -714,7 +761,6 @@ class PunctualLightBuffer {
     }
     return (
       data: data,
-      height: height,
       zScale: zScale,
       zBias: zBias,
       depthOffset: depthOffset,

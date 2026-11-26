@@ -137,7 +137,6 @@ fragment {
     for (final decl in [
       'uniform highp sampler2D shadow_map;',
       'uniform highp sampler2D punctual_lights;',
-      'uniform highp sampler2D punctual_index;',
       'uniform highp sampler2D ssao_texture;',
       'uniform highp sampler2D irradiance_field;',
     ]) {

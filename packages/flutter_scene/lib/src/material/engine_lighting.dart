@@ -249,15 +249,14 @@ class EngineLightingUniforms {
       fragInfo[gi + 18] = placement.maxProbeDistance;
       fragInfo[gi + 19] = IrradianceFieldBinding.boundaryFadeCells;
     }
-    // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot): the
-    // dimensions the shader needs to normalize its punctual-light fetches.
-    // x: parameters-texture row count (all scene lights). y/z: the light-index
-    // texture width/height (the froxel data texture's in froxel mode). These
-    // are frame-constant. The per-object slice (radiance_blend.z count, .w
+    // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot). x: the
+    // punctual texture's light row count (all scene lights). y: how many
+    // light-index entries one of its rows holds. z unused. These are
+    // frame-constant. The per-object slice (radiance_blend.z count, .w
     // offset) is written per draw by the material and ignored in froxel mode.
     fragInfo[8] = lighting.punctualParamsCount.toDouble();
     fragInfo[9] = lighting.punctualIndexWidth.toDouble();
-    fragInfo[10] = lighting.punctualIndexHeight.toDouble();
+    fragInfo[10] = 0.0;
     // punctual_dims.w [11] + froxel_grid [196..199]: this view's froxel
     // clustering. froxel_grid.z (slice count) of 0 selects the per-object
     // path; nonzero, the fragment derives its froxel from the camera basis
@@ -649,19 +648,13 @@ class EngineLightingUniforms {
         cubeShader: cubeShader,
       );
     }
-    // Punctual light parameters (all scene lights) and the per-object light
-    // index buffer, both RGBA32F data textures, point-sampled (each texel is
-    // packed data). White placeholders are bound when there are no lights or no
-    // reached items; the shader never reads them because the per-object count is
-    // 0.
+    // The punctual data texture (light rows and light-index entries),
+    // RGBA32F and fetched texel by texel. A white placeholder is bound when
+    // there are no lights; the shader never reads it because the light count
+    // is 0.
     pass.bindTexture(
       shader.cachedUniformSlot('punctual_lights'),
       Material.whitePlaceholder(lighting.punctualParamsTexture),
-      sampler: _nearestClampSampler,
-    );
-    pass.bindTexture(
-      shader.cachedUniformSlot('punctual_index'),
-      Material.whitePlaceholder(lighting.punctualIndexTexture),
       sampler: _nearestClampSampler,
     );
     // Screen-space ambient occlusion. Bilinear so a half-resolution
@@ -683,7 +676,7 @@ class EngineLightingUniforms {
   /// radiance, BRDF, and SH samplers (and the fog block) are compiled out of
   /// it; binding those slots would fail. Its shadow variant, selected exactly
   /// when [Lighting.shadowMap] is set, is the only one that declares the
-  /// shadow atlas and the punctual textures (its no-shadow twin compiles the
+  /// shadow atlas and the punctual texture (its no-shadow twin compiles the
   /// spot loop out), so those bind only then.
   static void bindShadowCatcherTextures(
     gpu.RenderPass pass,
@@ -701,11 +694,6 @@ class EngineLightingUniforms {
       pass.bindTexture(
         shader.cachedUniformSlot('punctual_lights'),
         Material.whitePlaceholder(lighting.punctualParamsTexture),
-        sampler: _nearestClampSampler,
-      );
-      pass.bindTexture(
-        shader.cachedUniformSlot('punctual_index'),
-        Material.whitePlaceholder(lighting.punctualIndexTexture),
         sampler: _nearestClampSampler,
       );
     }

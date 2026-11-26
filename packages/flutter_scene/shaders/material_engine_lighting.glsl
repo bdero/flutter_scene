@@ -61,13 +61,16 @@ uniform RadianceSampler prefiltered_radiance_b;
 uniform highp sampler2D ssao_texture;
 #endif
 // A shadow catcher's no-shadow variant compiles its spot loop out, leaving
-// the punctual textures with no live reference, so it declares neither.
+// the punctual texture with no live reference, so it does not declare it.
 #if !defined(FLUTTER_SCENE_SHADOW_CATCHER) || !defined(FLUTTER_SCENE_SKIP_SHADOWS)
-// The additional analytic lights (point, spot, and directional lights past the
-// first) as an RGBA32F data texture: one light per row, eight texels wide. Read
-// by computed UV (not a dynamically-indexed uniform array, which older GLSL
-// forbids in a fragment shader). frag_info.radiance_blend.z is the row count; a
-// white placeholder is bound and never read when it is zero. Column layout:
+// The additional analytic lights (point, spot, area, and directional lights
+// past the first) and their light-index entries, as one RGBA32F data texture
+// read by texelFetch (not a dynamically-indexed uniform array, which older
+// GLSL forbids in a fragment shader). Each light is a 12-texel row in columns
+// [0, 12), frag_info.punctual_dims.x rows; the light-index entries (each a
+// light row in .r, or a froxel table entry) run row-major in the
+// frag_info.punctual_dims.y columns right of them. A white placeholder is
+// bound and never read when there are no lights. Light row columns:
 //   0: position.xyz, type (0 directional, 1 point, 2 spot, 3 area)
 //   1: color.rgb * intensity, inverse range (0 = infinite)
 //   2: direction.xyz, spot angular scale
@@ -75,11 +78,4 @@ uniform highp sampler2D ssao_texture;
 //   4-7: a shadow-casting spot's world -> clip matrix, or a shadow-casting
 //        point light's face-depth mapping and sampling parameters
 uniform highp sampler2D punctual_lights;
-// The per-object light-index buffer: a 2D RGBA32F texture whose texels (row
-// major, index in .r) are light rows into punctual_lights. Each object shades
-// the slice [radiance_blend.w, radiance_blend.w + radiance_blend.z). Read by
-// computed UV (punctual_dims.yz give its width/height). A white placeholder is
-// bound and never read when the per-object count is 0.
-uniform highp sampler2D punctual_index;
 #endif
-

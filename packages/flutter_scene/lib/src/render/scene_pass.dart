@@ -352,7 +352,7 @@ class ScenePass extends RenderGraphPass {
     final cameraUp = cameraForward.cross(cameraRight)..normalize();
     final projection = ProjectionParams.of(camera.projection, _dimensions);
     // Froxel clustering for this view (views with uniform light channels);
-    // its data texture rides the per-object index sampler slot.
+    // its punctual texture replaces the frame's per-object one.
     final froxels = _punctualLighting.internalBuffer?.buildFroxels(
       cameraPosition: camera.position,
       forward: cameraForward,
@@ -370,11 +370,9 @@ class ScenePass extends RenderGraphPass {
       environmentTransform: _environmentTransform,
       directionalLight: _directionalLight,
       directionalLightDirection: _directionalLightDirection,
-      punctualParamsTexture: _punctualLighting.paramsTexture,
-      punctualIndexTexture: froxels?.texture ?? _punctualLighting.indexTexture,
+      punctualParamsTexture: froxels?.texture ?? _punctualLighting.texture,
       punctualParamsCount: _punctualLighting.paramsCount,
-      punctualIndexWidth: froxels?.width ?? _punctualLighting.indexWidth,
-      punctualIndexHeight: froxels?.height ?? _punctualLighting.indexHeight,
+      punctualIndexWidth: froxels?.entryWidth ?? _punctualLighting.entryWidth,
       froxels: froxels,
       // Spot and point shadows share the atlas, so only sample them when it
       // was produced.

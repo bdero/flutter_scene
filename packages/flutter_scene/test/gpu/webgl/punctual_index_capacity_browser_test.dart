@@ -78,13 +78,24 @@ class _Fixture {
       bvh: includeItems ? bvh : Bvh.build(const []),
       enableFroxels: false,
     );
-    if (result.paramsTexture case final texture?) textures.add(texture);
-    if (result.indexTexture case final texture?) textures.add(texture);
+    if (result.texture case final texture?) textures.add(texture);
     expect(buffer.overflowedItemCount, 0);
     return result;
   }
 
-  void expectSlices(Float32List pixels, int count, int rotation) {
+  // Entry j of a punctual texture [width] texels wide holding [entryWidth]
+  // entries per row right of the 12 light-row columns.
+  static double entry(Float32List pixels, int width, int entryWidth, int j) =>
+      pixels[((j ~/ entryWidth) * width + 12 + j % entryWidth) * 4];
+
+  void expectSlices(
+    Float32List pixels,
+    int width,
+    int entryWidth,
+    int count,
+    int rotation,
+  ) {
+    double at(int j) => entry(pixels, width, entryWidth, j);
     final expected = <List<double>>[];
     final flat = <double>[];
     for (var i = 0; i < items.length; i++) {
@@ -97,10 +108,10 @@ class _Fixture {
       for (final item in items)
         [
           for (var j = 0; j < item.lightListCount; j++)
-            pixels[(item.lightListOffset + j) * 4],
+            at(item.lightListOffset + j),
         ],
     ], expected);
-    expect([for (var i = 0; i < count; i++) pixels[i * 4]], flat);
+    expect([for (var i = 0; i < count; i++) at(i)], flat);
   }
 
   void dispose() {
@@ -161,18 +172,12 @@ class _IndexReader {
     }
   }
 
-  void verify(
-    _Fixture fixture,
-    PunctualLighting lighting,
-    int count,
-    int rotation,
-    int width,
-    int height,
-  ) {
-    final texture = lighting.indexTexture!;
-    expect(lighting.indexWidth, width);
-    expect(lighting.indexHeight, height);
-    expect(texture.width, width);
+  // Checks [lighting]'s texture is a fresh ring slot of the given shape that
+  // left the last two frames' textures intact, and returns its texels.
+  Float32List take(PunctualLighting lighting, int entryWidth, int height) {
+    final texture = lighting.texture!;
+    expect(lighting.entryWidth, entryWidth);
+    expect(texture.width, 12 + entryWidth);
     expect(texture.height, height);
     expect(texture.format, gpu.PixelFormat.r32g32b32a32Float);
     for (final (previous, _) in recent) {
@@ -180,9 +185,21 @@ class _IndexReader {
     }
     expectRetained();
     final pixels = read(texture);
-    fixture.expectSlices(pixels, count, rotation);
     recent.add((texture, pixels));
     if (recent.length > 2) recent.removeAt(0);
+    return pixels;
+  }
+
+  void verify(
+    _Fixture fixture,
+    PunctualLighting lighting,
+    int count,
+    int rotation,
+    int entryWidth,
+    int height,
+  ) {
+    final pixels = take(lighting, entryWidth, height);
+    fixture.expectSlices(pixels, 12 + entryWidth, entryWidth, count, rotation);
   }
 
   void dispose() => gl.deleteFramebuffer(framebuffer);
@@ -207,56 +224,59 @@ void main() {
       addTearDown(fixture.dispose);
       addTearDown(reader.dispose);
 
+      // Light rows and index entries both double their capacity, and the
+      // texture keeps its shape (one entry column beside the light rows)
+      // while the counts move around inside it.
       final smallSlots = <gpu.Texture>[];
       const counts = [513, 700, 1000, 9, 800, 32, 1001, 600, 1, 512, 899, 2];
       for (var frame = 0; frame < counts.length; frame++) {
         final count = counts[frame];
         final rotation = frame * 37;
         final lighting = fixture.build(count, rotation);
-        reader.verify(fixture, lighting, count, rotation, 1024, 1);
+        reader.verify(fixture, lighting, count, rotation, 1, 1024);
         if (frame < 3) {
-          smallSlots.add(lighting.indexTexture!);
+          smallSlots.add(lighting.texture!);
         } else {
-          expect(lighting.indexTexture, same(smallSlots[frame % 3]));
+          expect(lighting.texture, same(smallSlots[frame % 3]));
         }
       }
 
       for (final count in [2047, 2048]) {
         final boundary = fixture.build(count, 3);
-        reader.verify(fixture, boundary, count, 3, 2048, 1);
+        reader.verify(fixture, boundary, count, 3, 1, 2048);
       }
       final largeSlots = <gpu.Texture>[];
       for (final (count, rotation) in [(2049, 4), (17, 7), (900, 11)]) {
         final lighting = fixture.build(count, rotation);
-        reader.verify(fixture, lighting, count, rotation, 2048, 2);
-        largeSlots.add(lighting.indexTexture!);
+        reader.verify(fixture, lighting, count, rotation, 1, 4096);
+        largeSlots.add(lighting.texture!);
       }
 
-      void expectEmpty(PunctualLighting empty) {
-        expect(empty.indexTexture, isNull);
-        expect(empty.indexWidth, 0);
-        expect(empty.indexHeight, 0);
-        reader.expectRetained();
-      }
-
-      expectEmpty(fixture.build(1, 0, includeItems: false));
-      expectEmpty(fixture.build(0, 0));
+      // Lights that reach no item still upload their rows, in the same shape.
+      final unreached = fixture.build(1, 0, includeItems: false);
+      expect(unreached.paramsCount, 1);
+      reader.take(unreached, 1, 4096);
+      expect(largeSlots, contains(same(unreached.texture)));
+      final empty = fixture.build(0, 0);
+      expect(empty.texture, isNull);
+      expect(empty.entryWidth, 0);
+      reader.expectRetained();
 
       const smallerCounts = [3, 31, 1025, 2049, 2, 100];
       for (var frame = 0; frame < smallerCounts.length; frame++) {
         final count = smallerCounts[frame];
         final rotation = 19 + frame * 41;
         final lighting = fixture.build(count, rotation);
-        reader.verify(fixture, lighting, count, rotation, 2048, 2);
-        expect(lighting.indexTexture, same(largeSlots[frame % 3]));
+        reader.verify(fixture, lighting, count, rotation, 1, 4096);
+        expect(largeSlots, contains(same(lighting.texture)));
       }
 
       fixture.buffer.releaseTextures();
       reader.recent.clear();
       final restarted = fixture.build(3, 13);
-      reader.verify(fixture, restarted, 3, 13, 4, 1);
+      reader.verify(fixture, restarted, 3, 13, 1, 4);
       for (final previous in [...smallSlots, ...largeSlots]) {
-        expect(restarted.indexTexture, isNot(same(previous)));
+        expect(restarted.texture, isNot(same(previous)));
       }
     },
   );

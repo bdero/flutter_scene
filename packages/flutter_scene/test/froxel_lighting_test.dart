@@ -36,7 +36,6 @@ ProjectionParams _perspective(double tanX, double tanY) => ProjectionParams(
 
 ({
   Float32List data,
-  int height,
   double zScale,
   double zBias,
   double depthOffset,

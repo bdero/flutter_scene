@@ -164,11 +164,9 @@ class ShadowCatcherBakePass extends RenderGraphPass {
       environmentMap: _environmentMap,
       directionalLight: _directionalLight,
       directionalLightDirection: _directionalLightDirection,
-      punctualParamsTexture: _punctualLighting.paramsTexture,
-      punctualIndexTexture: _punctualLighting.indexTexture,
+      punctualParamsTexture: _punctualLighting.texture,
       punctualParamsCount: _punctualLighting.paramsCount,
-      punctualIndexWidth: _punctualLighting.indexWidth,
-      punctualIndexHeight: _punctualLighting.indexHeight,
+      punctualIndexWidth: _punctualLighting.entryWidth,
       spotShadowCount: shadowMap == null
           ? 0
           : _punctualLighting.spotShadowCount,

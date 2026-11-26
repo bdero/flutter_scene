@@ -16,10 +16,9 @@
 uniform FragInfo {
   vec4 color;
   vec4 emissive_factor;
-  // Punctual light texture dimensions, for normalizing the shader's fetch
-  // coordinates. x: parameters-texture row count (all scene lights). y/z:
-  // light-index texture width/height (the froxel data texture's dimensions in
-  // froxel mode). w: the froxel depth-slice bias (see froxel_grid). (Reuses
+  // Punctual texture layout. x: its light row count (all scene lights). y:
+  // how many light-index entries one of its rows holds. z unused. w: the
+  // froxel depth-slice bias (see froxel_grid). (Reuses
   // the first of the once-diffuse-SH slots, which are unused now that SH is
   // sampled from sh_coefficients.)
   highp vec4 punctual_dims;
@@ -180,8 +179,8 @@ uniform FragInfo {
   // Froxel clustered lighting for this view. xyz: the froxel grid's tile and
   // slice counts (z of 0 selects the per-object light lists instead); w: the
   // depth-slice scale (slice = log2(viewDepth) * w + punctual_dims.w). The
-  // froxel table and its light records share the punctual_index texture:
-  // texels [0, x*y*z) hold each froxel's records offset (.r, absolute) and
+  // froxel table and its light records are the punctual texture's entries:
+  // entries [0, x*y*z) hold each froxel's records offset (.r, absolute) and
   // light count (.g); records (.r a light row) follow.
   highp vec4 froxel_grid;
   // The camera projection beyond the extents in scene_inputs.w and
