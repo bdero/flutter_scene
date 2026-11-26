@@ -15,6 +15,7 @@
 * Normal maps on the back faces of double-sided materials no longer read their red channel inverted, and anisotropy directions there are no longer mirrored.
 * An R8 or RG8 texture whose size is not a multiple of 4 bytes uploads on WebGPU under dart2wasm instead of throwing a `RangeError`.
 * SMAA's edge pass skips writing pixels with no edge.
+* On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.
 * WebGL2 reuses its present framebuffer and skips redundant vertex array and uniform buffer calls per draw.
 
 ## 0.24.6

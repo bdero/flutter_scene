@@ -682,7 +682,9 @@ final class WebGlRenderPass extends RenderPass {
           minFilter,
         );
       }
-      final magFilter = sampler.magFilter == MinMagFilter.nearest
+      final magFilter =
+          sampler.magFilter == MinMagFilter.nearest ||
+              texture.webGl._nearestOnly
           ? web.WebGL2RenderingContext.NEAREST
           : web.WebGL2RenderingContext.LINEAR;
       if (texture.webGl._lastMagFilter != magFilter) {
@@ -724,16 +726,19 @@ final class WebGlRenderPass extends RenderPass {
   }
 
   // The GL minification filter for [sampler]. Mipmap modes apply only when
-  // the texture actually has mip levels; a mipmap MIN_FILTER on a
-  // single-level texture is incomplete in GL and samples black.
+  // the texture actually has mip levels, and only nearest ones when it cannot
+  // be filtered; either mismatch leaves the texture incomplete and it samples
+  // black.
   static int _glMinFilter(SamplerOptions sampler, Texture texture) {
-    final nearest = sampler.minFilter == MinMagFilter.nearest;
+    final nearestOnly = texture.webGl._nearestOnly;
+    final nearest = sampler.minFilter == MinMagFilter.nearest || nearestOnly;
     if (texture.mipLevelCount <= 1) {
       return nearest
           ? web.WebGL2RenderingContext.NEAREST
           : web.WebGL2RenderingContext.LINEAR;
     }
-    return switch ((nearest, sampler.mipFilter)) {
+    final mipFilter = nearestOnly ? MipFilter.nearest : sampler.mipFilter;
+    return switch ((nearest, mipFilter)) {
       (true, MipFilter.nearest) =>
         web.WebGL2RenderingContext.NEAREST_MIPMAP_NEAREST,
       (true, MipFilter.linear) =>
