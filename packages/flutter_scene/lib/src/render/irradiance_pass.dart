@@ -129,6 +129,10 @@ class IrradianceFieldState {
   /// Whether the next blend resets every probe.
   bool get resetPending => _resetPending;
 
+  /// The probes this frame's feed, blend, and filter refresh, 0 for all. The
+  /// scene resolves it from the settings and the adaptive controller.
+  int probeUpdateBudget = 0;
+
   /// The rows [scheduleRows] will return for [probeUpdateBudget], without
   /// advancing the schedule, so a feed that runs before the blend can update
   /// the same probes.
@@ -319,9 +323,7 @@ class IrradianceInjectPass extends RenderGraphPass {
     final sourceHeight = math.max(1, dimensions.height ~/ divisor);
     // The blend advances the schedule after this pass, so both see the same
     // rows.
-    final (startRow, endRow) = state.peekScheduleRows(
-      settings.probeUpdateBudget,
-    );
+    final (startRow, endRow) = state.peekScheduleRows(state.probeUpdateBudget);
     state._sampleFrame = (state._sampleFrame + 1) % 4096;
 
     final spacing = placement.spacing;
@@ -515,7 +517,7 @@ class IrradianceBlendPass extends RenderGraphPass {
     final retention = math
         .pow(settings.hysteresis.clamp(0.0, 0.999), math.min(1.0, dt * 60.0))
         .toDouble();
-    final (startRow, endRow) = state.scheduleRows(settings.probeUpdateBudget);
+    final (startRow, endRow) = state.scheduleRows(state.probeUpdateBudget);
     final reset = state._resetPending ? 1.0 : 0.0;
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();

@@ -4,9 +4,9 @@ import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 
 /// A coarse rendering budget the scene resolves its automatic settings
-/// against: which anti-aliasing `auto` picks and how many scene color
-/// captures a frame may open. Settings given explicitly are never changed by
-/// the tier.
+/// against: which anti-aliasing `auto` picks, how many scene color captures
+/// a frame may open, and how lit surfaces read the irradiance field. Settings
+/// given explicitly are never changed by the tier.
 /// {@category Rendering}
 enum RenderQualityTier {
   /// No anti-aliasing and one shared scene color capture. The cheapest frame
@@ -25,13 +25,18 @@ enum RenderQualityTier {
 ///
 /// [tier] left null resolves by platform (web and Linux desktop render
 /// through OpenGL ES class backends and start at [RenderQualityTier.medium],
-/// everything else at [RenderQualityTier.high]). With [adaptive] on, the
-/// scene measures its own frame period and, when frames overrun
-/// [targetFrameRate], lowers the render scale toward [minRenderScale] and
-/// then, if [adaptiveTiers] allows, steps the tier down at that scale; both
-/// recover while frames keep their budget. The adaptive scale multiplies
-/// `Scene.renderScale`, so an explicit scale stays the ceiling. Each scale
-/// change reallocates the render targets, so the controller steps sparingly.
+/// everything else at [RenderQualityTier.high]). Android keeps the high tier
+/// but reads the irradiance field through its cheap receiver unless [tier]
+/// is set.
+///
+/// With [adaptive] on, the scene measures its own frame period and, when
+/// frames overrun [targetFrameRate], first cheapens global illumination (if
+/// [adaptiveGlobalIllumination] allows), then lowers the render scale toward
+/// [minRenderScale], then, if [adaptiveTiers] allows, steps the tier down at
+/// that scale. All of it recovers while frames keep their budget, global
+/// illumination last. The adaptive scale multiplies `Scene.renderScale`, so
+/// an explicit scale stays the ceiling. Each scale change reallocates the
+/// render targets, so the controller steps sparingly.
 ///
 /// Frame period is measured on the UI thread, which a GPU-bound frame stalls
 /// the same way, so no GPU timer is needed; it cannot see headroom below the
@@ -45,6 +50,7 @@ class RenderQualitySettings {
     this.minRenderScale = 0.5,
     this.maxRenderScale = 1.0,
     this.adaptiveTiers = true,
+    this.adaptiveGlobalIllumination = true,
   });
 
   /// The tier automatic settings resolve against, or null for the platform
@@ -69,6 +75,12 @@ class RenderQualitySettings {
   /// [tier] once the render scale has bottomed out.
   bool adaptiveTiers;
 
+  /// Whether the adaptive controller may cheapen an enabled irradiance field
+  /// before it lowers the render scale: an automatic receiver drops to
+  /// spherical harmonics, then the probes refresh over two and then four
+  /// frames. A partial refresh shows as an update wave under moving light.
+  bool adaptiveGlobalIllumination;
+
   /// The tier the platform starts at when [tier] is null.
   static RenderQualityTier get platformDefaultTier {
     if (kIsWeb) return RenderQualityTier.medium;
@@ -76,6 +88,22 @@ class RenderQualitySettings {
         ? RenderQualityTier.medium
         : RenderQualityTier.high;
   }
+}
+
+/// Whether an automatic irradiance field receiver reads spherical harmonics
+/// at [tier]. [platformDefault] is whether [tier] came from
+/// [RenderQualitySettings.platformDefaultTier], under which Android does too.
+// TODO(gi-tiers): seed this, and the platform default tier, from the GPU
+// family once Flutter GPU reports the adapter; Android covers devices from
+// well under to well over the field's full receiver budget.
+bool automaticReceiverUsesSh(
+  RenderQualityTier tier, {
+  required bool platformDefault,
+}) {
+  if (tier != RenderQualityTier.high) return true;
+  return platformDefault &&
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.android;
 }
 
 /// Frame-period feedback for [RenderQualitySettings.adaptive]: a windowed
@@ -113,6 +141,7 @@ class AdaptiveQualityController {
 
   double _scale = 1.0;
   int _tierSteps = 0;
+  int _giSteps = 0;
   double _windowSeconds = 0;
   int _windowFrames = 0;
   int _cooldown = 0;
@@ -128,6 +157,10 @@ class AdaptiveQualityController {
   /// How many tiers below the resolved tier the controller has stepped.
   int get tierSteps => _tierSteps;
 
+  /// How many global illumination steps the controller has taken. The scene
+  /// maps them to a receiver and probe budget.
+  int get globalIlluminationSteps => _giSteps;
+
   /// The tier to render with, [base] lowered by [tierSteps].
   RenderQualityTier effectiveTier(RenderQualityTier base) {
     final index = (base.index - _tierSteps).clamp(0, base.index);
@@ -138,6 +171,7 @@ class AdaptiveQualityController {
   void reset() {
     _scale = settings.maxRenderScale;
     _tierSteps = 0;
+    _giSteps = 0;
     _windowSeconds = 0;
     _windowFrames = 0;
     _cooldown = 0;
@@ -146,8 +180,14 @@ class AdaptiveQualityController {
     _sinceStepUp = -1;
   }
 
-  /// Feeds one frame period. Returns true when the scale or tier changed.
-  bool update(double frameSeconds) {
+  /// Feeds one frame period. [globalIlluminationSteps] is how many global
+  /// illumination steps the last frame could take, 0 without a field.
+  /// Returns true when the scale, tier, or global illumination changed.
+  bool update(double frameSeconds, {int globalIlluminationSteps = 0}) {
+    final giLimit = settings.adaptiveGlobalIllumination
+        ? globalIlluminationSteps
+        : 0;
+    if (_giSteps > giLimit) _giSteps = giLimit;
     if (frameSeconds <= 0 || frameSeconds >= pauseSeconds) {
       _windowSeconds = 0;
       _windowFrames = 0;
@@ -173,6 +213,12 @@ class AdaptiveQualityController {
         _sinceStepUp = -1;
       }
       _cooldown = _backoff;
+      // On the GPUs that overrun, the field costs more than a scale step
+      // saves, and cheapening it keeps the output size.
+      if (_giSteps < giLimit) {
+        _giSteps++;
+        return true;
+      }
       if (_scale > settings.minRenderScale) {
         _scale = (_scale * _stepDown).clamp(
           settings.minRenderScale,
@@ -206,9 +252,14 @@ class AdaptiveQualityController {
       _sinceStepUp = 0;
       return true;
     }
-    if (_tierSteps > 0 && ++_fastStreak >= tierRecoveryWindows) {
+    if ((_tierSteps > 0 || _giSteps > 0) &&
+        ++_fastStreak >= tierRecoveryWindows) {
       _fastStreak = 0;
-      _tierSteps--;
+      if (_tierSteps > 0) {
+        _tierSteps--;
+      } else {
+        _giSteps--;
+      }
       _sinceStepUp = 0;
       return true;
     }

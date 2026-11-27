@@ -313,9 +313,7 @@ class IrradianceTracePass extends RenderGraphPass {
     );
     _renderMaterialAtlas(shaders, frame);
 
-    final (rowStart, rowEnd) = field.peekScheduleRows(
-      settings.probeUpdateBudget,
-    );
+    final (rowStart, rowEnd) = field.peekScheduleRows(field.probeUpdateBudget);
     final probeCount = layout.probeCount;
     final firstProbe = math.min(probeCount, rowStart * layout.tilesPerRow);
     final scheduledProbes =

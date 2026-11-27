@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_scene/src/render/render_quality.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -152,7 +154,10 @@ enum IrradianceFeed {
 /// How lit surfaces read a scene's irradiance field.
 /// {@category Lighting and environment}
 enum IrradianceFieldReceiver {
-  /// [sphericalHarmonics] at [RenderQualityTier.low], [full] otherwise.
+  /// [sphericalHarmonics] below [RenderQualityTier.high] and on Android
+  /// at its platform default tier, [full] otherwise. With
+  /// [RenderQualitySettings.adaptiveGlobalIllumination], also drops to
+  /// [sphericalHarmonics] when frames overrun.
   automatic,
 
   /// Eight probes per surface point, each weighted by whether it can see the
@@ -242,5 +247,48 @@ class IrradianceProbeGrid {
     origin.x + x * spacing.x,
     origin.y + y * spacing.y,
     origin.z + z * spacing.z,
+  );
+}
+
+/// How many times the adaptive controller may halve a field's probe refresh.
+const int kIrradianceBudgetSteps = 2;
+
+/// What [settings]' field renders with this frame: whether lit surfaces read
+/// spherical harmonics, the probes refreshed per frame (0 for all), and how
+/// many adaptive steps the field offers. [adaptiveSteps] are taken in order,
+/// an automatic receiver reading the full field drops to spherical
+/// harmonics, then the refresh halves [kIrradianceBudgetSteps] times.
+/// [solving] is false while the field is not refreshed at all.
+///
+/// Not exported.
+({bool sphericalHarmonics, int probeUpdateBudget, int adaptiveSteps})
+resolveIrradianceFieldQuality({
+  required GlobalIlluminationSettings settings,
+  required bool automaticSh,
+  required int probeCount,
+  required bool solving,
+  int adaptiveSteps = 0,
+}) {
+  var steps = adaptiveSteps;
+  var sh = switch (settings.receiver) {
+    IrradianceFieldReceiver.full => false,
+    IrradianceFieldReceiver.sphericalHarmonics => true,
+    IrradianceFieldReceiver.automatic => automaticSh,
+  };
+  final receiverStep =
+      settings.receiver == IrradianceFieldReceiver.automatic && !sh;
+  if (receiverStep && steps > 0) {
+    sh = true;
+    steps--;
+  }
+  final budgetSteps = solving ? kIrradianceBudgetSteps : 0;
+  var budget = settings.probeUpdateBudget <= 0
+      ? probeCount
+      : math.min(settings.probeUpdateBudget, probeCount);
+  budget = math.max(1, budget >> math.min(steps, budgetSteps));
+  return (
+    sphericalHarmonics: sh,
+    probeUpdateBudget: budget >= probeCount ? 0 : budget,
+    adaptiveSteps: (receiverStep ? 1 : 0) + budgetSteps,
   );
 }

@@ -2069,6 +2069,8 @@ base class Scene implements SceneGraph {
 
   late final AdaptiveQualityController _adaptiveQuality =
       AdaptiveQualityController(renderQuality);
+  // The adaptive steps the last rendered field offered.
+  int _irradianceAdaptiveSteps = 0;
   final Stopwatch _frameClock = Stopwatch();
 
   /// The quality tier in effect: [RenderQualitySettings.tier] (or the
@@ -2089,6 +2091,8 @@ base class Scene implements SceneGraph {
   // Feeds the adaptive controller one frame period, measured between
   // consecutive frames on this thread (a GPU-bound frame stalls it too).
   void _tickAdaptiveQuality() {
+    final giSteps = _irradianceAdaptiveSteps;
+    _irradianceAdaptiveSteps = 0;
     if (!renderQuality.adaptive) {
       _adaptiveQuality.reset();
       _frameClock.reset();
@@ -2101,7 +2105,7 @@ base class Scene implements SceneGraph {
     final seconds = _frameClock.elapsedMicroseconds / 1e6;
     _frameClock.reset();
     _frameClock.start();
-    _adaptiveQuality.update(seconds);
+    _adaptiveQuality.update(seconds, globalIlluminationSteps: giSteps);
   }
 
   /// Temporal anti-aliasing settings. Active when [antiAliasingMode] is
@@ -5306,6 +5310,20 @@ base class Scene implements SceneGraph {
     _irradianceCameraForward = cameraForward.clone();
     final solve =
         !settings.bakeOnly && !(settings.updateWhenIdleOnly && cameraMoved);
+    final quality = resolveIrradianceFieldQuality(
+      settings: settings,
+      automaticSh: automaticReceiverUsesSh(
+        effectiveRenderQualityTier,
+        platformDefault: renderQuality.tier == null,
+      ),
+      probeCount: _irradianceField.layout!.probeCount,
+      solving: solve,
+      adaptiveSteps: renderQuality.adaptive
+          ? _adaptiveQuality.globalIlluminationSteps
+          : 0,
+    );
+    _irradianceAdaptiveSteps = quality.adaptiveSteps;
+    _irradianceField.probeUpdateBudget = quality.probeUpdateBudget;
 
     if (solve) {
       final shStrip = _crossfadeEnvironment == null || _crossfadeBlend <= 0.0
@@ -5363,12 +5381,7 @@ base class Scene implements SceneGraph {
 
     final atlas = _irradianceField.sampledAtlas;
     if (atlas == null) return null;
-    final sh = switch (settings.receiver) {
-      IrradianceFieldReceiver.full => false,
-      IrradianceFieldReceiver.sphericalHarmonics => true,
-      IrradianceFieldReceiver.automatic =>
-        effectiveRenderQualityTier == RenderQualityTier.low,
-    };
+    final sh = quality.sphericalHarmonics;
     if (sh) graph.addPass(IrradianceShPass(state: _irradianceField));
     return IrradianceFieldBinding(
       atlas: atlas,
