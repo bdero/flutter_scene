@@ -1,7 +1,8 @@
 // Frame time of the irradiance_field room with the field off, read through
-// the full receiver, and read through the spherical-harmonic receiver, all
-// on the screen-space feed. One frame is encode start to the last GPU
-// completion. Run on a device, for example
+// the full receiver, read through the spherical-harmonic receiver, with the
+// receiver the platform picks, and with the adaptive controller cheapening a
+// full receiver at 30 fps, all on the screen-space feed. One frame is encode
+// start to the last GPU completion. Run on a device, for example
 // `flutter test integration_test/irradiance_receiver_cost_test.dart -d <id>`
 // (add `--flavor vulkan` on Android).
 import 'dart:convert';
@@ -29,13 +30,28 @@ void main() {
     final room = kSmokeScenes.firstWhere((s) => s.id == 'irradiance_field');
     final report = <String, Object?>{};
     for (var round = 0; round < 3; round++) {
-      for (final mode in const ['gi_off', 'full', 'sh']) {
+      for (final mode in const [
+        'gi_off',
+        'full',
+        'sh',
+        'automatic',
+        'adaptive',
+      ]) {
         final setup = room.setup();
         final scene = setup.scene
           ..globalIllumination.enabled = mode != 'gi_off'
-          ..globalIllumination.receiver = mode == 'sh'
-              ? IrradianceFieldReceiver.sphericalHarmonics
-              : IrradianceFieldReceiver.full;
+          ..globalIllumination.receiver = switch (mode) {
+            'sh' => IrradianceFieldReceiver.sphericalHarmonics,
+            'automatic' || 'adaptive' => IrradianceFieldReceiver.automatic,
+            _ => IrradianceFieldReceiver.full,
+          };
+        if (mode == 'adaptive') {
+          scene.renderQuality
+            ..tier = RenderQualityTier.high
+            ..adaptive = true
+            ..targetFrameRate = 30;
+        }
+        final frames = mode == 'adaptive' ? _frames * 3 : _frames;
         final watch = Stopwatch()..start();
         var encodeStart = 0;
         var completed = -1;
@@ -66,7 +82,7 @@ void main() {
             key.currentContext!.findRenderObject() as RenderRepaintBoundary;
         rendererSubmissions.addCompletionListener(onCompleted);
         final ms = <double>[];
-        for (var i = 0; i < _warmup + _frames; i++) {
+        for (var i = 0; i < _warmup + frames; i++) {
           completed = -1;
           boundary.markNeedsPaint();
           await tester.pump(const Duration(milliseconds: 16));
@@ -74,6 +90,8 @@ void main() {
           if (i < _warmup || completed < 0) continue;
           ms.add((completed - encodeStart) / 1000.0);
         }
+        // The adaptive run settles first, so its median is the last window.
+        if (mode == 'adaptive') ms.removeRange(0, ms.length - 30);
         rendererSubmissions.removeCompletionListener(onCompleted);
         final passes = [
           for (final pass in scene.renderStats.latest!.views.first.passes)
@@ -85,7 +103,9 @@ void main() {
         runs.add({'median_ms': ms[ms.length ~/ 2], 'passes': passes.length});
         // ignore: avoid_print
         print(
-          'receiver run $mode round=$round median_ms=${ms[ms.length ~/ 2]}',
+          'receiver run $mode round=$round median_ms=${ms[ms.length ~/ 2]} '
+          'sh=${passes.contains('IrradianceShPass')} '
+          'scale=${scene.adaptiveRenderScale.toStringAsFixed(2)}',
         );
       }
     }
