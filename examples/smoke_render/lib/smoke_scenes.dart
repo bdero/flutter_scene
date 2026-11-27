@@ -45,6 +45,7 @@ class SmokeScene {
     this.preload,
     this.paint,
     this.warmupFrames = 0,
+    this.fixedStep,
     this.requiredFrames = 1,
     this.fullCoverage = false,
     this.colorPassCounters,
@@ -71,10 +72,14 @@ class SmokeScene {
   /// time instead of resolving in one frame.
   ///
   /// The capture loop always pumps its own settling frames, so this only
-  /// raises the count. It is deterministic despite running on wall-clock
-  /// time because every temporal blend here clamps its rate exponent at a
-  /// 60 Hz cadence, and the smoke lanes render well below that.
+  /// raises the count. Pair it with [fixedStep] when the feature blends at a
+  /// rate that follows the frame delta.
   final int warmupFrames;
+
+  /// The delta each frame ticks the scene by, in seconds, in place of the
+  /// wall clock, so a blend that follows the frame delta converges the same
+  /// way however fast the lane renders.
+  final double? fixedStep;
 
   /// Frames every lane renders before the capture, for a scene that changes
   /// after its first frame. Unlike [warmupFrames], this holds on the Android
@@ -1355,6 +1360,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     // The field converges over frames, and its first frame has no scene-color
     // history to gather from.
     warmupFrames: 45,
+    fixedStep: 1.0 / 60.0,
   ),
   // The same room read through the cheap spherical-harmonic receiver, which
   // has no visibility test, so light reaches past the occluder.
@@ -1362,6 +1368,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     'irradiance_field_sh',
     () => _irradianceRoom(IrradianceFieldReceiver.sphericalHarmonics),
     warmupFrames: 45,
+    fixedStep: 1.0 / 60.0,
   ),
   SmokeScene(
     'taa',
@@ -3684,6 +3691,8 @@ class _SmokePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final step = smoke.fixedStep;
+    if (step != null) scene.update(step);
     final custom = smoke.paint;
     if (custom != null) {
       custom(scene, camera, canvas, size);

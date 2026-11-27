@@ -41,7 +41,6 @@ class IrradianceFieldState {
   bool _historyIsA = true;
   bool _resetPending = true;
   int _updateCursor = 0;
-  int _lastUpdateMicros = 0;
 
   /// The atlas the lit shader samples, or null before the first update.
   gpu.Texture? get sampledAtlas => _sampled;
@@ -112,15 +111,14 @@ class IrradianceFieldState {
     return _sampled != null;
   }
 
-  /// Seconds since the previous update, clamped so a stall or a first frame
-  /// cannot drive the retention exponent somewhere useless.
-  double consumeDeltaSeconds() {
-    final now = DateTime.now().microsecondsSinceEpoch;
-    final previous = _lastUpdateMicros;
-    _lastUpdateMicros = now;
-    if (previous == 0) return 1.0 / 60.0;
-    return ((now - previous) / 1e6).clamp(1.0 / 240.0, 1.0 / 10.0);
-  }
+  /// The scene's tick delta, which the blend's retention follows, so a scene
+  /// driven by `Scene.update` with a fixed step blends repeatably.
+  double frameSeconds = 1.0 / 60.0;
+
+  // Clamped so a stall or a first frame cannot drive the retention exponent
+  // somewhere useless.
+  double get _blendSeconds =>
+      frameSeconds <= 0.0 ? 1.0 / 60.0 : frameSeconds.clamp(1.0 / 240.0, 0.1);
 
   /// Whether the traced feed wrote this frame's per-probe state rows into
   /// [sampledAtlas], which the filter then leaves alone.
@@ -510,10 +508,10 @@ class IrradianceBlendPass extends RenderGraphPass {
     final target = state._writeHistory;
     final history = state._readHistory;
 
-    final dt = state.consumeDeltaSeconds();
-    // Retention is authored at 60 Hz and raised to this frame's real service
-    // interval, so a throttled frame rate converges at the same wall-clock
-    // rate instead of blending in more noise per frame.
+    final dt = state._blendSeconds;
+    // Retention is authored at 60 Hz and raised to the tick delta, so a
+    // faster frame rate converges no faster in wall-clock time. The exponent
+    // stops at 1, so a slow frame keeps a 60 Hz frame's history.
     final retention = math
         .pow(settings.hysteresis.clamp(0.0, 0.999), math.min(1.0, dt * 60.0))
         .toDouble();
