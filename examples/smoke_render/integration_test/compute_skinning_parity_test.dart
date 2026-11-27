@@ -1,7 +1,8 @@
 // Proves compute skinning renders like vertex shader skinning. Renders a posed
 // dash.glb with a shadow-casting light, skinned in the vertex shader, then by
 // the compute pass, then in the vertex shader again (the frame-to-frame noise
-// the compute frame is held to), and compares the frames.
+// the compute frame is held to), and compares the frames. Then checks a scene
+// that needs no compute skinning leaves it off.
 //
 // Not part of the smoke matrix. Needs compute (Flutter 3.53 or newer on Metal
 // or Vulkan) and skips elsewhere. Run on macOS:
@@ -110,6 +111,7 @@ void main() {
 
     Future<Uint8List> render({required bool compute}) async {
       computeSkinningEnabled = compute;
+      debugForceComputeSkinning = compute;
       for (var i = 0; i < 3; i++) {
         boundary.markNeedsPaint();
         await tester.pump(const Duration(milliseconds: 16));
@@ -131,7 +133,22 @@ void main() {
     final before = await render(compute: false);
     final computed = await render(compute: true);
     final after = await render(compute: false);
+
+    // Allowed but not needed (no traced irradiance feed), it stays off.
     computeSkinningEnabled = true;
+    debugForceComputeSkinning = false;
+    for (var i = 0; i < 3; i++) {
+      boundary.markNeedsPaint();
+      await tester.pump(const Duration(milliseconds: 16));
+      await _settleGpu(tester);
+    }
+    expect(
+      scene.renderScene.items.where((item) => item.preSkinnedVertices != null),
+      isEmpty,
+      reason: 'nothing in the scene needs compute skinning',
+    );
+    computeSkinningEnabled = true;
+    debugForceComputeSkinning = false;
 
     ({int differing, int maxDelta}) compare(Uint8List a, Uint8List b) {
       var differing = 0;
