@@ -488,8 +488,11 @@ jobs:
           name: ${{ inputs.argos_prefix }}smoke-web-webgpu-frames
           path: frames/webgpu
       - run: pip install --quiet pillow numpy
+      # The irradiance rooms trace their field where compute exists and fall
+      # back to the screen-space feed where it does not, so WebGPU and WebGL2
+      # light them differently by design.
       - name: Compare WebGPU against WebGL2
-        run: python3 tools/webgpu_smoke/compare_frames.py frames/webgl2 frames/webgpu --diff-dir frames/diff
+        run: python3 tools/webgpu_smoke/compare_frames.py frames/webgl2 frames/webgpu --diff-dir frames/diff --skip irradiance_field.png --skip irradiance_field_sh.png
       - name: Keep the differences
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
@@ -535,8 +538,10 @@ jobs:
       # different TAA history on those edges. Make the capture frame
       # deterministic, then drop the allowance; the hue check still guards
       # the resolve on every lane.
+      # The irradiance rooms trace their field on Vulkan, which has compute,
+      # and fall back to the screen-space feed on GLES.
       - name: Compare Vulkan against GLES
-        run: python3 tools/webgpu_smoke/compare_frames.py frames/gles frames/vulkan --diff-dir frames/diff --allow prebaked_ibl.png=2.0 --allow taa.png=1.5
+        run: python3 tools/webgpu_smoke/compare_frames.py frames/gles frames/vulkan --diff-dir frames/diff --allow prebaked_ibl.png=2.0 --allow taa.png=1.5 --skip irradiance_field.png --skip irradiance_field_sh.png
       - name: Keep the differences
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7

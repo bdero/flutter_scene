@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+// ignore: implementation_imports
 import 'package:flutter_scene/src/render/frame_transients.dart'
     show rendererSubmissions;
 import 'package:flutter_test/flutter_test.dart';
@@ -34,8 +36,11 @@ void main() {
     testWidgets('$id renders identically at any frame cadence', (tester) async {
       await tester.pumpWidget(const SizedBox.expand());
       await tester.pump();
-      await tester.runAsync(() => Scene.preload(smaa: true));
       final smoke = kSmokeScenes.firstWhere((s) => s.id == id);
+      await tester.runAsync(() async {
+        await Scene.preload(smaa: true);
+        await smoke.preload?.call();
+      });
 
       ByteData? first;
       for (var run = 0; run < _runs.length; run++) {
@@ -90,7 +95,8 @@ void main() {
         }
         // ignore: avoid_print
         print(
-          'determinism $id run=$run wait=${_runs[run].inMilliseconds}ms '
+          'determinism $id compute=${gpu.supportsCompute} run=$run '
+          'wait=${_runs[run].inMilliseconds}ms '
           'frameMs=${frameMs.toStringAsFixed(1)} '
           'differing=$differing maxDelta=$maxDelta',
         );
