@@ -1,6 +1,6 @@
 ## 0.25.0
 
-* glTF animations play `STEP` and `CUBICSPLINE` samplers as authored instead of as linear, whether imported at runtime or preprocessed into a `.fscene` document, so steps hold each keyframe and cubic splines follow their tangents.
+* glTF animations play `STEP` and `CUBICSPLINE` samplers as authored instead of as linear, whether imported at runtime or preprocessed into a `.fscene` document, so steps hold each keyframe and cubic splines follow their tangents. A skinned mesh's baked pose bounds follow those curves too, including where a cubic spline swings past its keyframes, so the mesh isn't culled while part of it is on screen.
 * `PhysicallyBasedMaterial.parallaxScale` adds parallax occlusion mapping, marching a height field carried in `normalTexture`'s alpha. `parallaxMaxSteps` caps the march, `parallaxShadowStrength` lets the relief shadow itself from the sun, and `parallaxSilhouette` (`ParallaxSilhouette`) cuts the outline, depth prepass, and shadows along the relief. Its shaders load the first time a material uses it, so other materials pay nothing.
 * `Scene.preload(parallaxOcclusion: true)` loads the parallax shaders up front, and `material_features: {parallax_occlusion: false}` under the hook user-defines leaves them out of the build.
 * `buildTextures(parallaxHeights:)` packs a height image into a normal map's alpha at cook time.

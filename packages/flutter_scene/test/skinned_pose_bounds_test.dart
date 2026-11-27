@@ -45,6 +45,67 @@ void main() {
       expect(bounds.minY, 0);
       expect(bounds.maxY, 4);
     });
+
+    // A cubic spline can swing past its keyframes, so the bounds must follow
+    // the curve between them.
+    test('follow a cubic spline between its keyframes', () {
+      final bounds = boundsOf(
+        _skinnedGlb(
+          animations: [
+            [
+              (
+                node: 2,
+                path: 'translation',
+                interpolation: 'CUBICSPLINE',
+                times: [0, 1],
+                // Both keyframes sit at 0, but the child leaves the first
+                // rising 8 per second and reaches the second falling 8 per
+                // second, which lifts it 2 halfway through.
+                output: [
+                  0, 0, 0, 0, 0, 0, 0, 8, 0, //
+                  0, -8, 0, 0, 0, 0, 0, 0, 0, //
+                ],
+              ),
+            ],
+          ],
+        ),
+      );
+      expect(bounds.minY, 0);
+      expect(bounds.maxY, closeTo(3, 1e-6));
+    });
+
+    // A step holds its keyframe until the next one while other channels keep
+    // moving, so the bounds must cover the moment just before it jumps.
+    test('cover the pose just before a step', () {
+      final bounds = boundsOf(
+        _skinnedGlb(
+          animations: [
+            [
+              // The root joint jumps 10 along x at one second.
+              (
+                node: 1,
+                path: 'translation',
+                interpolation: 'STEP',
+                times: [0, 1],
+                output: [0, 0, 0, 10, 0, 0],
+              ),
+              // Its child slides 5 back along x over that second.
+              (
+                node: 2,
+                path: 'translation',
+                interpolation: 'LINEAR',
+                times: [0, 1],
+                output: [0, 0, 0, -5, 0, 0],
+              ),
+            ],
+          ],
+        ),
+      );
+      // Just before the jump, the child has slid back while the root has not
+      // moved yet.
+      expect(bounds.minX, -5);
+      expect(bounds.maxX, 11);
+    });
   });
 
   // The offline importer stores the bounds in the skinned node's space too, so
@@ -79,23 +140,111 @@ void main() {
   }, skip: noGpu);
 }
 
+// One sampler driving a translation or scale of a joint: node 1, the root
+// joint, or node 2, its child.
+typedef _Track = ({
+  int node,
+  String path,
+  String interpolation,
+  List<double> times,
+  List<double> output,
+});
+
 // A triangle skinned to two joints. The root joint moves the first two
 // vertices and its child the third. The child rests [restY] up, and each of
-// [clips] moves it up from 0 to its value over one second. The skinned node
-// and the skeleton hang under a node 2 along z, and the skinned node sits 10
-// along x, which glTF ignores for a skinned mesh.
-Uint8List _skinnedGlb({List<double> clips = const [5], double restY = 0}) {
+// [clips] moves it up from 0 to its value over one second, unless
+// [animations] gives each animation's tracks instead. The skinned node and the
+// skeleton hang under a node 2 along z, and the skinned node sits 10 along x,
+// which glTF ignores for a skinned mesh.
+Uint8List _skinnedGlb({
+  List<double> clips = const [5],
+  double restY = 0,
+  List<List<_Track>>? animations,
+}) {
   final bin = BytesBuilder();
-  void floats(List<double> values) =>
-      bin.add(Float32List.fromList(values).buffer.asUint8List());
-  floats([0, 0, 0, 1, 0, 0, 0, 1, 0]);
-  floats([0, 0, 1, 0, 0, 1, 0, 0, 1]);
-  bin.add([0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0]);
-  floats([1, 0, 0, 0, 0.75, 0.25, 0, 0, 1, 0, 0, 0]);
-  floats([0, 1]);
-  for (final clip in clips) {
-    floats([0, 0, 0, 0, clip, 0]);
+  final bufferViews = <Map<String, Object>>[];
+  final accessors = <Map<String, Object>>[];
+  // Appends [bytes] as a buffer view of their own, read by a new accessor
+  // with [fields], and returns the accessor's index.
+  int accessor(List<int> bytes, Map<String, Object> fields) {
+    bufferViews.add({
+      'buffer': 0,
+      'byteOffset': bin.length,
+      'byteLength': bytes.length,
+    });
+    bin.add(bytes);
+    accessors.add({'bufferView': bufferViews.length - 1, ...fields});
+    return accessors.length - 1;
   }
+
+  List<int> floats(List<double> values) =>
+      Float32List.fromList(values).buffer.asUint8List();
+  accessor(floats([0, 0, 0, 1, 0, 0, 0, 1, 0]), {
+    'componentType': 5126,
+    'count': 3,
+    'type': 'VEC3',
+    'min': [0, 0, 0],
+    'max': [1, 1, 0],
+  });
+  accessor(floats([0, 0, 1, 0, 0, 1, 0, 0, 1]), {
+    'componentType': 5126,
+    'count': 3,
+    'type': 'VEC3',
+  });
+  accessor(
+    [0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0],
+    {'componentType': 5121, 'count': 3, 'type': 'VEC4'},
+  );
+  accessor(floats([1, 0, 0, 0, 0.75, 0.25, 0, 0, 1, 0, 0, 0]), {
+    'componentType': 5126,
+    'count': 3,
+    'type': 'VEC4',
+  });
+
+  final tracks =
+      animations ??
+      [
+        for (final clip in clips)
+          [
+            (
+              node: 2,
+              path: 'translation',
+              interpolation: 'LINEAR',
+              times: const [0.0, 1.0],
+              output: [0.0, 0, 0, 0, clip, 0],
+            ),
+          ],
+      ];
+  final gltfAnimations = [
+    for (final animation in tracks)
+      {
+        'channels': [
+          for (var i = 0; i < animation.length; i++)
+            {
+              'sampler': i,
+              'target': {'node': animation[i].node, 'path': animation[i].path},
+            },
+        ],
+        'samplers': [
+          for (final track in animation)
+            {
+              'input': accessor(floats(track.times), {
+                'componentType': 5126,
+                'count': track.times.length,
+                'type': 'SCALAR',
+                'min': [track.times.first],
+                'max': [track.times.last],
+              }),
+              'output': accessor(floats(track.output), {
+                'componentType': 5126,
+                'count': track.output.length ~/ 3,
+                'type': 'VEC3',
+              }),
+              'interpolation': track.interpolation,
+            },
+        ],
+      },
+  ];
   final json = {
     'asset': {'version': '2.0'},
     'scene': 0,
@@ -140,59 +289,11 @@ Uint8List _skinnedGlb({List<double> clips = const [5], double restY = 0}) {
         ],
       },
     ],
-    'animations': [
-      for (var clip = 0; clip < clips.length; clip++)
-        {
-          'channels': [
-            {
-              'sampler': 0,
-              'target': {'node': 2, 'path': 'translation'},
-            },
-          ],
-          'samplers': [
-            {'input': 4, 'output': 5 + clip},
-          ],
-        },
-    ],
-    'accessors': [
-      {
-        'bufferView': 0,
-        'componentType': 5126,
-        'count': 3,
-        'type': 'VEC3',
-        'min': [0, 0, 0],
-        'max': [1, 1, 0],
-      },
-      {'bufferView': 1, 'componentType': 5126, 'count': 3, 'type': 'VEC3'},
-      {'bufferView': 2, 'componentType': 5121, 'count': 3, 'type': 'VEC4'},
-      {'bufferView': 3, 'componentType': 5126, 'count': 3, 'type': 'VEC4'},
-      {
-        'bufferView': 4,
-        'componentType': 5126,
-        'count': 2,
-        'type': 'SCALAR',
-        'min': [0],
-        'max': [1],
-      },
-      for (var clip = 0; clip < clips.length; clip++)
-        {
-          'bufferView': 5 + clip,
-          'componentType': 5126,
-          'count': 2,
-          'type': 'VEC3',
-        },
-    ],
-    'bufferViews': [
-      {'buffer': 0, 'byteOffset': 0, 'byteLength': 36},
-      {'buffer': 0, 'byteOffset': 36, 'byteLength': 36},
-      {'buffer': 0, 'byteOffset': 72, 'byteLength': 12},
-      {'buffer': 0, 'byteOffset': 84, 'byteLength': 48},
-      {'buffer': 0, 'byteOffset': 132, 'byteLength': 8},
-      for (var clip = 0; clip < clips.length; clip++)
-        {'buffer': 0, 'byteOffset': 140 + 24 * clip, 'byteLength': 24},
-    ],
+    'animations': gltfAnimations,
+    'accessors': accessors,
+    'bufferViews': bufferViews,
     'buffers': [
-      {'byteLength': 140 + 24 * clips.length},
+      {'byteLength': bin.length},
     ],
   };
   return _glb(utf8.encode(jsonEncode(json)), bin.takeBytes());
