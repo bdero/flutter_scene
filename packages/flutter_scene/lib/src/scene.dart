@@ -2873,8 +2873,12 @@ base class Scene implements SceneGraph {
     // The frame draws from here on, so the joint matrices the tick computed
     // (here or in update()) upload now, not on frames held above.
     renderScene.flushJointUploads();
-    // Skinned once here for every pass that draws the frame.
-    ComputeSkinning.instance.dispatch(renderScene);
+    // Skinned once here for every pass that draws the frame, when the traced
+    // feed needs the posed vertices.
+    ComputeSkinning.instance.dispatch(
+      renderScene,
+      needed: _wantsTracedIrradiance,
+    );
 
     // A paced frame renders nothing, so the adaptive controller measures the
     // period between rendered frames rather than the vsync it ticks at.

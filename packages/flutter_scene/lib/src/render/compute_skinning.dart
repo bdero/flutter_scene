@@ -10,15 +10,24 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
 import 'package:flutter_scene/src/skin.dart';
 
-/// Whether skinned meshes are skinned by a compute pass where the device
-/// supports compute. Off draws every skinned mesh through the vertex shader,
-/// which renders the same.
+/// Whether skinned meshes may be skinned by a compute pass. Off draws every
+/// skinned mesh through the vertex shader, which renders the same.
 @visibleForTesting
 bool computeSkinningEnabled = true;
 
-/// Skins every skinned render item once per frame with a compute pass, so the
-/// shadow, prepass, and color passes draw the result instead of each skinning
-/// in its vertex shader.
+/// Skins in compute even when no feature needs the result, so a test can
+/// exercise and time the compute path.
+@visibleForTesting
+bool debugForceComputeSkinning = false;
+
+/// Skins a scene's skinned render items once per frame with a compute pass,
+/// when a feature needs the posed vertices on the GPU. The traced irradiance
+/// feed does, to trace skinned meshes; the shadow, prepass, and color passes
+/// then draw the result instead of each skinning in its vertex shader.
+///
+/// On its own it is slower than vertex skinning (a Mali-G57 loses 4 to 11
+/// percent of frame time at 5 to 10 characters, and an Apple M3 Max breaks
+/// even), so a frame without such a feature skins in the vertex shader.
 ///
 /// Runs only on a device with compute (Metal and Vulkan on Flutter 3.53 or
 /// newer, and WebGPU), once the engine's compute shaders load. Until then,
@@ -27,6 +36,9 @@ bool computeSkinningEnabled = true;
 /// TODO(compute-skinning): skin morphed skinned meshes and levels of detail,
 /// skip items no pass draws this frame, and drop the joints texture upload
 /// when nothing reads it (the velocity pass still skins in its vertex shader).
+/// TODO(compute-skinning-perf): find why a dispatch costs about 0.45 ms of
+/// GPU per 6k-vertex mesh on a Mali-G57, far over its instruction count,
+/// before skinning in compute for its own sake.
 class ComputeSkinning {
   ComputeSkinning._();
 
@@ -46,20 +58,25 @@ class ComputeSkinning {
 
   final Expando<_SkinBuffers> _skinBuffers = Expando('computeSkinJoints');
   final Expando<_ItemOutputs> _itemOutputs = Expando('computeSkinOutputs');
+  final Expando<bool> _skinnedLastFrame = Expando('computeSkinnedLastFrame');
 
   // The skinning parameters, reused every dispatch since emplace copies them.
   final Uint32List _info = Uint32List(4);
 
-  /// Skins [scene]'s skinned items for this frame and records each result on
-  /// its item ([RenderItem.preSkinnedVertices]), or clears them all when it
-  /// cannot. Call after the joint matrices are computed and before any pass
-  /// draws.
-  void dispatch(RenderScene scene) {
-    final shaders = _readyShaders();
+  /// Skins [scene]'s skinned items for this frame when [needed], recording
+  /// each result on its item ([RenderItem.preSkinnedVertices]), or clears
+  /// them all when it is not needed or cannot run. Call after the joint
+  /// matrices are computed and before any pass draws.
+  void dispatch(RenderScene scene, {required bool needed}) {
+    final shaders = needed || debugForceComputeSkinning
+        ? _readyShaders()
+        : null;
     if (shaders == null) {
-      _clear(scene);
+      if (_skinnedLastFrame[scene] ?? false) _clear(scene);
+      _skinnedLastFrame[scene] = false;
       return;
     }
+    _skinnedLastFrame[scene] = true;
     _frame++;
     final slot = _frame % _ringSize;
     gpu.CommandBuffer? commandBuffer;

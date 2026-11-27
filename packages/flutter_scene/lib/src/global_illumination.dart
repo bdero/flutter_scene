@@ -139,7 +139,8 @@ enum IrradianceFeed {
   ///
   /// Traces static and skinned meshes with their base color and emissive
   /// textures, the sun, and punctual lights. Morph targets and rect area
-  /// lights are not traced yet.
+  /// lights are not traced yet. While it runs, skinned meshes are skinned
+  /// once per frame in a compute pass, which their draws reuse.
   rayTraced,
 }
 

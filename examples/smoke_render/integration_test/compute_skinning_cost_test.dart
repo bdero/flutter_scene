@@ -86,6 +86,7 @@ void main() {
       }
     }
     computeSkinningEnabled = true;
+    debugForceComputeSkinning = false;
     _report(binding, report);
   });
 }
@@ -99,6 +100,7 @@ Future<Map<String, Object?>> _measure(
 }) async {
   final compute = mode == _Mode.compute;
   computeSkinningEnabled = compute;
+  debugForceComputeSkinning = compute;
   final scene = Scene();
   if (shadows) {
     scene.directionalLight = DirectionalLight(
