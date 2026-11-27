@@ -248,6 +248,10 @@ jobs:
           name: android-diagnostics-${{ inputs.argos_prefix }}android_${{ matrix.backend }}
           path: examples/smoke_render/build/android-diagnostics
           if-no-files-found: ignore
+      # TODO(taa-golden): Android settles a varying number of frames before
+      # capture, so taa's accumulated history drifts between runs. It stays
+      # out of the Android Argos uploads until the capture frame is
+      # deterministic; parity still compares it.
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
@@ -271,7 +275,7 @@ jobs:
             fi
           fi
           status=0
-          out=$(npx --yes @argos-ci/cli upload build/smoke --ignore "**/ssgi.png" --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || status=$?
+          out=$(npx --yes @argos-ci/cli upload build/smoke --ignore "**/ssgi.png" --ignore "**/taa.png" --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
           # The grep misses when the upload printed no URL; that miss must not
           # fail the step, which runs with pipefail on windows.
