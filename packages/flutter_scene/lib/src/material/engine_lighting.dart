@@ -238,11 +238,21 @@ class EngineLightingUniforms {
       fragInfo[gi + 9] = layout.resolution.y;
       fragInfo[gi + 10] = layout.resolution.z;
       fragInfo[gi + 11] = layout.tilesPerRow.toDouble();
-      fragInfo[gi + 12] = layout.irradianceOriginY.toDouble();
-      fragInfo[gi + 13] = layout.depthOriginY.toDouble();
-      fragInfo[gi + 14] = 1.0 / layout.atlasWidth;
-      fragInfo[gi + 15] = 1.0 / layout.atlasHeight;
-      fragInfo[gi + 16] = field.visibility;
+      if (field.shTexture != null) {
+        // The cheap receiver reads its own texture, which a negative
+        // gi_atlas.x selects. The visibility test does not run.
+        fragInfo[gi + 12] = -layout.shSlicesPerRow.toDouble();
+        fragInfo[gi + 13] = layout.shBlockHeight.toDouble();
+        fragInfo[gi + 14] = 1.0 / layout.shWidth;
+        fragInfo[gi + 15] = 1.0 / layout.shHeight;
+        fragInfo[gi + 16] = 0.0;
+      } else {
+        fragInfo[gi + 12] = layout.irradianceOriginY.toDouble();
+        fragInfo[gi + 13] = layout.depthOriginY.toDouble();
+        fragInfo[gi + 14] = 1.0 / layout.atlasWidth;
+        fragInfo[gi + 15] = 1.0 / layout.atlasHeight;
+        fragInfo[gi + 16] = field.visibility;
+      }
       // The visibility bias is authored relative to the cell edge, so one
       // default holds across scene scales.
       fragInfo[gi + 17] = field.visibilityBias * placement.minCellEdge;
@@ -632,7 +642,10 @@ class EngineLightingUniforms {
       final field = lighting.irradianceField;
       pass.bindTexture(
         shader.cachedUniformSlot('irradiance_field'),
-        field?.atlas ?? lighting.diffuseShTexture ?? env.diffuseShTexture,
+        field?.shTexture ??
+            field?.atlas ??
+            lighting.diffuseShTexture ??
+            env.diffuseShTexture,
         sampler: field != null ? _clampLinearSampler : _nearestClampSampler,
       );
     }

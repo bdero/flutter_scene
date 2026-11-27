@@ -1,3 +1,4 @@
+import 'package:flutter_scene/src/render/render_quality.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Global illumination settings for a [Scene].
@@ -5,7 +6,7 @@ import 'package:vector_math/vector_math.dart';
 /// A world-space grid of irradiance probes caches bounce light, so indirect
 /// light persists for surfaces the camera is not currently looking at and
 /// colored bleed reads correctly. Probes are filled by [feed], either by
-/// scattering the previous frame's shaded scene color into the grid or by
+/// gathering the previous frame's shaded scene color into the grid or by
 /// tracing rays from each probe, so lighting changes converge over a few
 /// frames rather than snapping.
 ///
@@ -26,7 +27,7 @@ class GlobalIlluminationSettings {
   ///
   /// Under the screen-space [feed], enabling it forces the depth prepass with
   /// normals on, the same way [AmbientOcclusionSettings.enabled] forces the
-  /// prepass, because the injection scatter reads both. The traced feed
+  /// prepass, because the screen-space gather reads both. The traced feed
   /// needs neither.
   bool enabled = false;
 
@@ -91,9 +92,13 @@ class GlobalIlluminationSettings {
   /// How the field learns the scene's light. See [IrradianceFeed].
   IrradianceFeed feed = IrradianceFeed.screenSpace;
 
-  /// Resolution of the downsampled buffer the screen-space injection
-  /// scatters from. Each texel becomes one scattered sample per frame.
-  /// Unused by the traced feed.
+  // TODO(gi-sh-receiver): carry this through the scene document and the
+  // editor's environment settings.
+  /// How lit surfaces read the field. See [IrradianceFieldReceiver].
+  IrradianceFieldReceiver receiver = IrradianceFieldReceiver.automatic;
+
+  /// The screen sample density the screen-space feed's weights stand for.
+  /// See [IrradianceInjectionResolution]. Unused by the traced feed.
   IrradianceInjectionResolution injectionResolution =
       IrradianceInjectionResolution.eighth;
 
@@ -128,8 +133,8 @@ class GlobalIlluminationSettings {
 /// How a scene's irradiance field is fed.
 /// {@category Lighting and environment}
 enum IrradianceFeed {
-  /// Scatters the previous frame's shaded screen into the probes. Works on
-  /// every backend, and sees only what is on screen.
+  /// Gathers samples of the previous frame's shaded screen into the probes.
+  /// Works on every backend, and sees only what is on screen.
   screenSpace,
 
   /// Traces rays from every probe against the scene in a compute pass, so
@@ -142,6 +147,24 @@ enum IrradianceFeed {
   /// lights are not traced yet. While it runs, skinned meshes are skinned
   /// once per frame in a compute pass, which their draws reuse.
   rayTraced,
+}
+
+/// How lit surfaces read a scene's irradiance field.
+/// {@category Lighting and environment}
+enum IrradianceFieldReceiver {
+  /// [sphericalHarmonics] at [RenderQualityTier.low], [full] otherwise.
+  automatic,
+
+  /// Eight probes per surface point, each weighted by whether it can see the
+  /// point, which keeps light from leaking through walls. About 24 texture
+  /// reads per lit pixel.
+  full,
+
+  /// Each probe reduced to linear spherical harmonics after it updates, read
+  /// with six filtered texture reads and no visibility test, for mobile and
+  /// low-end GPUs. Light leaks through walls thinner than about one probe
+  /// spacing, and retired probes borrow their neighbours' light.
+  sphericalHarmonics,
 }
 
 /// Where a scene's irradiance volume sits.
@@ -160,10 +183,13 @@ enum IrradianceVolumeMode {
   component,
 }
 
-/// Resolution of the buffer screen-space irradiance injection scatters from,
-/// as a fraction of the render target. Each texel becomes one scattered
-/// sample per frame, so a coarser buffer costs proportionally less vertex
-/// work and converges proportionally slower.
+// TODO(gi-gather): deprecate this, or repurpose it as the samples each probe
+// gathers per frame.
+/// The screen sample density the screen-space feed's weights stand for, as a
+/// fraction of the render target. Each probe gathers a fixed 64 samples per
+/// frame whatever this is, so it no longer changes the feed's cost. A finer
+/// density weights each sample more, so a direction the screen barely covers
+/// stops falling back to the environment sooner.
 /// {@category Lighting and environment}
 enum IrradianceInjectionResolution {
   /// Half the render target on each axis.

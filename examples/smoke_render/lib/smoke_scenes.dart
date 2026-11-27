@@ -1069,6 +1069,73 @@ void _paintThroughExternalTarget(
   return (scene: built.scene, left: eyes.left, right: eyes.right);
 }
 
+({Scene scene, Camera camera}) _irradianceRoom(
+  IrradianceFieldReceiver receiver,
+) {
+  final scene = Scene();
+  // Nearly no environment light, so the colored term is the field's.
+  scene.environmentIntensity = 0.02;
+  scene.exposure = 1.3;
+  scene.globalIllumination
+    ..enabled = true
+    ..volumeMode = IrradianceVolumeMode.fitScene
+    ..resolution = vm.Vector3(10, 6, 10)
+    ..intensity = 1.0
+    ..hysteresis = 0.85
+    ..visibility = 0.5
+    ..injectionResolution = IrradianceInjectionResolution.quarter
+    ..receiver = receiver;
+  scene.add(
+    _directionalLightNode(
+      vm.Vector3(0.1, -0.85, -0.5),
+      DirectionalLight(intensity: 1.6),
+    ),
+  );
+  PhysicallyBasedMaterial matte(
+    double r,
+    double g,
+    double b, {
+    vm.Vector4? emissive,
+  }) => PhysicallyBasedMaterial()
+    ..baseColorFactor = vm.Vector4(r, g, b, 1.0)
+    ..emissiveFactor = emissive ?? vm.Vector4.zero()
+    ..metallicFactor = 0.0
+    ..roughnessFactor = 0.95
+    ..vertexColorWeight = 0.0;
+  final white = matte(0.85, 0.85, 0.85);
+  void box(vm.Vector3 size, vm.Vector3 at, PhysicallyBasedMaterial m) {
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(size), m))
+        ..localTransform = vm.Matrix4.translation(at),
+    );
+  }
+
+  // The back wall spans the full outer width and the side walls stop at
+  // its front face, so the walls abut rather than overlap. Overlapping
+  // corners would put two tops in one plane, which flicker (z-fighting)
+  // and resolve differently from one depth setup to the next.
+  box(vm.Vector3(3.4, 0.3, 3.4), vm.Vector3(0, -0.15, 0), white);
+  box(vm.Vector3(3.6, 2.0, 0.3), vm.Vector3(0, 1.0, -1.65), white);
+  box(
+    vm.Vector3(0.3, 2.0, 3.2),
+    vm.Vector3(-1.65, 1.0, 0.1),
+    matte(0.02, 0.02, 0.02, emissive: vm.Vector4(14.0, 0.45, 0.3, 1.0)),
+  );
+  box(
+    vm.Vector3(0.3, 2.0, 3.2),
+    vm.Vector3(1.65, 1.0, 0.1),
+    matte(0.02, 0.02, 0.02, emissive: vm.Vector4(0.15, 4.0, 0.28, 1.0)),
+  );
+  box(vm.Vector3(0.7, 1.1, 1.1), vm.Vector3(0, 0.55, -0.2), white);
+  return (
+    scene: scene,
+    camera: PerspectiveCamera(
+      position: vm.Vector3(0, 2.4, 4.9),
+      target: vm.Vector3(0, 0.35, 0),
+    ),
+  );
+}
+
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Two off-axis eyes in one view group, rendered into one caller-owned
   // texture the way an XR runtime takes a frame, so the frame culls once,
@@ -1284,71 +1351,16 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // rule.
   SmokeScene(
     'irradiance_field',
-    () {
-      final scene = Scene();
-      // Nearly no environment light, so the colored term is the field's.
-      scene.environmentIntensity = 0.02;
-      scene.exposure = 1.3;
-      scene.globalIllumination
-        ..enabled = true
-        ..volumeMode = IrradianceVolumeMode.fitScene
-        ..resolution = vm.Vector3(10, 6, 10)
-        ..intensity = 1.0
-        ..hysteresis = 0.85
-        ..visibility = 0.5
-        ..injectionResolution = IrradianceInjectionResolution.quarter;
-      scene.add(
-        _directionalLightNode(
-          vm.Vector3(0.1, -0.85, -0.5),
-          DirectionalLight(intensity: 1.6),
-        ),
-      );
-      PhysicallyBasedMaterial matte(
-        double r,
-        double g,
-        double b, {
-        vm.Vector4? emissive,
-      }) => PhysicallyBasedMaterial()
-        ..baseColorFactor = vm.Vector4(r, g, b, 1.0)
-        ..emissiveFactor = emissive ?? vm.Vector4.zero()
-        ..metallicFactor = 0.0
-        ..roughnessFactor = 0.95
-        ..vertexColorWeight = 0.0;
-      final white = matte(0.85, 0.85, 0.85);
-      void box(vm.Vector3 size, vm.Vector3 at, PhysicallyBasedMaterial m) {
-        scene.add(
-          Node(mesh: Mesh(CuboidGeometry(size), m))
-            ..localTransform = vm.Matrix4.translation(at),
-        );
-      }
-
-      // The back wall spans the full outer width and the side walls stop at
-      // its front face, so the walls abut rather than overlap. Overlapping
-      // corners would put two tops in one plane, which flicker (z-fighting)
-      // and resolve differently from one depth setup to the next.
-      box(vm.Vector3(3.4, 0.3, 3.4), vm.Vector3(0, -0.15, 0), white);
-      box(vm.Vector3(3.6, 2.0, 0.3), vm.Vector3(0, 1.0, -1.65), white);
-      box(
-        vm.Vector3(0.3, 2.0, 3.2),
-        vm.Vector3(-1.65, 1.0, 0.1),
-        matte(0.02, 0.02, 0.02, emissive: vm.Vector4(14.0, 0.45, 0.3, 1.0)),
-      );
-      box(
-        vm.Vector3(0.3, 2.0, 3.2),
-        vm.Vector3(1.65, 1.0, 0.1),
-        matte(0.02, 0.02, 0.02, emissive: vm.Vector4(0.15, 4.0, 0.28, 1.0)),
-      );
-      box(vm.Vector3(0.7, 1.1, 1.1), vm.Vector3(0, 0.55, -0.2), white);
-      return (
-        scene: scene,
-        camera: PerspectiveCamera(
-          position: vm.Vector3(0, 2.4, 4.9),
-          target: vm.Vector3(0, 0.35, 0),
-        ),
-      );
-    },
+    () => _irradianceRoom(IrradianceFieldReceiver.full),
     // The field converges over frames, and its first frame has no scene-color
-    // history to scatter from.
+    // history to gather from.
+    warmupFrames: 45,
+  ),
+  // The same room read through the cheap spherical-harmonic receiver, which
+  // has no visibility test, so light reaches past the occluder.
+  SmokeScene(
+    'irradiance_field_sh',
+    () => _irradianceRoom(IrradianceFieldReceiver.sphericalHarmonics),
     warmupFrames: 45,
   ),
   SmokeScene(

@@ -155,3 +155,61 @@ highp vec3 SampleIrradianceField(highp vec3 world_position, vec3 direction,
   return result * frag_info.gi_grid.w;
 
 }
+
+// Whether the bound field texture is the spherical-harmonic one the cheap
+// receiver reads, which gi_atlas.x marks by going negative.
+bool IrradianceFieldUsesSh() {
+  return frag_info.gi_atlas.x < 0.0;
+}
+
+// The cheap receiver's E(n)/pi: linear spherical harmonics per probe,
+// hardware filtered within a lattice slice and blended across two slices by
+// hand, six fetches with no visibility test. In this mode gi_atlas.x is the
+// negated slice count per row, gi_atlas.y one coefficient block's height,
+// and gi_atlas.zw the texture's reciprocal size.
+highp vec3 SampleIrradianceFieldSh(highp vec3 world_position, vec3 direction,
+                                   vec3 view) {
+  highp vec3 spacing = frag_info.gi_grid.xyz;
+  highp float cell = min(spacing.x, min(spacing.y, spacing.z));
+  highp vec3 biased_position =
+      world_position +
+      (direction * 0.2 + view * 0.8) * (0.75 * cell * frag_info.gi_anchor.w);
+  highp vec3 counts = frag_info.gi_counts.xyz;
+  highp vec3 relative = clamp(
+      biased_position / spacing - frag_info.gi_anchor.xyz, vec3(0.0),
+      counts - vec3(1.0));
+
+  highp float slices_per_row = -frag_info.gi_atlas.x;
+  highp float block_height = frag_info.gi_atlas.y;
+  highp vec2 inverse_size = frag_info.gi_atlas.zw;
+  highp float z0 = floor(relative.z);
+  highp float z1 = min(z0 + 1.0, counts.z - 1.0);
+  float blend = relative.z - z0;
+  highp float row0 = floor(z0 / slices_per_row);
+  highp float row1 = floor(z1 / slices_per_row);
+  highp vec2 texel0 = vec2((z0 - row0 * slices_per_row) * counts.x,
+                           2.0 + row0 * counts.y) +
+                      relative.xy + vec2(0.5);
+  highp vec2 texel1 = vec2((z1 - row1 * slices_per_row) * counts.x,
+                           2.0 + row1 * counts.y) +
+                      relative.xy + vec2(0.5);
+  highp vec2 block = vec2(0.0, block_height);
+
+  vec4 a = mix(textureLod(irradiance_field, texel0 * inverse_size, 0.0),
+               textureLod(irradiance_field, texel1 * inverse_size, 0.0),
+               blend);
+  vec4 b = mix(
+      textureLod(irradiance_field, (texel0 + block) * inverse_size, 0.0),
+      textureLod(irradiance_field, (texel1 + block) * inverse_size, 0.0),
+      blend);
+  vec4 c = mix(
+      textureLod(irradiance_field, (texel0 + 2.0 * block) * inverse_size, 0.0),
+      textureLod(irradiance_field, (texel1 + 2.0 * block) * inverse_size, 0.0),
+      blend);
+
+  highp vec3 irradiance =
+      a.rgb + vec3(dot(vec3(a.a, b.x, b.y), direction),
+                   dot(vec3(b.z, b.w, c.x), direction),
+                   dot(c.yzw, direction));
+  return max(irradiance, vec3(0.0)) * frag_info.gi_grid.w;
+}

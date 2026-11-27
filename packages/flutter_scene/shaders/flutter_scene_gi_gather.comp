@@ -1,6 +1,6 @@
 // Gathers each probe's traced rays into one texel of its octahedral tile in
 // the irradiance or depth-moment accumulator, the same weighted sums the
-// screen-space scatter accumulates, so the field's blend reads either feed.
+// screen-space gather accumulates, so the field's blend reads either feed.
 // One invocation per accumulator texel of this frame's scheduled tile rows;
 // gutters and unused tiles write zero. A negative ray distance marks a back
 // face hit, which counts as black at its (shortened) distance.
@@ -43,7 +43,7 @@ uniform GatherInfo {
 }
 info;
 
-// The depth lobe's sharpness, matching the screen-space scatter.
+// The depth lobe's sharpness, matching the screen-space gather.
 const float kDistanceSharpness = 50.0;
 
 // The cosine below which the depth lobe (cos^50) is under 0.001.

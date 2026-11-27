@@ -5,7 +5,6 @@ import 'dart:ui' as ui;
 import 'package:flutter_scene/src/global_illumination.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
-import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart'
     show kLinearDepthBlackboardKey;
@@ -18,7 +17,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// The scene-owned GPU state of the irradiance field: the atlas the lit
-/// shader samples, the ping-ponged blend history, and the scatter
+/// shader samples, the ping-ponged blend history, and the feed's
 /// accumulators.
 ///
 /// Created with `createTexture` rather than from the transient pool because
@@ -34,8 +33,10 @@ class IrradianceFieldState {
   gpu.Texture? _sampled;
   gpu.Texture? _irradianceAccumulator;
   gpu.Texture? _depthAccumulator;
-  gpu.DeviceBuffer? _instanceBuffer;
-  int _instanceCapacity = 0;
+  gpu.Texture? _sampleGeometry;
+  gpu.Texture? _sampleRadiance;
+  gpu.Texture? _shTexture;
+  int _sampleFrame = 0;
 
   bool _historyIsA = true;
   bool _resetPending = true;
@@ -44,6 +45,21 @@ class IrradianceFieldState {
 
   /// The atlas the lit shader samples, or null before the first update.
   gpu.Texture? get sampledAtlas => _sampled;
+
+  /// The cheap receiver's spherical-harmonic texture, allocated on first
+  /// use for this layout. Null before the first update.
+  gpu.Texture? ensureShTexture() {
+    final layout = _layout;
+    if (layout == null) return null;
+    return _shTexture ??= gpu.gpuContext.createTexture(
+      gpu.StorageMode.devicePrivate,
+      layout.shWidth,
+      layout.shHeight,
+      format: gpu.PixelFormat.r16g16b16a16Float,
+      enableRenderTargetUsage: true,
+      enableShaderReadUsage: true,
+    );
+  }
 
   /// This frame's layout, or null before the first update.
   IrradianceFieldLayout? get layout => _layout;
@@ -150,8 +166,6 @@ class IrradianceFieldState {
   /// Frees every texture and buffer the field owns.
   void dispose() {
     _releaseTextures();
-    _instanceBuffer = null;
-    _instanceCapacity = 0;
     _layout = null;
     _placement = null;
   }
@@ -162,6 +176,9 @@ class IrradianceFieldState {
     _sampled = null;
     _irradianceAccumulator = null;
     _depthAccumulator = null;
+    _sampleGeometry = null;
+    _sampleRadiance = null;
+    _shTexture = null;
   }
 
   void _allocate(IrradianceFieldLayout layout) {
@@ -185,6 +202,15 @@ class IrradianceFieldState {
       layout.injectionDepthWidth,
       layout.injectionDepthHeight,
     );
+    // One 8x8 block of screen samples per probe, the irradiance tile's size.
+    _sampleGeometry = create(
+      layout.injectionIrradianceWidth,
+      layout.injectionIrradianceHeight,
+    );
+    _sampleRadiance = create(
+      layout.injectionIrradianceWidth,
+      layout.injectionIrradianceHeight,
+    );
     _historyIsA = true;
     _clearTexture(_historyA!);
     _clearTexture(_historyB!);
@@ -206,44 +232,7 @@ class IrradianceFieldState {
     );
     rendererSubmissions.submit(commandBuffer);
   }
-
-  /// A device buffer holding the sample indices `0..count`, one per instance.
-  /// Grown on demand and reused, since it only changes with the injection
-  /// resolution.
-  gpu.BufferView _instances(int count) {
-    if (_instanceBuffer == null || _instanceCapacity < count) {
-      final capacity = math.max(count, 1024);
-      final indices = Float32List(capacity);
-      for (var i = 0; i < capacity; i++) {
-        indices[i] = i.toDouble();
-      }
-      _instanceBuffer = gpu.gpuContext.createDeviceBufferWithCopy(
-        ByteData.sublistView(indices),
-      );
-      _instanceCapacity = capacity;
-    }
-    return gpu.BufferView(
-      _instanceBuffer!,
-      offsetInBytes: 0,
-      lengthInBytes: count * 4,
-    );
-  }
 }
-
-// The unit quad the scatter expands, corners in [0, 1].
-final gpu.DeviceBuffer _quadBuffer = gpu.gpuContext.createDeviceBufferWithCopy(
-  ByteData.sublistView(
-    Float32List.fromList(<double>[
-      0.0, 0.0, 1.0, 0.0, 0.0, 1.0, //
-      0.0, 1.0, 1.0, 0.0, 1.0, 1.0, //
-    ]),
-  ),
-);
-final gpu.BufferView _quadView = gpu.BufferView(
-  _quadBuffer,
-  offsetInBytes: 0,
-  lengthInBytes: 6 * 2 * 4,
-);
 
 // Fullscreen NDC triangles for the blend, filter, and strip passes.
 final gpu.DeviceBuffer _fullscreenBuffer = gpu.gpuContext
@@ -261,32 +250,6 @@ final gpu.BufferView _fullscreenView = gpu.BufferView(
   lengthInBytes: 6 * 2 * 4,
 );
 
-/// Slot 0 the per-vertex unit quad, slot 1 the per-instance sample index (a
-/// float, since the broadest GLES tier has no integer vertex attributes).
-final VertexLayoutDescriptor _injectLayout = VertexLayoutDescriptor(
-  buffers: const [
-    VertexBufferDescriptor(
-      strideInBytes: 8,
-      attributes: [
-        VertexAttributeDescriptor(
-          name: 'corner',
-          format: gpu.VertexFormat.float32x2,
-        ),
-      ],
-    ),
-    VertexBufferDescriptor(
-      strideInBytes: 4,
-      stepMode: gpu.VertexStepMode.instance,
-      attributes: [
-        VertexAttributeDescriptor(
-          name: 'texel_index',
-          format: gpu.VertexFormat.float32,
-        ),
-      ],
-    ),
-  ],
-);
-
 final gpu.SamplerOptions _nearestClamp = gpu.SamplerOptions(
   minFilter: gpu.MinMagFilter.nearest,
   magFilter: gpu.MinMagFilter.nearest,
@@ -294,23 +257,13 @@ final gpu.SamplerOptions _nearestClamp = gpu.SamplerOptions(
   heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
 );
 
-final gpu.ColorBlendEquation _additive = gpu.ColorBlendEquation(
-  colorBlendOperation: gpu.BlendOperation.add,
-  sourceColorBlendFactor: gpu.BlendFactor.one,
-  destinationColorBlendFactor: gpu.BlendFactor.one,
-  alphaBlendOperation: gpu.BlendOperation.add,
-  sourceAlphaBlendFactor: gpu.BlendFactor.one,
-  destinationAlphaBlendFactor: gpu.BlendFactor.one,
-);
-
-/// Scatters the visible surfaces' shaded radiance and distance into the probe
-/// accumulators.
+/// Feeds the probe accumulators from the visible surfaces' shaded radiance
+/// and distance.
 ///
-/// One instanced quad per (screen texel, cage corner), eight draws covering
-/// the cage. Instanced quads rather than points because that is the pattern
-/// the splat renderer already proves on every backend; a point-primitive
-/// variant would cut the vertex work but nothing in the engine exercises
-/// `gl_PointSize` today.
+/// Each probe first picks a fixed set of screen samples inside the screen
+/// rectangle its trilinear support covers, then every accumulator texel
+/// gathers its own probe's samples, so the cost follows the probe count and
+/// no pass blends. Only this frame's scheduled tile rows are fed.
 class IrradianceInjectPass extends RenderGraphPass {
   IrradianceInjectPass({
     required this.state,
@@ -335,11 +288,11 @@ class IrradianceInjectPass extends RenderGraphPass {
   final gpu.Texture? sceneRadiance;
 
   static final gpu.Shader _vertexShader =
-      baseShaderLibrary['IrradianceInjectVertex']!;
-  static final gpu.Shader _irradianceShader =
-      baseShaderLibrary['IrradianceInjectFragment']!;
-  static final gpu.Shader _depthShader =
-      baseShaderLibrary['IrradianceInjectDepthFragment']!;
+      baseShaderLibrary['FullscreenVertex']!;
+  static final gpu.Shader _sampleShader =
+      baseShaderLibrary['IrradianceSampleFragment']!;
+  static final gpu.Shader _gatherShader =
+      baseShaderLibrary['IrradianceGatherFragment']!;
 
   @override
   String get name => 'IrradianceInjectPass';
@@ -364,127 +317,19 @@ class IrradianceInjectPass extends RenderGraphPass {
     final divisor = settings.injectionResolution.divisor;
     final sourceWidth = math.max(1, dimensions.width ~/ divisor);
     final sourceHeight = math.max(1, dimensions.height ~/ divisor);
-    final texels = sourceWidth * sourceHeight;
-    if (texels == 0) return;
-    final instances = state._instances(texels);
-
-    // A nonzero update budget leaves unscheduled probes accumulating across
-    // frames, so their samples are still there when their turn comes.
-    final clear = settings.probeUpdateBudget <= 0;
-
-    _scatter(
-      context: context,
-      target: state._irradianceAccumulator!,
-      fragmentShader: _irradianceShader,
-      depthNormal: depthNormal,
-      radiance: radiance,
-      instances: instances,
-      instanceCount: texels,
-      sourceWidth: sourceWidth,
-      sourceHeight: sourceHeight,
-      layout: layout,
-      placement: placement,
-      tileSize: IrradianceFieldLayout.irradianceTile.toDouble(),
-      interior: kIrradianceInterior.toDouble(),
-      // A cosine lobe spans the whole hemisphere, so every interior texel of
-      // the tile can see this sample.
-      footprint: -1.0,
-      targetWidth: layout.injectionIrradianceWidth,
-      targetHeight: layout.injectionIrradianceHeight,
-      clear: clear,
+    // The blend advances the schedule after this pass, so both see the same
+    // rows.
+    final (startRow, endRow) = state.peekScheduleRows(
+      settings.probeUpdateBudget,
     );
-    _scatter(
-      context: context,
-      target: state._depthAccumulator!,
-      fragmentShader: _depthShader,
-      depthNormal: depthNormal,
-      radiance: radiance,
-      instances: instances,
-      instanceCount: texels,
-      sourceWidth: sourceWidth,
-      sourceHeight: sourceHeight,
-      layout: layout,
-      placement: placement,
-      tileSize: IrradianceFieldLayout.depthTile.toDouble(),
-      interior: kDepthMomentInterior.toDouble(),
-      footprint: kDepthScatterRadius.toDouble(),
-      targetWidth: layout.injectionDepthWidth,
-      targetHeight: layout.injectionDepthHeight,
-      clear: clear,
-    );
-  }
-
-  void _scatter({
-    required RenderGraphContext context,
-    required gpu.Texture target,
-    required gpu.Shader fragmentShader,
-    required gpu.Texture depthNormal,
-    required gpu.Texture radiance,
-    required gpu.BufferView instances,
-    required int instanceCount,
-    required int sourceWidth,
-    required int sourceHeight,
-    required IrradianceFieldLayout layout,
-    required IrradianceGridPlacement placement,
-    required double tileSize,
-    required double interior,
-    required double footprint,
-    required int targetWidth,
-    required int targetHeight,
-    required bool clear,
-  }) {
-    final commandBuffer = gpu.gpuContext.createCommandBuffer();
-    final renderPass = commandBuffer.createRenderPass(
-      gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(
-          texture: target,
-          loadAction: clear ? gpu.LoadAction.clear : gpu.LoadAction.load,
-          clearValue: Vector4.zero(),
-        ),
-      ),
-    );
-    renderPass.bindPipeline(
-      resolvePipeline(
-        _vertexShader,
-        fragmentShader,
-        vertexLayout: _injectLayout,
-      ),
-    );
-    // GLES holds cull mode and winding as global state that leaks across
-    // passes, so the scatter sets its own rather than inheriting.
-    renderPass.setCullMode(gpu.CullMode.none);
-    renderPass.setPrimitiveType(gpu.PrimitiveType.triangle);
-    renderPass.setColorBlendEnable(true);
-    renderPass.setColorBlendEquation(_additive);
-    bindVertexBufferCompat(renderPass, _quadView, 6);
-    renderPass.bindVertexBuffer(instances, slot: 1);
-    renderPass.bindTexture(
-      _vertexShader.cachedUniformSlot('linear_depth_normal'),
-      depthNormal,
-      sampler: _nearestClamp,
-    );
-    renderPass.bindTexture(
-      _vertexShader.cachedUniformSlot('scene_radiance'),
-      radiance,
-      sampler: _nearestClamp,
-    );
-
-    final tileInfo = Float32List(4)
-      ..[0] = tileSize
-      ..[1] = interior;
-    renderPass.bindUniform(
-      fragmentShader.cachedUniformSlot('InjectTileInfo'),
-      context.transientsBuffer.emplace(ByteData.sublistView(tileInfo)),
-    );
+    state._sampleFrame = (state._sampleFrame + 1) % 4096;
 
     final spacing = placement.spacing;
     final anchor = placement.anchor;
     final counts = layout.resolution;
-    final info = Float32List(48);
+    final info = Float32List(40);
     info[0] = sourceWidth.toDouble();
     info[1] = sourceHeight.toDouble();
-    info[2] = 1.0 / sourceWidth;
-    info[3] = 1.0 / sourceHeight;
     info[4] = projection.scaleX;
     info[5] = projection.scaleY;
     info[6] = projection.far;
@@ -512,33 +357,109 @@ class IrradianceInjectPass extends RenderGraphPass {
     info[28] = anchor.x;
     info[29] = anchor.y;
     info[30] = anchor.z;
+    info[31] = state._sampleFrame.toDouble();
     info[32] = counts.x;
     info[33] = counts.y;
     info[34] = counts.z;
     info[35] = layout.tilesPerRow.toDouble();
-    info[36] = tileSize;
-    info[37] = interior;
-    info[38] = footprint;
-    info[40] = targetWidth.toDouble();
-    info[41] = targetHeight.toDouble();
-    info[42] = 1.0 / targetWidth;
-    info[43] = 1.0 / targetHeight;
+    info[36] = startRow.toDouble();
+    info[37] = endRow.toDouble();
 
-    for (var corner = 0; corner < 8; corner++) {
-      info[44] = (corner & 1) != 0 ? 1.0 : 0.0;
-      info[45] = (corner & 2) != 0 ? 1.0 : 0.0;
-      info[46] = (corner & 4) != 0 ? 1.0 : 0.0;
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    for (final (target, output) in [
+      (state._sampleGeometry!, 0.0),
+      (state._sampleRadiance!, 1.0),
+    ]) {
+      info[38] = output;
+      final renderPass = _fullscreenPass(commandBuffer, target);
+      renderPass.bindPipeline(resolvePipeline(_vertexShader, _sampleShader));
+      bindVertexBufferCompat(renderPass, _fullscreenView, 6);
+      renderPass.bindTexture(
+        _sampleShader.cachedUniformSlot('linear_depth_normal'),
+        depthNormal,
+        sampler: _nearestClamp,
+      );
+      renderPass.bindTexture(
+        _sampleShader.cachedUniformSlot('scene_radiance'),
+        radiance,
+        sampler: _nearestClamp,
+      );
       renderPass.bindUniform(
-        _vertexShader.cachedUniformSlot('InjectInfo'),
+        _sampleShader.cachedUniformSlot('SampleInfo'),
         context.transientsBuffer.emplace(ByteData.sublistView(info)),
       );
-      drawCompat(renderPass, 6, instanceCount: instanceCount);
+      drawCompat(renderPass, 6);
+    }
+
+    for (final (target, tile, interior, depth) in [
+      (
+        state._irradianceAccumulator!,
+        IrradianceFieldLayout.irradianceTile,
+        kIrradianceInterior,
+        0.0,
+      ),
+      (
+        state._depthAccumulator!,
+        IrradianceFieldLayout.depthTile,
+        kDepthMomentInterior,
+        1.0,
+      ),
+    ]) {
+      final gather = Float32List(12)
+        ..[0] = tile.toDouble()
+        ..[1] = interior.toDouble()
+        ..[2] = depth
+        ..[3] = layout.tilesPerRow.toDouble()
+        ..[4] = layout.probeCount.toDouble()
+        ..[5] = startRow.toDouble()
+        ..[6] = endRow.toDouble()
+        ..[8] = 1.0 / layout.injectionIrradianceWidth
+        ..[9] = 1.0 / layout.injectionIrradianceHeight;
+      final renderPass = _fullscreenPass(commandBuffer, target);
+      renderPass.bindPipeline(resolvePipeline(_vertexShader, _gatherShader));
+      bindVertexBufferCompat(renderPass, _fullscreenView, 6);
+      renderPass.bindTexture(
+        _gatherShader.cachedUniformSlot('sample_geometry'),
+        state._sampleGeometry!,
+        sampler: _nearestClamp,
+      );
+      renderPass.bindTexture(
+        _gatherShader.cachedUniformSlot('sample_radiance'),
+        state._sampleRadiance!,
+        sampler: _nearestClamp,
+      );
+      renderPass.bindUniform(
+        _gatherShader.cachedUniformSlot('GatherInfo'),
+        context.transientsBuffer.emplace(ByteData.sublistView(gather)),
+      );
+      drawCompat(renderPass, 6);
     }
     rendererSubmissions.submit(commandBuffer);
   }
+
+  static gpu.RenderPass _fullscreenPass(
+    gpu.CommandBuffer commandBuffer,
+    gpu.Texture target,
+  ) {
+    final renderPass = commandBuffer.createRenderPass(
+      gpu.RenderTarget.singleColor(
+        gpu.ColorAttachment(
+          texture: target,
+          loadAction: gpu.LoadAction.clear,
+          clearValue: Vector4.zero(),
+        ),
+      ),
+    );
+    // GLES holds cull mode, winding, and blending as global state that leaks
+    // across passes, so each pass sets its own.
+    renderPass.setColorBlendEnable(false);
+    renderPass.setCullMode(gpu.CullMode.none);
+    renderPass.setPrimitiveType(gpu.PrimitiveType.triangle);
+    return renderPass;
+  }
 }
 
-/// Folds this frame's scattered samples into the stored field.
+/// Folds this frame's fed samples into the stored field.
 ///
 /// One render pass over the write-side history with a draw per region, each
 /// scoped by a viewport so a nonzero update budget refreshes a slice of the
@@ -836,6 +757,68 @@ class IrradianceFilterPass extends RenderGraphPass {
       blur: 0.0,
     );
 
+    rendererSubmissions.submit(commandBuffer);
+  }
+}
+
+/// Fits each probe of the sampled atlas to linear spherical harmonics for the
+/// cheap receiver ([IrradianceFieldReceiver.sphericalHarmonics]).
+///
+/// Rewrites the whole texture every frame, a few texels per probe, so it
+/// follows a scroll, a bake, or a reset with no bookkeeping.
+class IrradianceShPass extends RenderGraphPass {
+  IrradianceShPass({required this.state});
+
+  final IrradianceFieldState state;
+
+  static final gpu.Shader _vertexShader =
+      baseShaderLibrary['FullscreenVertex']!;
+  static final gpu.Shader _shShader =
+      baseShaderLibrary['IrradianceShFragment']!;
+
+  @override
+  String get name => 'IrradianceShPass';
+
+  @override
+  void execute(RenderGraphContext context) {
+    final layout = state._layout;
+    final placement = state._placement;
+    final atlas = state._sampled;
+    final target = state.ensureShTexture();
+    if (layout == null || placement == null || atlas == null) return;
+    if (target == null) return;
+
+    final counts = layout.resolution;
+    final anchor = placement.anchor;
+    final info = Float32List(12)
+      ..[0] = counts.x
+      ..[1] = counts.y
+      ..[2] = counts.z
+      ..[3] = layout.tilesPerRow.toDouble()
+      ..[4] = anchor.x
+      ..[5] = anchor.y
+      ..[6] = anchor.z
+      ..[7] = layout.irradianceOriginY.toDouble()
+      ..[8] = layout.shSlicesPerRow.toDouble()
+      ..[9] = layout.shBlockHeight.toDouble();
+
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    final renderPass = IrradianceInjectPass._fullscreenPass(
+      commandBuffer,
+      target,
+    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _shShader));
+    bindVertexBufferCompat(renderPass, _fullscreenView, 6);
+    renderPass.bindTexture(
+      _shShader.cachedUniformSlot('atlas'),
+      atlas,
+      sampler: _nearestClamp,
+    );
+    renderPass.bindUniform(
+      _shShader.cachedUniformSlot('ShInfo'),
+      context.transientsBuffer.emplace(ByteData.sublistView(info)),
+    );
+    drawCompat(renderPass, 6);
     rendererSubmissions.submit(commandBuffer);
   }
 }

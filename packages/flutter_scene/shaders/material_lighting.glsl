@@ -1047,13 +1047,27 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #ifndef FLUTTER_SCENE_NO_IRRADIANCE_FIELD
   float gi_coverage = IrradianceFieldCoverage(v_position);
   if (gi_coverage > 0.0) {
-    highp vec3 gi = SampleIrradianceField(v_position, normal, camera_normal);
+    // A uniform branch rather than a select, so only one receiver runs.
+    highp vec3 gi;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+    highp vec3 gi_back;
+#endif
+    if (IrradianceFieldUsesSh()) {
+      gi = SampleIrradianceFieldSh(v_position, normal, camera_normal);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+      gi_back = SampleIrradianceFieldSh(v_position, -normal, camera_normal);
+#endif
+    } else {
+      gi = SampleIrradianceField(v_position, normal, camera_normal);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+      // TODO(gi-transmission): the transmitted direction repeats the whole
+      // eight-tap cage. The weights only depend on the normal through the
+      // wrap term, so one pass could return both lobes.
+      gi_back = SampleIrradianceField(v_position, -normal, camera_normal);
+#endif
+    }
     irradiance = mix(irradiance, gi, gi_coverage);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-    // TODO(gi-transmission): the transmitted direction repeats the whole
-    // eight-tap cage. The weights only depend on the normal through the wrap
-    // term, so one pass could return both lobes.
-    highp vec3 gi_back = SampleIrradianceField(v_position, -normal, camera_normal);
     transmitted_irradiance = mix(transmitted_irradiance, gi_back, gi_coverage);
 #endif
   }

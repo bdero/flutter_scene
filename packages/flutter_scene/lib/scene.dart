@@ -136,6 +136,7 @@ export 'src/global_illumination.dart'
     show
         GlobalIlluminationSettings,
         IrradianceFeed,
+        IrradianceFieldReceiver,
         IrradianceInjectionResolution,
         IrradianceProbeGrid,
         IrradianceVolumeMode;

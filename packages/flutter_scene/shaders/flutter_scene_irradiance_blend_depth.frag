@@ -1,4 +1,4 @@
-// Folds one frame of scattered distances into a probe's stored depth moments.
+// Folds one frame of gathered distances into a probe's stored depth moments.
 //
 // Retention here is deliberately decoupled from the irradiance blend's change
 // detector. Coupling them makes the visibility term move whenever the
