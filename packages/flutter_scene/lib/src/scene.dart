@@ -2220,6 +2220,7 @@ base class Scene implements SceneGraph {
   // Wall-clock timestamp of the previous tick, used to derive a delta
   // when only [render] is called.
   int? _lastTickMillis;
+  double _lastTickSeconds = 0.0;
 
   // Unconsumed wall-clock time carried between frames so the fixed-step
   // physics driver can take an integer number of steps per frame.
@@ -2240,6 +2241,7 @@ base class Scene implements SceneGraph {
 
   void _tick(double deltaSeconds) {
     _lastTickMillis = DateTime.now().millisecondsSinceEpoch;
+    _lastTickSeconds = deltaSeconds;
     _tickListeners.beforeTick(deltaSeconds);
     _stepPhysics(deltaSeconds);
     root.scenePrePass(deltaSeconds);
@@ -5324,6 +5326,7 @@ base class Scene implements SceneGraph {
     );
     _irradianceAdaptiveSteps = quality.adaptiveSteps;
     _irradianceField.probeUpdateBudget = quality.probeUpdateBudget;
+    _irradianceField.frameSeconds = _lastTickSeconds;
 
     if (solve) {
       final shStrip = _crossfadeEnvironment == null || _crossfadeBlend <= 0.0
