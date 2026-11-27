@@ -40,6 +40,8 @@
 * Physical materials realized from a `.fscene` keep their `depthBias` and `depthLayer`.
 * Nodes added by a `.fscene` hot reload keep their shadow casting mode.
 * `GlobalIlluminationSettings.feed = IrradianceFeed.rayTraced` fills the irradiance field by tracing probe rays against the scene in a compute pass, so off-screen emitters, lights, and sky reach it and probes step out of walls. Falls back to the screen-space feed without compute, and needs neither the depth prepass nor the previous frame's color. Skinned meshes are skinned once per frame in compute while it runs. `Scene.preload(compute: true)` loads its shaders up front.
+* `GlobalIlluminationSettings.receiver` (`IrradianceFieldReceiver`) adds a cheap receiver that reads each probe as linear spherical harmonics with six filtered texture reads instead of about 24, for mobile and low-end GPUs. `automatic`, the default, picks it at `RenderQualityTier.low`. It has no visibility test, so light leaks through walls thinner than about a probe spacing.
+* The screen-space irradiance feed gathers a fixed 64 screen samples per probe instead of scattering every injection texel into eight probes, so its cost follows the probe count rather than the screen and no pass blends. `injectionResolution` no longer changes its cost.
 * Update `flutter_scene-idioms` skill (v24) with render order, stacked translucent overlays, and the irradiance field.
 
 ## 0.24.6

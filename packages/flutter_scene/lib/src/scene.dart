@@ -4606,7 +4606,7 @@ base class Scene implements SceneGraph {
         ambientOcclusionCarriesIndirectLight(ambientOcclusion);
     final wantIrradianceField =
         !captureLinearColor && projectionValid && globalIllumination.enabled;
-    // The screen-space feed scatters from the depth prepass' normals and from
+    // The screen-space feed gathers from the depth prepass' normals and from
     // the previous frame's lit color, so it forces both on. The traced feed
     // reads neither.
     final tracedIrradiance =
@@ -5267,9 +5267,9 @@ base class Scene implements SceneGraph {
     }
   }
 
-  // Places the irradiance volume for this frame, adds the scatter, blend, and
+  // Places the irradiance volume for this frame, adds the feed, blend, and
   // filter passes, and returns what the lit draws bind. Returns null when the
-  // field could not be built (no atlas yet, or no scene color to scatter).
+  // field could not be built (no atlas yet, or no scene color to gather).
   IrradianceFieldBinding? _addIrradianceFieldPasses({
     required RenderGraph graph,
     required Camera camera,
@@ -5363,8 +5363,16 @@ base class Scene implements SceneGraph {
 
     final atlas = _irradianceField.sampledAtlas;
     if (atlas == null) return null;
+    final sh = switch (settings.receiver) {
+      IrradianceFieldReceiver.full => false,
+      IrradianceFieldReceiver.sphericalHarmonics => true,
+      IrradianceFieldReceiver.automatic =>
+        effectiveRenderQualityTier == RenderQualityTier.low,
+    };
+    if (sh) graph.addPass(IrradianceShPass(state: _irradianceField));
     return IrradianceFieldBinding(
       atlas: atlas,
+      shTexture: sh ? _irradianceField.ensureShTexture() : null,
       layout: _irradianceField.layout!,
       placement: _irradianceField.placement!,
       intensity: settings.intensity,

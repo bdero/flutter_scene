@@ -105,6 +105,36 @@ void main() {
       );
     });
 
+    test('the spherical-harmonic texture holds every probe once', () {
+      for (final counts in [
+        Vector3(16, 8, 16),
+        Vector3(10, 6, 10),
+        Vector3(3, 2, 5),
+        Vector3(256, 2, 8),
+      ]) {
+        final layout = IrradianceFieldLayout(counts);
+        final x = layout.resolution.x.toInt();
+        final y = layout.resolution.y.toInt();
+        final z = layout.resolution.z.toInt();
+        expect(layout.shWidth, lessThanOrEqualTo(kMaxIrradianceAtlasDimension));
+        expect(layout.shWidth, greaterThanOrEqualTo(9));
+        expect(
+          layout.shSlicesPerRow * layout.shSliceRows,
+          greaterThanOrEqualTo(z),
+        );
+        expect(layout.shBlockHeight, layout.shSliceRows * y);
+        // The last slice ends inside the texture, below the strip and the
+        // first two blocks.
+        final lastRow = (z - 1) ~/ layout.shSlicesPerRow;
+        final lastColumn = (z - 1) % layout.shSlicesPerRow;
+        expect((lastColumn + 1) * x, lessThanOrEqualTo(layout.shWidth));
+        expect(
+          2 + 2 * layout.shBlockHeight + (lastRow + 1) * y,
+          layout.shHeight,
+        );
+      }
+    });
+
     test('regions do not overlap', () {
       final layout = IrradianceFieldLayout(Vector3(16, 8, 16));
       expect(

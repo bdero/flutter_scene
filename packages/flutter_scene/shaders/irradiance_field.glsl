@@ -1,6 +1,6 @@
 // Addressing shared by every stage of the world-space irradiance field: the
 // octahedral direction mapping a probe tile uses, and the tile-to-atlas
-// arithmetic. Pure math, no uniforms, so the scatter, blend, filter, and the
+// arithmetic. Pure math, no uniforms, so the gather, blend, filter, and the
 // lit receiver all agree by construction.
 //
 // The atlas packs one probe tile per probe in a tile grid whose stride is a

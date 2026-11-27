@@ -24,16 +24,6 @@ const int kDepthMomentInterior = 14;
 /// the lobe. Matches the reference implementation's `probeDistanceExponent`.
 const double kDepthMomentSharpness = 50.0;
 
-/// Texel radius the depth scatter covers around a sample's octahedral texel.
-///
-/// `pow(cos, 50)` falls under a hundredth of its peak by about 24 degrees,
-/// which is two texels on a 14-texel octahedral edge, so a 5x5 footprint
-/// carries the whole lobe.
-// TODO(gi-depth-wrap): a lobe centered on a tile edge is truncated instead of
-// wrapping to the opposite edge. The gutter hides it at read time; scattering
-// the wrapped remainder would fix it properly.
-const int kDepthScatterRadius = 2;
-
 /// Where each quantity lives in the single irradiance-field atlas, and how a
 /// probe index maps to its tile.
 ///
@@ -159,6 +149,31 @@ class IrradianceFieldLayout {
   /// Height of the depth-moment accumulator.
   int get injectionDepthHeight => tileRows * depthTile;
 
+  /// Lattice slices (one per z) across one row of the spherical-harmonic
+  /// texture the cheap receiver samples.
+  int get shSlicesPerRow => math.max(
+    1,
+    math.min(
+      resolution.z.toInt(),
+      kMaxIrradianceAtlasDimension ~/ resolution.x.toInt(),
+    ),
+  );
+
+  /// Rows of lattice slices in the spherical-harmonic texture.
+  int get shSliceRows =>
+      (resolution.z.toInt() + shSlicesPerRow - 1) ~/ shSlicesPerRow;
+
+  /// Height of one coefficient block of the spherical-harmonic texture.
+  int get shBlockHeight => shSliceRows * resolution.y.toInt();
+
+  /// Width of the spherical-harmonic texture, at least the environment
+  /// strip's nine texels.
+  int get shWidth => math.max(9, shSlicesPerRow * resolution.x.toInt());
+
+  /// Height of the spherical-harmonic texture, the environment strip's two
+  /// rows over three coefficient blocks.
+  int get shHeight => 2 + 3 * shBlockHeight;
+
   /// Linear probe index for the storage coordinate [s], which is the probe's
   /// world lattice index wrapped into the volume.
   int probeIndex(int sx, int sy, int sz) =>
@@ -269,6 +284,7 @@ class IrradianceFieldBinding {
     required this.shadowBias,
     required this.visibility,
     required this.visibilityBias,
+    this.shTexture,
   });
 
   /// The atlas the lit shader samples. Rows 0 and 1 hold the environment's
@@ -293,6 +309,11 @@ class IrradianceFieldBinding {
 
   /// Chebyshev depth bias as a fraction of the smallest cell edge.
   final double visibilityBias;
+
+  /// The spherical-harmonic texture the cheap receiver samples in place of
+  /// [atlas], or null for the full receiver. Its first two rows hold the
+  /// environment strip too.
+  final gpu.Texture? shTexture;
 
   /// Width, in cells, of the band the field fades back to the environment
   /// over at the volume boundary.

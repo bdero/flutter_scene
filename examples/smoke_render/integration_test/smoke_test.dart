@@ -310,7 +310,7 @@ void main() {
           reason: 'a farther layer of a masked mesh hid its nearer layer',
         );
       }
-      if (smoke.id == 'irradiance_field') {
+      if (smoke.id == 'irradiance_field' || smoke.id == 'irradiance_field_sh') {
         // Both colored walls are emissive and nothing else lights the scene,
         // so the floor's color is entirely bounce light carried by the probe
         // field. Each half of the floor must take the tint of the wall beside
@@ -348,7 +348,7 @@ void main() {
         );
         // ignore: avoid_print
         print(
-          'SMOKE irradiance_field bleed: greenSide=$greenSide '
+          'SMOKE ${smoke.id} bleed: greenSide=$greenSide '
           'redSide=$redSide',
         );
         expect(

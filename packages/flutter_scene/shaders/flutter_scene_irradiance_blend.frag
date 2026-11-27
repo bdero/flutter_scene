@@ -1,4 +1,4 @@
-// Folds one frame of scattered radiance into a probe's stored irradiance.
+// Folds one frame of gathered radiance into a probe's stored irradiance.
 //
 // The accumulator's weighted mean is a cosine-weighted average of incoming
 // radiance, which is E(n)/pi, the same quantity the environment's spherical
@@ -47,7 +47,7 @@ uniform BlendInfo {
 }
 info;
 
-// This frame's scattered samples, one tile per probe and nothing else.
+// This frame's gathered samples, one tile per probe and nothing else.
 uniform highp sampler2D injection;
 // The previous frame's blended atlas.
 uniform highp sampler2D history;
