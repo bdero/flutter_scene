@@ -134,9 +134,9 @@ class _BenchState extends State<_Bench> {
     for (final light in points) {
       light.contactShadows = config.points && config.contact != _Contact.off;
     }
-    if (config.contact == _Contact.fragment) {
+    if (config.contact == _Contact.wavefront) {
       // ignore: invalid_use_of_internal_member
-      scene.contactShadows.methodOverride = ContactShadowMethod.fragment;
+      scene.contactShadows.method = ContactShadowMethod.wavefront;
     }
     final viewport = ui.Rect.fromLTWH(
       0,

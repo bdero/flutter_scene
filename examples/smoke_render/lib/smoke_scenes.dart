@@ -1501,10 +1501,6 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // search, the penumbra scaling, and the contact march across backends.
   SmokeScene('soft_shadows', () {
     final scene = Scene();
-    // Every backend marches the same way, so the parity checks compare like
-    // for like; contact_shadows_wavefront covers the compute march.
-    // ignore: invalid_use_of_internal_member
-    scene.contactShadows.methodOverride = ContactShadowMethod.fragment;
     scene.add(
       _directionalLightNode(
         vm.Vector3(-0.55, -1.0, -0.3),
@@ -1704,6 +1700,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // differently.
   SmokeScene('contact_shadows_wavefront', () {
     final scene = Scene();
+    // ignore: invalid_use_of_internal_member
+    scene.contactShadows.method = ContactShadowMethod.wavefront;
     scene.environmentIntensity = 0.3;
     scene.add(
       _directionalLightNode(

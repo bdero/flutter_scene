@@ -371,8 +371,7 @@ base class Scene implements SceneGraph {
   /// [PhysicallyBasedMaterial.parallaxScale], which load only when asked for
   /// since few scenes use them. [smaa] loads the tables
   /// [AntiAliasingMode.smaa] needs. [compute] loads the compute shaders
-  /// behind [IrradianceFeed.rayTraced], compute skinning, and the wavefront
-  /// contact shadow march, where the device
+  /// behind [IrradianceFeed.rayTraced] and compute skinning, where the device
   /// supports compute. Without this, a scene holds its last frame while one
   /// of its materials waits for those shaders, renders without SMAA until the
   /// tables arrive, and feeds the irradiance field from screen space until
@@ -4789,8 +4788,7 @@ base class Scene implements SceneGraph {
             // full-resolution wavefront.
             wavefront:
                 contactShadowLowTier ||
-                    contactShadows.methodOverride ==
-                        ContactShadowMethod.fragment
+                    contactShadows.method != ContactShadowMethod.wavefront
                 ? null
                 : _contactWavefront,
             wavefrontMaxSamples:

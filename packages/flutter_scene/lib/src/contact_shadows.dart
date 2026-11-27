@@ -38,11 +38,13 @@ class ContactShadowSettings {
   /// How dark a full contact shadow is, from 0 (off) to 1.
   double opacity = 1.0;
 
-  /// Pins how the primary directional light marches, for comparing backends
-  /// frame by frame. Null picks the wavefront kernel wherever compute runs,
-  /// except on [RenderQualityTier.low].
+  /// How the primary directional light marches. The wavefront kernel runs
+  /// only where the device runs compute, and never on
+  /// [RenderQualityTier.low].
+  // TODO(contact-shadows-wavefront): export once it costs no more than the
+  // fragment march; it measured about 2x on Metal, WebGPU, and Mali.
   @internal
-  ContactShadowMethod? methodOverride;
+  ContactShadowMethod method = ContactShadowMethod.fragment;
 
   /// The steps per ray in effect for [tier].
   @internal
@@ -54,7 +56,7 @@ class ContactShadowSettings {
 }
 
 /// How the primary directional light's contact shadow is marched. Not
-/// exported; see [ContactShadowSettings.methodOverride].
+/// exported; see [ContactShadowSettings.method].
 enum ContactShadowMethod {
   /// A per-pixel march in the fragment pass, on every backend.
   fragment,
