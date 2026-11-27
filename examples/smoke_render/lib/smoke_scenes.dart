@@ -9,6 +9,8 @@ import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu_shim;
+// ignore: implementation_imports, invalid_use_of_visible_for_testing_member
+import 'package:flutter_scene/src/render/gi_scene.dart' show giBuildOnIsolate;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/radiance_layout.dart';
 // ignore: implementation_imports
@@ -1074,6 +1076,15 @@ void _paintThroughExternalTarget(
   return (scene: built.scene, left: eyes.left, right: eyes.right);
 }
 
+/// Loads the compute shaders the traced irradiance feed needs, and builds its
+/// mesh hierarchies on the frame that asks, so the trace sees the whole room
+/// from its first frame rather than whenever a background build lands.
+Future<void> loadTracedGi() async {
+  // ignore: invalid_use_of_visible_for_testing_member
+  giBuildOnIsolate = false;
+  await Scene.preload(compute: true);
+}
+
 ({Scene scene, Camera camera}) _irradianceRoom(
   IrradianceFieldReceiver receiver,
 ) {
@@ -1089,6 +1100,7 @@ void _paintThroughExternalTarget(
     ..hysteresis = 0.85
     ..visibility = 0.5
     ..injectionResolution = IrradianceInjectionResolution.quarter
+    ..feed = IrradianceFeed.rayTraced
     ..receiver = receiver;
   scene.add(
     _directionalLightNode(
@@ -1346,11 +1358,9 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // and a dim key light so the room reads. Every colored texel on the white
   // floor and ceiling arrived through the probe field.
   //
-  // The room is deliberately small relative to the probe spacing. Screen-space
-  // injection only reaches the eight probes of the cell a surface sits in, so
-  // a wall lights the probes within about a cell of it and spreads outward one
-  // cell per frame through the scene-color feedback. That near-field reach is
-  // what this scene measures; a bake is what fills a large room's interior.
+  // The field is fed by the compute trace, so the wall colors cross the room
+  // and mix. Backends without compute fall back to the screen-space feed,
+  // which only reaches about a cell past each wall.
   //
   // The walls are solids thicker than a probe spacing, per the field's content
   // rule.
@@ -1361,6 +1371,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     // history to gather from.
     warmupFrames: 45,
     fixedStep: 1.0 / 60.0,
+    preload: loadTracedGi,
   ),
   // The same room read through the cheap spherical-harmonic receiver, which
   // has no visibility test, so light reaches past the occluder.
@@ -1369,6 +1380,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     () => _irradianceRoom(IrradianceFieldReceiver.sphericalHarmonics),
     warmupFrames: 45,
     fixedStep: 1.0 / 60.0,
+    preload: loadTracedGi,
   ),
   SmokeScene(
     'taa',
