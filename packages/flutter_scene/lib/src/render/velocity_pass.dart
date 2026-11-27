@@ -75,7 +75,9 @@ class VelocityPass extends RenderGraphPass {
     List<Plane> cullingPlanes = const [],
     Frustum? cullingFrustum,
     bool skinnedMotion = true,
+    bool storeDepth = false,
   }) : _camera = camera,
+       _storeDepth = storeDepth,
        _cullingFrustum = cullingFrustum,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -98,6 +100,10 @@ class VelocityPass extends RenderGraphPass {
   final Vector2 _currentJitterNdc;
   final Vector2 _previousJitterNdc;
   final int _layerMask;
+
+  // A later pass reloads the prepass depth this pass tests against, so its
+  // contents must survive this pass.
+  final bool _storeDepth;
   final List<Plane> _cullingPlanes;
   final bool _skinnedMotion;
 
@@ -137,7 +143,9 @@ class VelocityPass extends RenderGraphPass {
           ? gpu.DepthStencilAttachment(
               texture: depthTexture,
               depthLoadAction: gpu.LoadAction.load,
-              depthStoreAction: gpu.StoreAction.dontCare,
+              depthStoreAction: _storeDepth
+                  ? gpu.StoreAction.store
+                  : gpu.StoreAction.dontCare,
             )
           : null,
     );
@@ -150,8 +158,9 @@ class VelocityPass extends RenderGraphPass {
     if (depthTexture != null) {
       // TODO(depth-invariance): Metal compiles these shaders with fast math and
       // no invariance, so this pass and the prepass may round one position
-      // differently and drop its motion vectors. Declare `invariant
-      // gl_Position` in both once Impeller preserves invariance at runtime.
+      // differently and drop its motion vectors. The other backends declare
+      // `invariant gl_Position` (depth_bias.glsl); Metal needs impellerc and
+      // Impeller to support it first.
       renderPass.setDepthCompareOperation(gpu.CompareFunction.equal);
     } else {
       renderPass.setDepthCompareOperation(gpu.CompareFunction.always);

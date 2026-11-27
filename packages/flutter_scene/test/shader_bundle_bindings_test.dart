@@ -27,6 +27,8 @@ Future<Map<String, Object?>> _reflect(
   final reflection = File.fromUri(temp.uri.resolve('$entry.json'));
   final result = await Process.run(impellerc.toFilePath(), [
     '--metal-desktop',
+    // Bundle builds define the target; a lone compile must say so.
+    '--define=IMPELLER_TARGET_METAL',
     '--input-type=$type',
     '--input=$path',
     '--sl=${temp.uri.resolve('$entry.out').toFilePath()}',

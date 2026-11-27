@@ -6,7 +6,9 @@ enum MeshDrawPass {
   /// The opaque and translucent color passes.
   color,
 
-  /// The camera depth prepass.
+  /// The camera depth prepass. Select no more than [color] does: with
+  /// `Scene.depthPriming` the color pass depth-tests against this pass, so
+  /// depth drawn here and not there hides what lies behind it.
   depth,
 
   /// A shadow map.

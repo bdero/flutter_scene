@@ -40,6 +40,9 @@
 * Physical materials realized from a `.fscene` keep their `depthBias` and `depthLayer`.
 * Nodes added by a `.fscene` hot reload keep their shadow casting mode.
 * Update `flutter_scene-idioms` skill (v23) with render order and stacked translucent overlays.
+* `Scene.depthPriming` (on by default) depth-tests the scene pass against the depth prepass when one already runs at full size without MSAA, so hidden opaque fragments skip the lit shader. Frames with an opaque `ShaderMaterial`, or a `.fmat` that discards without its own depth passes, skip it.
+* With temporal anti-aliasing's object motion on, the velocity pass keeps the prepass depth intact for the translucent depth patch instead of leaving it undefined.
+* Ambient occlusion and reflections see the level of detail an LOD node draws, not its highest detail.
 
 ## 0.24.6
 

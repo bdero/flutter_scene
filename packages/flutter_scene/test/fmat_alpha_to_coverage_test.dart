@@ -137,6 +137,25 @@ void main() {
     expect(buildSidecar(compiled.material)['alpha_to_coverage'], isTrue);
   });
 
+  test('the sidecar flags a color draw that may leave fragments uncovered', () {
+    String fmat(String extra, String body) =>
+        'material { name: "M", shading_model: unlit, $extra }\n'
+        'fragment { void Surface(inout MaterialInputs material) { $body } }';
+    bool? cuts(String source) =>
+        buildSidecar(
+              compileFmat(source, fileName: 'm.fmat').material,
+            )['cuts_coverage']
+            as bool?;
+    expect(
+      buildSidecar(
+        compileFmat(_cutout, fileName: 'c.fmat').material,
+      )['cuts_coverage'],
+      isTrue,
+    );
+    expect(cuts(fmat('', 'if (GetUV0().x > 0.5) { discard; }')), isTrue);
+    expect(cuts(fmat('', 'material.base_color = vec4(1.0);')), isNull);
+  });
+
   test('a cutout ships depth fragments cut by its surface alpha', () {
     final compiled = compileFmat(_cutout, fileName: 'cutout.fmat');
     final sidecar = buildSidecar(compiled.material);

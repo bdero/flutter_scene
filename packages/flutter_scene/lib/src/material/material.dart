@@ -918,6 +918,13 @@ abstract class Material {
   @internal
   bool get depthAlphaMasked => false;
 
+  /// Whether the color draw may discard fragments by logic only its own
+  /// fragment shader knows (a `.fmat` cutout, any raw fragment shader). The
+  /// engine's depth fragments write the full surface, so without a
+  /// [depthSurfaceShader] the scene pass must not test against that depth.
+  @internal
+  bool get colorCutsCoverage => false;
+
   /// The material's own fragment for a depth-writing pass, or null to use
   /// the engine's. A cutout `.fmat` supplies one that runs its `Surface()` and
   /// drops what it leaves uncovered, so the depth prepass and shadow maps

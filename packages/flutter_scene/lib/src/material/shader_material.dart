@@ -102,6 +102,11 @@ class ShaderInstanceAttribute {
 /// material declaring attributes supplies its own `vertexShader` (and a
 /// skinned or depth variant for the meshes it draws in those passes).
 ///
+/// A `vertexShader` that moves vertices needs a depth variant that moves them
+/// alike, or the depth passes draw the undisplaced mesh. The depth passes
+/// never run the fragment shader, so they cannot cut what it discards, and a
+/// frame drawing an opaque one skips `Scene.depthPriming`.
+///
 /// TODO(shader-instance-attributes): fail the draw when a material declares
 /// attributes with no vertex shader to read them, the way the `.fmat` parser
 /// rejects the same pairing.
@@ -538,6 +543,12 @@ class ShaderMaterial extends Material {
 
   @override
   bool isOpaque() => isOpaqueOverride;
+
+  // TODO(depth-priming): let a material declare that its fragment shader
+  // never discards, so opaque raw shaders keep priming.
+  @override
+  @internal
+  bool get colorCutsCoverage => true;
 
   @override
   void bind(

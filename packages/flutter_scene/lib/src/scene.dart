@@ -851,6 +851,22 @@ base class Scene implements SceneGraph {
   /// {@category Lighting and environment}
   bool punctualLightClustering = true;
 
+  /// Whether the scene pass depth-tests against the depth prepass instead of
+  /// a cleared depth buffer, so an opaque fragment hidden behind another is
+  /// rejected before it is shaded.
+  ///
+  /// Opaque draws are ordered by material, not distance, so without this
+  /// every covered fragment runs the full lit shader on GPUs that do not
+  /// remove hidden surfaces themselves (desktop GPUs, and WebGL). It applies
+  /// only on frames that already run a depth prepass at full resolution
+  /// without MSAA (temporal anti-aliasing, reflections, depth inputs, ambient
+  /// occlusion at full size), and costs storing and reloading that depth. A
+  /// frame whose prepass cannot reproduce a surface's color draw skips it: an
+  /// opaque `ShaderMaterial`, or a `.fmat` that discards without depth passes
+  /// of its own.
+  /// {@category Rendering}
+  bool depthPriming = true;
+
   /// How many frames of GPU work may be outstanding before a screen view
   /// presents its previous image again instead of encoding a new frame.
   ///
@@ -4605,6 +4621,7 @@ base class Scene implements SceneGraph {
         wantContactShadows ||
         wantCustomDepth;
     IrradianceFieldBinding? irradianceBinding;
+    var primeDepth = false;
     if (projectionValid) {
       // The occlusion chain also carries the sun contact-shadow term, so it
       // runs (with occlusion sampling zeroed) when only contact shadows ask
@@ -4635,6 +4652,14 @@ base class Scene implements SceneGraph {
                 !bindSceneDepth)
             ? ambientOcclusionTargetSize(pixelSize, ambientOcclusion)
             : pixelSize;
+        // The scene pass can share the prepass depth only at its own size and
+        // sample count. Debug views keep their own depth so overdraw and
+        // conflict views show the unprimed scene.
+        primeDepth =
+            depthPriming &&
+            !enableMsaa &&
+            !debugActive &&
+            depthDimensions == pixelSize;
         // Reflections need the interpolated view-space normal, so the prepass
         // writes it alongside depth (it carries the camera basis to rotate
         // world normals into view space). Occlusion needs only depth.
@@ -4652,8 +4677,12 @@ base class Scene implements SceneGraph {
             // bandwidth) is paid whenever the patch is wanted, whether or
             // not a translucent surface qualifies.
             keepDepthStencil:
+                primeDepth ||
                 patchTranslucentDepth ||
                 (enableTaa && temporalAntiAliasing.objectMotion),
+            // A capturing scene pass samples its depth, which is this one
+            // when primed.
+            depthStencilShaderRead: primeDepth && captureOpaqueColor,
             cameraRight: cameraRight,
             cameraUp: cameraUp,
             cullingPlanes: view.cullingPlanes,
@@ -4682,6 +4711,7 @@ base class Scene implements SceneGraph {
             cullingPlanes: view.cullingPlanes,
             cullingFrustum: cullingFrustum,
             skinnedMotion: temporalAntiAliasing.skinnedMotion,
+            storeDepth: primeDepth || patchTranslucentDepth,
           ),
         );
       }
@@ -4815,6 +4845,9 @@ base class Scene implements SceneGraph {
         cameraTransform: currentJitteredViewProjection,
         debugView: debugFrame,
         holdShadowVariant: sunShadow == DirectionalShadowState.paused,
+        primeDepth: primeDepth,
+        // The translucent depth patch reloads the primed depth after this.
+        storePrimedDepth: patchTranslucentDepth,
       ),
     );
     if (wantSceneColorHistory) {
