@@ -3,10 +3,10 @@
 /// Provides static primitive AABBs (from the POSITION accessor's
 /// spec-provided min/max, falling back to a vertex scan) and skinned
 /// pose-union AABBs: for every skinned primitive, the union of the mesh's
-/// extent in its rest pose and at each keyframe time of each animation, posed
-/// by that animation's channels alone. A pose-union bound is the only sound
-/// cull bound for skinned content; the rest-pose AABB under-covers the mesh
-/// once joints animate.
+/// extent in its rest pose and through each animation, posed by that
+/// animation's channels alone as the engine plays them. A pose-union bound is
+/// the only sound cull bound for skinned content; the rest-pose AABB
+/// under-covers the mesh once joints animate.
 ///
 /// Pure Dart (no `dart:ui`/GPU), so it runs in the build-hook isolate.
 library;
@@ -17,6 +17,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math.dart';
 
 import 'accessor.dart';
+import 'coordinate_policy.dart';
 import 'draco/gltf_draco.dart';
 import 'types.dart';
 
@@ -171,10 +172,13 @@ AabbBounds aabbFromPositions(Float32List positions) {
 ///
 /// For each node with both a skin and a mesh, the result holds one entry per
 /// triangle-mode (`mode == 4`) primitive, in source order: the union of the
-/// primitive's extent in its rest pose and at every keyframe time of each
-/// animation driving the skin's joints. Each animation is posed on its own over
-/// the rest pose, as a model plays one at a time. The joint chains stop at the
-/// first non-joint ancestor, so the boxes are in that skeleton parent's space;
+/// primitive's extent in its rest pose and through each animation driving the
+/// skin's joints. An animation is sampled at every keyframe, evenly inside
+/// each cubic spline segment (which can swing past its keyframes), and just
+/// before each stepped keyframe, where the step still holds the one before.
+/// Each animation is posed on its own over the rest pose, as a model plays one
+/// at a time. The joint chains stop at the first non-joint ancestor, so the
+/// boxes are in that skeleton parent's space;
 /// [bakeSkinnedNodeBounds] moves them into the skinned node's. An entry is
 /// `null` when the primitive carries no `JOINTS_0`/`WEIGHTS_0` attributes (it
 /// packs and renders unskinned) or the union came up empty; consumers treat a
@@ -215,17 +219,16 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
     // them, the spec mandates identity — match the runtime behaviour.
     final ibm = _readInverseBindMatrices(skin, doc, bufferData);
 
-    // Samples the rest pose with no channel applied, then each animation's
-    // keyframe times with only that animation's channels.
-    // TODO(gltf-animation-interpolation): both importers play STEP and
-    // CUBICSPLINE samplers as authored, and a cubic segment can pass beyond
-    // its keyframes. Evaluate both that way, sampling inside cubic segments.
-    final poses = <(Map<int, List<_PoseChannel>>, List<double>)>[
-      (const {}, const [0.0]),
+    // Samples the rest pose with no channel applied, then each animation with
+    // only its own channels.
+    final poses = <(Map<int, List<_PoseChannel>>, List<_PoseSample>)>[
+      (const {}, const [(time: 0.0, stepTime: 0.0)]),
     ];
     for (final anim in doc.animations) {
       final channelsByNode = <int, List<_PoseChannel>>{};
       final sampleTimes = <double>{};
+      // Where a stepped channel jumps to its next keyframe.
+      final stepJumps = <double>{};
       for (final ch in anim.channels) {
         if (ch.targetNode == null) continue;
         if (!isJointNode.containsKey(ch.targetNode!)) continue;
@@ -238,26 +241,40 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
           doc.bufferViews,
           bufferData,
         );
-        final values = readAccessorAsFloat32(
-          outputAcc,
-          doc.bufferViews,
-          bufferData,
+        final keyframes = splitGltfKeyframes(
+          readAccessorAsFloat32(outputAcc, doc.bufferViews, bufferData),
+          componentCount: ch.targetPath == 'rotation' ? 4 : 3,
+          cubicSpline: sampler.interpolation == 'CUBICSPLINE',
         );
-        final isCubic = sampler.interpolation == 'CUBICSPLINE';
         final pc = _PoseChannel(
           targetNode: ch.targetNode!,
           targetPath: ch.targetPath,
           times: times,
-          values: values,
-          isCubic: isCubic,
+          values: keyframes.values,
+          isStep: sampler.interpolation == 'STEP',
+          inTangents: keyframes.inTangents,
+          outTangents: keyframes.outTangents,
         );
         if (pc.isUsable) {
           channelsByNode.putIfAbsent(pc.targetNode, () => []).add(pc);
-          sampleTimes.addAll(times);
+          sampleTimes.addAll(pc.sampleTimes);
+          if (pc.isStep) stepJumps.addAll(times.skip(1));
         }
       }
       if (channelsByNode.isNotEmpty) {
-        poses.add((channelsByNode, sampleTimes.toList()..sort()));
+        final sorted = sampleTimes.toList()..sort();
+        poses.add((
+          channelsByNode,
+          [
+            for (var i = 0; i < sorted.length; i++) ...[
+              (time: sorted[i], stepTime: sorted[i]),
+              // Just before a step jumps, it still holds the keyframe it held
+              // at the previous sample, while every other channel has moved.
+              if (i > 0 && stepJumps.contains(sorted[i]))
+                (time: sorted[i], stepTime: sorted[i - 1]),
+            ],
+          ],
+        ));
       }
     }
 
@@ -296,8 +313,8 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
       );
       final transformedScratch = AabbBounds.empty();
 
-      for (final (channelsByNode, sortedTimes) in poses) {
-        for (final t in sortedTimes) {
+      for (final (channelsByNode, samples) in poses) {
+        for (final (:time, :stepTime) in samples) {
           _buildJointPaletteAtTime(
             jointNodeIndices: jointNodeIndices,
             parentOf: parentOf,
@@ -305,7 +322,8 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
             channelsByNode: channelsByNode,
             staticTrs: staticTrs,
             ibm: ibm,
-            time: t,
+            time: time,
+            stepTime: stepTime,
             out: palette,
           );
 
@@ -406,13 +424,23 @@ Map<int, List<AabbBounds?>> bakeSkinnedNodeBounds(
   };
 }
 
+/// One moment the bake poses an animation at. Stepped channels sample at
+/// [stepTime], which trails [time] for the pose just before a step jumps.
+typedef _PoseSample = ({double time, double stepTime});
+
+/// How many even steps the bake takes through each cubic spline segment, to
+/// catch where the curve swings past its keyframes.
+const _cubicSegmentSamples = 8;
+
 class _PoseChannel {
   _PoseChannel({
     required this.targetNode,
     required this.targetPath,
     required this.times,
     required this.values,
-    required this.isCubic,
+    required this.isStep,
+    this.inTangents,
+    this.outTangents,
   });
   final int targetNode;
 
@@ -421,41 +449,50 @@ class _PoseChannel {
   /// are filtered out of the pose bake via [isUsable].)
   final String targetPath;
   final Float32List times;
+
+  /// One value per keyframe, [componentCount] floats each.
   final Float32List values;
 
-  /// CUBICSPLINE samplers store [in_tangent, value, out_tangent] per
-  /// keyframe; the value lives at offset 1 with stride 3 within each
-  /// component group. LINEAR/STEP store the value at offset 0 stride 1.
-  final bool isCubic;
+  /// Whether each keyframe holds until the next, as a STEP sampler plays.
+  final bool isStep;
+
+  /// A CUBICSPLINE sampler's tangents, laid out as [values]. Null for other
+  /// samplers.
+  final Float32List? inTangents;
+  final Float32List? outTangents;
+
+  bool get isCubic => inTangents != null && outTangents != null;
+
+  int get componentCount => targetPath == 'rotation' ? 4 : 3;
 
   bool get isUsable =>
       targetPath == 'translation' ||
       targetPath == 'rotation' ||
       targetPath == 'scale';
 
-  /// Returns the value at time [t] as a `List<double>` of either 3
-  /// (translation/scale) or 4 (rotation) components, sampled with
-  /// LINEAR / SLERP interpolation between bracketing keyframes, whatever
-  /// the sampler's interpolation.
-  List<double> sampleAt(double t) {
-    final componentCount = targetPath == 'rotation' ? 4 : 3;
-    final stride = isCubic ? componentCount * 3 : componentCount;
-    final valueOffsetInGroup = isCubic ? componentCount : 0;
+  /// The times the bake poses this channel at: its keyframes, and for a
+  /// cubic spline, evenly between them as well.
+  Iterable<double> get sampleTimes sync* {
+    for (var k = 0; k < times.length; k++) {
+      yield times[k];
+      if (!isCubic || k + 1 == times.length) continue;
+      final span = times[k + 1] - times[k];
+      for (var step = 1; step < _cubicSegmentSamples; step++) {
+        yield times[k] + span * step / _cubicSegmentSamples;
+      }
+    }
+  }
 
+  /// Returns the value at time [t] as the engine plays it, a `List<double>`
+  /// of either 3 (translation/scale) or 4 (rotation) components. A step holds
+  /// the keyframe before [t], a cubic spline follows its tangents, and other
+  /// samplers interpolate linearly, or by SLERP for a rotation.
+  List<double> sampleAt(double t) {
     if (times.isEmpty) {
       return List<double>.filled(componentCount, 0);
     }
-    if (t <= times.first) {
-      return _readKeyframe(0, stride, valueOffsetInGroup, componentCount);
-    }
-    if (t >= times.last) {
-      return _readKeyframe(
-        times.length - 1,
-        stride,
-        valueOffsetInGroup,
-        componentCount,
-      );
-    }
+    if (t <= times.first) return _keyframe(0);
+    if (t >= times.last) return _keyframe(times.length - 1);
 
     int lo = 0, hi = times.length - 1;
     while (hi - lo > 1) {
@@ -466,13 +503,15 @@ class _PoseChannel {
         hi = mid;
       }
     }
+    if (isStep) return _keyframe(lo);
 
     final t0 = times[lo];
     final t1 = times[hi];
     final span = t1 - t0;
     final f = span == 0 ? 0.0 : (t - t0) / span;
-    final v0 = _readKeyframe(lo, stride, valueOffsetInGroup, componentCount);
-    final v1 = _readKeyframe(hi, stride, valueOffsetInGroup, componentCount);
+    if (isCubic) return _hermite(lo, hi, f, span);
+    final v0 = _keyframe(lo);
+    final v1 = _keyframe(hi);
 
     if (targetPath == 'rotation') {
       // SLERP between two unit quaternions.
@@ -483,14 +522,37 @@ class _PoseChannel {
     ];
   }
 
-  List<double> _readKeyframe(
-    int keyframeIndex,
-    int stride,
-    int valueOffsetInGroup,
-    int componentCount,
-  ) {
-    final base = keyframeIndex * stride + valueOffsetInGroup;
+  List<double> _keyframe(int keyframeIndex) {
+    final base = keyframeIndex * componentCount;
     return [for (int i = 0; i < componentCount; i++) values[base + i]];
+  }
+
+  // The cubic Hermite curve [f] of the way from keyframe [lo] to [hi], [span]
+  // seconds later, with glTF's tangents per second. The engine renormalizes a
+  // rotation, so this does too.
+  List<double> _hermite(int lo, int hi, double f, double span) {
+    final inTangents = this.inTangents!;
+    final outTangents = this.outTangents!;
+    final f2 = f * f;
+    final f3 = f2 * f;
+    final fromValue = 2 * f3 - 3 * f2 + 1;
+    final fromTangent = (f3 - 2 * f2 + f) * span;
+    final toValue = -2 * f3 + 3 * f2;
+    final toTangent = (f3 - f2) * span;
+    final from = lo * componentCount;
+    final to = hi * componentCount;
+    final out = [
+      for (int i = 0; i < componentCount; i++)
+        values[from + i] * fromValue +
+            outTangents[from + i] * fromTangent +
+            values[to + i] * toValue +
+            inTangents[to + i] * toTangent,
+    ];
+    if (targetPath != 'rotation') return out;
+    final length = sqrt(
+      out[0] * out[0] + out[1] * out[1] + out[2] * out[2] + out[3] * out[3],
+    );
+    return length == 0 ? out : [for (final c in out) c / length];
   }
 }
 
@@ -586,7 +648,8 @@ void _collectStaticTrs(
   }
 }
 
-/// Build the per-joint palette matrix at [time], writing into [out].
+/// Build the per-joint palette matrix at [time], writing into [out]. Stepped
+/// channels sample at [stepTime] instead.
 ///
 /// `palette[j]` post-multiplied by a vertex in mesh-local space
 /// produces the vertex's contribution from joint `j` after the
@@ -599,6 +662,7 @@ void _buildJointPaletteAtTime({
   required Map<int, _StaticTrs> staticTrs,
   required List<Matrix4> ibm,
   required double time,
+  required double stepTime,
   required List<Matrix4> out,
 }) {
   // Cache pose-time local transforms for any joint or joint-ancestor
@@ -624,7 +688,7 @@ void _buildJointPaletteAtTime({
     bool overridden = false;
     if (channels != null) {
       for (final c in channels) {
-        final v = c.sampleAt(time);
+        final v = c.sampleAt(c.isStep ? stepTime : time);
         switch (c.targetPath) {
           case 'translation':
             t = Vector3(v[0], v[1], v[2]);
