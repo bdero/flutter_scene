@@ -459,6 +459,18 @@ base class Scene implements SceneGraph {
       globalIllumination.enabled &&
       globalIllumination.feed == IrradianceFeed.rayTraced;
 
+  static bool _warnedTracingUnsupported = false;
+
+  static void _warnTracingUnsupported() {
+    if (_warnedTracingUnsupported) return;
+    _warnedTracingUnsupported = true;
+    debugPrint(
+      'flutter_scene: IrradianceFeed.rayTraced needs compute, which this '
+      'device lacks, so the irradiance field is off. Check '
+      'IrradianceFeed.rayTraced.isSupported to pick a feed.',
+    );
+  }
+
   /// Computes the linear exposure multiplier for a physical pinhole
   /// camera, the way photographers reason about it: [aperture] (f-stops),
   /// [shutterSpeed] (seconds), and sensor [iso].
@@ -4610,19 +4622,26 @@ base class Scene implements SceneGraph {
     final wantIndirectLight =
         !captureLinearColor &&
         ambientOcclusionCarriesIndirectLight(ambientOcclusion);
-    final wantIrradianceField =
+    final fieldEnabled =
         !captureLinearColor && projectionValid && globalIllumination.enabled;
+    final tracedIrradiance =
+        fieldEnabled && _irradianceTrace.availableFor(globalIllumination);
+    // A traced field that cannot run yet, or at all, stays off rather than
+    // switching to the screen-space feed, which reaches far less.
+    final tracingBlocked =
+        fieldEnabled && _wantsTracedIrradiance && !tracedIrradiance;
+    if (tracingBlocked) {
+      if (IrradianceFeed.rayTraced.isSupported) {
+        _repaintWhenLoaded(EngineComputeShaders.pendingLoad);
+      } else {
+        _warnTracingUnsupported();
+      }
+    }
+    final wantIrradianceField = fieldEnabled && !tracingBlocked;
     // The screen-space feed gathers from the depth prepass' normals and from
     // the previous frame's lit color, so it forces both on. The traced feed
     // reads neither.
-    final tracedIrradiance =
-        wantIrradianceField &&
-        _irradianceTrace.availableFor(globalIllumination);
     final wantScreenSpaceIrradiance = wantIrradianceField && !tracedIrradiance;
-    // Screen space stands in until the compute shaders land.
-    if (wantScreenSpaceIrradiance && _wantsTracedIrradiance) {
-      _repaintWhenLoaded(EngineComputeShaders.pendingLoad);
-    }
     final wantSceneColorHistory =
         wantIndirectLight || wantScreenSpaceIrradiance;
     // The occlusion texture's channels carry radiance while indirect light

@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/engine_compute_shaders.dart';
 import 'package:flutter_scene/src/render/render_quality.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -141,14 +143,23 @@ enum IrradianceFeed {
 
   /// Traces rays from every probe against the scene in a compute pass, so
   /// off-screen emitters, walls, and sky all reach the field, and moves
-  /// probes out of geometry. Falls back to [screenSpace] where the device
-  /// has no compute (WebGL2, OpenGL ES, and Flutter before 3.53).
+  /// probes out of geometry. Needs compute, which WebGL2, OpenGL ES, and
+  /// Flutter before 3.53 lack; check [isSupported] before choosing it. Where
+  /// it is unsupported the field stays off rather than switching feeds, since
+  /// the screen-space feed reaches far less of the scene.
   ///
   /// Traces static and skinned meshes with their base color and emissive
   /// textures, the sun, and punctual lights. Morph targets and rect area
   /// lights are not traced yet. While it runs, skinned meshes are skinned
   /// once per frame in a compute pass, which their draws reuse.
-  rayTraced,
+  rayTraced;
+
+  /// Whether this device can feed the field this way. Always true for
+  /// [screenSpace]. Read it once the scene's static resources have loaded.
+  bool get isSupported => switch (this) {
+    screenSpace => true,
+    rayTraced => gpu.supportsCompute && !EngineComputeShaders.failed,
+  };
 }
 
 /// How lit surfaces read a scene's irradiance field.

@@ -41,6 +41,10 @@ abstract final class EngineComputeShaders {
     return null;
   }
 
+  /// Whether the load failed, which leaves compute features unavailable for
+  /// the rest of the run.
+  static bool get failed => _failed;
+
   /// The load in flight, or null once it has landed or failed or before it
   /// starts.
   static Future<void>? get pendingLoad =>
