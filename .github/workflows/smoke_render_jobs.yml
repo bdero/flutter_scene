@@ -490,8 +490,11 @@ jobs:
       - run: pip install --quiet pillow numpy
       # The traced irradiance room renders only where compute exists, so
       # WebGPU has it and WebGL2 does not.
+      # TODO(webgpu-xr): webxr_emulated_pair renders on WebGL2 only, since the
+      # WebGPU host cannot wrap a session's targets yet. Drop its skip once it
+      # can.
       - name: Compare WebGPU against WebGL2
-        run: python3 tools/webgpu_smoke/compare_frames.py frames/webgl2 frames/webgpu --diff-dir frames/diff --skip irradiance_field_traced.png
+        run: python3 tools/webgpu_smoke/compare_frames.py frames/webgl2 frames/webgpu --diff-dir frames/diff --skip irradiance_field_traced.png --skip webxr_emulated_pair.png
       - name: Keep the differences
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
