@@ -974,9 +974,9 @@ base class Node implements SceneGraph {
   /// Baking matters because physics does not simulate scale, so a collider
   /// can never pick up a scale from the graph the way a mesh does. Pick the
   /// frame so that whatever the collider ends up on carries only a
-  /// translation and a rotation. Runtime glTF import is the case to watch,
-  /// since [fromGlbAsset] roots its model under the source handedness flip,
-  /// which has to go into the vertices rather than onto the collider:
+  /// translation and a rotation. A scaled model root is the case to watch,
+  /// since its scale has to go into the vertices rather than onto the
+  /// collider:
   ///
   /// ```dart
   /// final model = await Node.fromGlbAsset('assets/ground.glb');
@@ -989,9 +989,7 @@ base class Node implements SceneGraph {
   ///   ),
   /// );
   /// ```
-  ///
-  /// Scenes from [loadScene] carry that flip in their vertices already, so
-  /// there the default frame is the one to use.
+
   ///
   /// An attribute missing from any one primitive is dropped from the whole
   /// result, since the merged mesh carries a single attribute set. Skinned

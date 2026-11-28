@@ -139,10 +139,10 @@ base class Skin {
       // transform times its inverse bind matrix. globalTransform walks
       // every ancestor, so transforms on non-joint nodes between the
       // joints and the scene root (e.g. a skeleton root carrying the
-      // model's Z-up-to-Y-up correction) are included, as is the
-      // scene-root flip. The inverse bind matrix takes a vertex from
-      // model space into the joint's rest-pose space; the global
-      // transform then places it by the joint's current pose.
+      // model's Z-up-to-Y-up correction) are included. The inverse bind
+      // matrix takes a vertex from model space into the joint's rest-pose
+      // space; the global transform then places it by the joint's current
+      // pose.
       //
       // The shader applies this matrix directly, so the mesh node's own
       // transform must not be applied again -- SkinnedGeometry.bind

@@ -90,22 +90,21 @@ mesh node and the skeleton under a shared node and move that. Still silent.
 
 ---
 
-## 6. Replacing the transform of a runtime-imported model root
+## 6. Viewing an imported model from the `-Z` side
 
 **Mistake.**
 ```dart
-final model = await Node.fromGlbAsset('assets/ship.glb');
-model.localTransform = Matrix4.translation(v);   // wipes the handedness flip
+final model = await Node.fromGlbAsset('assets/sign.glb');
+scene.add(model);
+final orbit = OrbitCameraController(target: Vector3.zero(), azimuth: pi);
 ```
 
-**Symptom.** The model renders mirrored through Z (asymmetric geometry reversed, text backwards) with
-normals and IBL wrong for the mirrored orientation. It still draws and is not obviously broken.
+**Symptom.** The model shows its back. A double-sided sign or decal reads as a mirror image, so it
+looks like the importer flipped the model.
 
-**Do instead.** The runtime glTF importer synthesizes a root carrying a `scale(1, 1, -1)` handedness
-flip. Do not overwrite it. Parent that node under a new `Node` and transform the parent, or
-pre-multiply your transform by the existing `localTransform`. (The offline `.fscene`/`loadScene` path
-bakes handedness into the vertices, so its roots are identity and do not have this trap.) Still
-silent.
+**Do instead.** A glTF model's front faces `+Z`, toward a camera at `(0, 0, d)` looking down `-Z`,
+which is where the default camera and `OrbitCameraController(azimuth: 0)` sit. To turn a model toward
+something, use `node.lookAt(target, modelFront: true)`. Still silent.
 
 ---
 

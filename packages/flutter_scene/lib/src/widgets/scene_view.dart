@@ -385,9 +385,9 @@ class SceneView extends StatefulWidget {
 }
 
 // Used when a scene has no camera set up at all, so a bare SceneView(scene)
-// still renders. The PerspectiveCamera default sits on -Z looking toward the
+// still renders. The PerspectiveCamera default sits on +Z looking toward the
 // origin, which frames the front of imported glTF content (whose front faces
-// -Z after the scene-root flip) and centers content placed near the origin.
+// +Z) and centers content placed near the origin.
 final Camera _defaultCamera = PerspectiveCamera();
 
 /// A [Listenable] that repaints the scene; its [notify] is called each frame so

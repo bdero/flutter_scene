@@ -1882,7 +1882,7 @@ class SkinnedGeometry extends Geometry {
 
     // Skinned vertex UBO. The model transform is identity on purpose:
     // the joint matrices from Skin.getJointsTexture are already full
-    // global transforms (including the scene-root flip), so the shader
+    // global transforms, so the shader
     // applies them directly. Passing the mesh node's own transform here
     // would double-apply it (and glTF requires a skinned mesh node's
     // transform to be ignored). `modelTransform` is unused for skinned
