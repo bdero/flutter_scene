@@ -61,10 +61,7 @@ void copyTextureToRegion(
       ),
     ),
   );
-  final x = region.left.round();
-  final y = region.top.round();
-  final width = region.width.round();
-  final height = region.height.round();
+  final (:x, :y, :width, :height) = regionPixels(region);
   renderPass.setViewport(
     gpu.Viewport(x: x, y: y, width: width, height: height),
   );
@@ -94,6 +91,19 @@ void copyTextureToRegion(
   );
   drawCompat(renderPass, 6);
   rendererSubmissions.submit(commandBuffer);
+}
+
+/// The pixel rect covering [region], rounding each edge rather than the size,
+/// so a region inside a target stays inside it and neighbors tile exactly.
+({int x, int y, int width, int height}) regionPixels(ui.Rect region) {
+  final x = region.left.round();
+  final y = region.top.round();
+  return (
+    x: x,
+    y: y,
+    width: region.right.round() - x,
+    height: region.bottom.round() - y,
+  );
 }
 
 /// Packs the `ExternalOutputInfo` block of `flutter_scene_external_output.frag`,

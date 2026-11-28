@@ -34,6 +34,7 @@
 * `SceneView(webPresentation: ScenePresentation.domCanvas)` shows a web view's frames on a DOM canvas behind its Flutter content, skipping the per-frame copy into Flutter's renderer. Ancestor filters and shader masks do not apply to it, and widget captures miss it.
 * On WebGPU, `textureToPlatformImage` returns an `ImageBitmap` instead of null.
 * On WebGL2 without float filtering, a linearly sampled 32-bit float texture samples nearest instead of reading zero.
+* Views drawn into a region of a shared target round the region's edges instead of its size, so they no longer spill a pixel past the target or overlap a neighbor.
 * WebGL2 reuses its present framebuffer and skips redundant vertex array and uniform buffer calls per draw.
 * `Material.renderOrder` (`.fmat` `render_order:`) sorts a material's draws ahead of `Node.renderOrder`, so a whole class of translucent overlays (road paint, shadow decals, markers) is ordered in one place.
 * `.fscene` documents carry `Node.renderOrder` and `Material.renderOrder`, and the editor sets a node's order from the inspector and the `setNodeRenderOrder` command.
