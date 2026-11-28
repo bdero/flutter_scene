@@ -74,11 +74,8 @@ vec3 ViewPositionAt(vec2 uv) {
       vec3(cam.camera_right.w, cam.camera_up.w, cam.camera_forward.w));
 }
 
-// One cascade's shadow test using the pre-transformed light-clip coordinate LC
-// (evaluated as lc0 + float(step) * dlc from hoisted matrix products outside
-// the raymarch loop). If the point lies inside the tile, sample the atlas and
-// return 1 (lit) or 0 (shadowed) through [result]. Unrolled with literal
-// indices at the call sites so no dynamic uniform array indexing is emitted.
+// One cascade's shadow test at light-clip coordinate LC, writing 1 (lit) or 0
+// (shadowed) to RESULT. Literal indices avoid dynamic uniform indexing.
 #define TRY_CASCADE(IDX, LC, RESULT)                                       \
   {                                                                        \
     vec4 lc = (LC);                                                        \
@@ -98,9 +95,7 @@ vec3 ViewPositionAt(vec2 uv) {
     }                                                                      \
   }
 
-// Sunlight visibility at ray step [fi] using hoisted per-cascade start/delta
-// light-clip coordinates (1 lit, 0 shadowed). Points outside all cascades are
-// treated as lit.
+// Sunlight visibility at ray step [fi], lit outside every cascade.
 float ShadowVisibilityStep(
     vec4 lc0_0, vec4 dlc_0,
     vec4 lc0_1, vec4 dlc_1,
@@ -162,8 +157,7 @@ void main() {
   // the in-scatter into the first step near the camera; density scales the
   // overall thickness.
   int count = int(shadow.light_direction.w + 0.5);
-  // Hoist per-cascade light-space matrix multiplies outside the raymarch loop:
-  // M * vec4(start_pos + i * step_vec, 1) == lc0 + float(i) * dlc.
+  // Steps are affine, so each cascade's light-clip position is lc0 + i * dlc.
   vec3 start_pos = ray_origin + ray_dir * offset;
   vec3 step_vec = ray_dir * step_len;
   vec4 lc0_0 = vec4(0.0);

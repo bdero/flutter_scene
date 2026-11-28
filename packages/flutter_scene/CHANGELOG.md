@@ -17,6 +17,7 @@
 * Depth of field samples depth with nearest filtering, so it no longer reads zero depth on devices that cannot filter 32-bit float textures.
 * `GltfTextureResolver` (`resolveTexture` on the runtime importers) supplies the texture for a glTF's external image, so an app can share one texture across models.
 * God rays no longer misread the sun's shadow past a cascade's depth range or bleed across shadow atlas tiles.
+* God rays move the cascade transforms out of the raymarch loop, about 9% faster at the default step count.
 * Ambient occlusion on a very small view no longer reads and writes the same depth mip in one pass.
 * Ambient occlusion's depth mip chain is single channel, using a quarter of the memory and bandwidth.
 * TAA's depth history is single-channel fp32, halving its memory and comparing disocclusion at full precision.

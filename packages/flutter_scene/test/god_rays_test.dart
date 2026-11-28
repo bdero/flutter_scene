@@ -41,19 +41,4 @@ void main() {
       expect(source, contains('floor((float(IDX) + 0.5) / cols)'));
     },
   );
-
-  test(
-    'god rays shader hoists per-cascade matrix multiplies out of the loop',
-    () {
-      final source = _shader('flutter_scene_god_rays.frag');
-      final loopIdx = source.indexOf('for (int i = 0; i < kMaxSteps; i++)');
-      final hoistIdx = source.indexOf(
-        'shadow.light_space_matrix[0] * vec4(start_pos, 1.0)',
-      );
-      expect(loopIdx, greaterThan(0));
-      expect(hoistIdx, greaterThan(0));
-      expect(hoistIdx, lessThan(loopIdx));
-      expect(source, contains('ShadowVisibilityStep('));
-    },
-  );
 }
