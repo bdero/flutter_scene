@@ -614,33 +614,12 @@ class ResourceRealizer {
       final isUint32 = document.payload(indexId)!.format == 'uint32';
       indexType = isUint32 ? gpu.IndexType.int32 : gpu.IndexType.int16;
       final isTriangleTopology = res.topology == 'triangle';
-      // Reflecting vertex Z reverses triangle winding, so swap indices when
-      // exactly one of legacyWinding or legacyLeftHanded applies (v4 assets
-      // have both, which cancel out; v5 assets have legacyLeftHanded only).
-      if ((isLegacyWinding != isLegacyLeftHanded) && isTriangleTopology) {
-        final migrated = Uint8List.fromList(rawIndexBytes);
-        if (isUint32) {
-          final u32 = migrated.buffer.asUint32List(
-            migrated.offsetInBytes,
-            migrated.lengthInBytes ~/ 4,
-          );
-          for (var i = 0; i + 2 < u32.length; i += 3) {
-            final tmp = u32[i + 1];
-            u32[i + 1] = u32[i + 2];
-            u32[i + 2] = tmp;
-          }
-        } else {
-          final u16 = migrated.buffer.asUint16List(
-            migrated.offsetInBytes,
-            migrated.lengthInBytes ~/ 2,
-          );
-          for (var i = 0; i + 2 < u16.length; i += 3) {
-            final tmp = u16[i + 1];
-            u16[i + 1] = u16[i + 2];
-            u16[i + 2] = tmp;
-          }
-        }
-        indexBytes = migrated;
+      if (legacyIndicesSwapped(
+            legacyWinding: isLegacyWinding,
+            legacyLeftHanded: isLegacyLeftHanded,
+          ) &&
+          isTriangleTopology) {
+        indexBytes = swapTriangleWinding(rawIndexBytes, uint32: isUint32);
       } else {
         // TODO(winding): Support legacy winding migration for triangleStrip
         // topology (requires vertex-order reversal, not index-triple swap).
@@ -664,7 +643,7 @@ class ResourceRealizer {
         vertexCount,
       );
       if (isLegacyLeftHanded) {
-        streams = _reflectSoaZ(streams);
+        streams = reflectSoaZ(streams);
       }
       (geometry as UnskinnedGeometry).uploadUnskinnedAttributeStreams(
         streams,
@@ -681,7 +660,7 @@ class ResourceRealizer {
         vertexCount,
       );
       if (isLegacyLeftHanded) {
-        streams = _reflectSoaZ(streams);
+        streams = reflectSoaZ(streams);
       }
       final interleaved = InterleavedLayoutAdapter.packUnskinned(
         positions: Float32List.sublistView(streams.position),
@@ -707,7 +686,7 @@ class ResourceRealizer {
         vertexCount,
       );
       if (isLegacyLeftHanded) {
-        streams = _reflectSoaZ(streams);
+        streams = reflectSoaZ(streams);
       }
       (geometry as UnskinnedGeometry).uploadUnskinnedAttributeStreams(
         streams,
@@ -731,7 +710,7 @@ class ResourceRealizer {
           : null;
       final TypedData uploadData;
       if (isLegacyLeftHanded) {
-        uploadData = _reflectInterleavedZ(
+        uploadData = reflectInterleavedZ(
           upgraded ?? vertexBytes,
           vertexCount,
           skinned: skinned,
@@ -754,7 +733,37 @@ class ResourceRealizer {
     return geometry;
   }
 
-  static UnskinnedAttributeStreams _reflectSoaZ(
+  /// Whether a legacy geometry's triangle indices swap to keep their winding.
+  /// Reflecting vertex Z reverses winding, so they swap when exactly one of
+  /// [legacyWinding] or [legacyLeftHanded] applies (format 4 assets have both,
+  /// which cancel out; format 5 assets have [legacyLeftHanded] only).
+  @visibleForTesting
+  static bool legacyIndicesSwapped({
+    required bool legacyWinding,
+    required bool legacyLeftHanded,
+  }) => legacyWinding != legacyLeftHanded;
+
+  /// A copy of triangle list [indexBytes] with each triangle's last two
+  /// indices swapped.
+  @visibleForTesting
+  static Uint8List swapTriangleWinding(
+    Uint8List indexBytes, {
+    required bool uint32,
+  }) {
+    final migrated = Uint8List.fromList(indexBytes);
+    final List<int> indices = uint32
+        ? migrated.buffer.asUint32List(0, migrated.lengthInBytes ~/ 4)
+        : migrated.buffer.asUint16List(0, migrated.lengthInBytes ~/ 2);
+    for (var i = 0; i + 2 < indices.length; i += 3) {
+      final tmp = indices[i + 1];
+      indices[i + 1] = indices[i + 2];
+      indices[i + 2] = tmp;
+    }
+    return migrated;
+  }
+
+  @visibleForTesting
+  static UnskinnedAttributeStreams reflectSoaZ(
     UnskinnedAttributeStreams streams,
   ) {
     final posBytes = Uint8List.fromList(streams.position);
@@ -783,7 +792,8 @@ class ResourceRealizer {
     );
   }
 
-  static Float32List _reflectInterleavedZ(
+  @visibleForTesting
+  static Float32List reflectInterleavedZ(
     Uint8List bytes,
     int vertexCount, {
     required bool skinned,
