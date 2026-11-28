@@ -11,6 +11,12 @@
 # attempt that stops making progress or loses the app is retried once, skipping
 # the scenes that already passed. The app's verdict decides the result, and a
 # run that never reports one fails.
+#
+# Captures are pulled in short tar streams and checked against the device's
+# listing, each by size and a final IEND chunk. A cut-off file is deleted and
+# whatever is missing is pulled again, so a truncated PNG never reaches Argos.
+# A set still incomplete after the last try fails the run and is held back
+# from Argos. SMOKE_PULL_DEADLINE_S overrides the per-try transfer deadline.
 set -u
 
 backend=$1
@@ -19,6 +25,7 @@ pkg=dev.bdero.smoke_render
 attempt_cap_s=1200
 stall_cap_s=300
 poll_s=10
+pull_tries=4
 
 cd "$(dirname "$0")/.."
 diag=build/android-diagnostics
@@ -26,6 +33,12 @@ mkdir -p "$diag" build/smoke
 
 # A wedged transport can hang adb indefinitely, so calls get a deadline.
 adbt() { timeout 30 adb "$@"; }
+
+# Brings back a device adb dropped, waiting up to a minute for it.
+reconnect() {
+  adb reconnect offline > /dev/null 2>&1 || true
+  timeout 60 adb wait-for-device || true
+}
 
 adbt shell getprop ro.hardware.vulkan || true
 adbt shell getprop ro.opengles.version || true
@@ -73,10 +86,94 @@ print_new_log() {
   printed=$total
 }
 
+# The device's captures as "<name> <bytes>" lines. Fails when adb does not
+# answer.
+device_captures() {
+  local out
+  out=$(adbt exec-out run-as "$pkg" sh -c 'cd files/smoke 2>/dev/null && stat -c "%n %s" *.png 2>/dev/null; echo ---') || return 1
+  case $out in *---) printf '%s' "${out%---}" ;; *) return 1 ;; esac
+}
+
+# Whether $1 holds exactly $2 bytes and ends in a PNG's IEND chunk.
+png_complete() {
+  [ -f "$1" ] && [ "$(($(wc -c < "$1")))" -eq "$2" ] &&
+    [ "$(tail -c 12 "$1" | od -An -tx1 | tr -d ' \n')" = 0000000049454e44ae426082 ]
+}
+
+pull_log=$diag/capture_pull_$backend.txt
+pull_missing=
+# Copies the device's captures into build/smoke. A stream can end early or
+# stall, so each try fetches what this pull has not verified yet into a staging
+# directory, with 30s plus 1s per 64 KiB to finish, and moves over only files
+# that pass png_complete. A cut-off file is deleted with the staging directory.
+# Fails when the set is still incomplete after the last try, naming the missing
+# scenes in pull_missing (left empty when adb never listed the captures).
 pull_captures() {
-  adbt exec-out run-as "$pkg" sh -c 'cd files/smoke 2>/dev/null && tar cf - *.png' 2>/dev/null |
-    tar xf - -C build/smoke 2>/dev/null || true
-  echo "Pulled captures: $(find build/smoke -maxdepth 1 -name '*.png' | wc -l) PNGs on the host."
+  local try out listing='' listed=0 want names total name size deadline status
+  local left cut why verified=' ' stage=build/smoke-pull
+  pull_missing=
+  for try in $(seq "$pull_tries"); do
+    if [ "$try" -gt 1 ]; then
+      sleep 2
+      reconnect
+    fi
+    if ! out=$(device_captures); then
+      echo "Capture pull $try of $pull_tries got no listing from adb."
+      continue
+    fi
+    listing=$out
+    listed=1
+    want='' names='' total=0
+    while read -r name size; do
+      [ -n "$name" ] || continue
+      case $verified in *" $name "*) continue ;; esac
+      want+="$name $size"$'\n'
+      names+=" $name"
+      total=$((total + size))
+    done <<< "$listing"
+    if [ -n "$names" ]; then
+      deadline=${SMOKE_PULL_DEADLINE_S:-$((30 + total / 65536))}
+      rm -rf "$stage" && mkdir -p "$stage"
+      timeout "$deadline" adb exec-out run-as "$pkg" sh -c "cd files/smoke && tar cf -$names" 2> "$stage.log" |
+        tar xf - -C "$stage" 2>> "$stage.log"
+      status=("${PIPESTATUS[@]}")
+      left=0 cut=''
+      while read -r name size; do
+        [ -n "$name" ] || continue
+        if png_complete "$stage/$name" "$size"; then
+          mv -f "$stage/$name" build/smoke/
+          verified+="$name "
+        else
+          left=$((left + 1))
+          [ -e "$stage/$name" ] && cut+=" $name"
+        fi
+      done <<< "$want"
+      { echo "Try $try, ${deadline}s deadline, exits ${status[*]}, fetching$names"; cat "$stage.log"; } >> "$pull_log"
+      if [ "$left" -gt 0 ]; then
+        case ${status[0]} in
+          124) why="stopped at the ${deadline}s deadline" ;;
+          *) why="adb exited ${status[0]}, tar ${status[1]}" ;;
+        esac
+        echo "Capture pull $try of $pull_tries left $left PNGs missing or cut off ($why)."
+        [ -z "$cut" ] || echo "  Deleted the cut-off$cut."
+        sed 's/^/  /' "$stage.log"
+      fi
+      rm -rf "$stage" "$stage.log"
+      [ "$left" -eq 0 ] || continue
+    fi
+    echo "Pulled all $(grep -c . <<< "$listing") captures, each matching the device."
+    return 0
+  done
+  if [ "$listed" -eq 0 ]; then
+    echo "adb never listed the captures, so the PNGs on the host are unverified."
+    return 1
+  fi
+  while read -r name size; do
+    [ -n "$name" ] || continue
+    case $verified in *" $name "*) ;; *) pull_missing+=" ${name%.png}" ;; esac
+  done <<< "$listing"
+  echo "After $pull_tries tries these captures are still missing or cut off (${pull_missing# })."
+  return 1
 }
 
 # The app's pid, then its files directory and finished-test count. Fails when
@@ -121,8 +218,7 @@ run_attempt() {
       fi
     else
       echo "adb did not answer; reconnecting."
-      adb reconnect offline > /dev/null 2>&1 || true
-      timeout 60 adb wait-for-device || true
+      reconnect
     fi
     if [ $((now - last)) -ge "$stall_cap_s" ]; then
       echo "No progress for ${stall_cap_s}s; stopping attempt $attempt."
@@ -160,14 +256,14 @@ if [ "$installed" -eq 1 ] && ! run_attempt 1; then
   fi
 fi
 print_new_log
-pull_captures
+pulled=1
+pull_captures || pulled=0
 
 verdict=
 for _ in 1 2 3; do
   verdict=$(adbt exec-out run-as "$pkg" cat files/smoke/summary 2> /dev/null || true)
   [ -n "$verdict" ] && break
-  adb reconnect offline > /dev/null 2>&1 || true
-  timeout 60 adb wait-for-device || true
+  reconnect
 done
 printf '%s\n' "$verdict" > "$diag/summary_$backend.txt"
 case $(head -n 1 <<< "$verdict") in
@@ -185,6 +281,17 @@ case $(head -n 1 <<< "$verdict") in
     code=1
     ;;
 esac
+if [ "$pulled" -eq 0 ]; then
+  echo "The captures did not all reach the host intact, so the run fails."
+  code=1
+  # In Argos a known-partial set shows scenes as removed, or becomes a partial
+  # master baseline, so it goes to the diagnostics instead.
+  if [ -n "$pull_missing" ]; then
+    mkdir -p "$diag/incomplete_captures"
+    mv build/smoke/*.png "$diag/incomplete_captures/" 2> /dev/null || true
+    echo "Held the partial set back from Argos, in $diag/incomplete_captures."
+  fi
+fi
 
 adbt logcat -d -b crash -v time > "$diag/logcat_crash_$backend.txt" 2>&1 || true
 adbt devices -l > "$diag/adb_devices_after_$backend.txt" 2>&1 || true
