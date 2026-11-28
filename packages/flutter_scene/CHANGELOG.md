@@ -29,6 +29,7 @@
 * Half-resolution ground-truth ambient occlusion no longer stipples grazing walls and floors. Its blur follows sloped surfaces, and lit materials upsample it against their own depth.
 * Ambient occlusion shifts its sampling noise each frame under TAA, so the temporal resolve averages away more of its grain.
 * Ground-truth ambient occlusion no longer darkens grazing surfaces, since its blur runs in half float and clamps only at the end.
+* Consecutive draws sharing a material at different scales each get their own model scale, fixing transmission thickness on scaled copies.
 * Screen-space indirect light no longer caps its red channel at 1.
 * `SceneView(webPresentation: ScenePresentation.domCanvas)` shows a web view's frames on a DOM canvas behind its Flutter content, skipping the per-frame copy into Flutter's renderer. Ancestor filters and shader masks do not apply to it, and widget captures miss it.
 * On WebGPU, `textureToPlatformImage` returns an `ImageBitmap` instead of null.
