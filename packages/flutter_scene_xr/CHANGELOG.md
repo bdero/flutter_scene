@@ -1,4 +1,4 @@
-## 0.1.0-dev
+## 0.1.0-dev.1
 
 * `XrRuntime`, `XrSession`, `XrFrame`, `XrView` and `XrPose`, a session contract any XR runtime can implement.
 * `XrRig` turns each frame's views into camera nodes and the `RenderView`s for `Scene.renderViewsToTargets`.

@@ -2,8 +2,7 @@ name: flutter_scene_xr
 description: XR sessions for Flutter Scene. A runtime-agnostic session, frame and rig contract, input bridging, and a WebXR runtime for immersive VR and AR on the web.
 repository: https://github.com/bdero/flutter_scene
 homepage: https://fscene.dev
-version: 0.1.0-dev
-publish_to: none
+version: 0.1.0-dev.1
 
 topics:
   - xr
