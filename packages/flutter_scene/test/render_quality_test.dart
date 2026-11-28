@@ -304,6 +304,8 @@ void main() {
     );
   });
 
+  // VM only, since a browser on an Android phone is not the native build this
+  // targets.
   test('Android reads spherical harmonics only at its default tier', () {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -321,5 +323,5 @@ void main() {
       automaticReceiverUsesSh(RenderQualityTier.high, platformDefault: true),
       isFalse,
     );
-  });
+  }, testOn: 'vm');
 }
