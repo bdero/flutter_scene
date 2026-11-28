@@ -215,7 +215,9 @@ void main() {
           ),
         ),
       );
-    offAxisNode.localTransform = Matrix4.inverted(perspective.getViewMatrix());
+    // View space looks down +Z and a camera node down its local -Z.
+    offAxisNode.localTransform = Matrix4.inverted(perspective.getViewMatrix())
+      ..scaleByVector3(Vector3(1, 1, -1));
     scene.add(offAxisNode);
     final camera = offAxisNode.getComponent<CameraComponent>()!.toCamera();
     final actual = await _canvasPixels(scene, [RenderView(camera: camera)]);

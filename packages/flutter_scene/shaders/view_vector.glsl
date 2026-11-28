@@ -4,7 +4,7 @@
 // nonzero; an orthographic one's is constant. The x and y rows hold the
 // camera's right and up axes, which neither an oblique near-plane clip (it
 // replaces the z row) nor subpixel jitter (it moves the translation) touches,
-// so their cross product is the forward axis for any orthographic transform.
+// so up cross right is the forward axis for any orthographic transform.
 
 #ifndef VIEW_VECTOR_GLSL_
 #define VIEW_VECTOR_GLSL_
@@ -20,7 +20,7 @@ vec3 CameraTransformForward(mat4 camera_transform) {
                     camera_transform[2][0]);
   vec3 y_row = vec3(camera_transform[0][1], camera_transform[1][1],
                     camera_transform[2][1]);
-  return normalize(cross(x_row, y_row));
+  return normalize(cross(y_row, x_row));
 }
 
 // The unit direction from [world_position] toward the viewer: toward the eye
