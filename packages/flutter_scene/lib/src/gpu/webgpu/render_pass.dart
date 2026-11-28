@@ -351,21 +351,15 @@ final class _WebGpuRenderPass extends RenderPass {
   @override
   void setViewport(Viewport viewport) {
     _checkOpen();
-    // WebGPU rejects a viewport past the attachment bounds; clamp to
-    // [0, _width] x [0, _height], mirroring setScissor.
-    final x0 = viewport.x.clamp(0, _width);
-    final y0 = viewport.y.clamp(0, _height);
-    final x1 = (viewport.x + viewport.width).clamp(x0, _width);
-    final y1 = (viewport.y + viewport.height).clamp(y0, _height);
     final near = viewport.depthRange.zNear.clamp(0.0, 1.0);
     final far = viewport.depthRange.zFar.clamp(0.0, 1.0);
     // TODO(webgpu-reversed-depth-range): WebGPU needs minDepth <= maxDepth;
     // a reversed range would need the shader's depth flipped instead.
     _encoder.setViewport(
-      x0.toDouble(),
-      y0.toDouble(),
-      (x1 - x0).toDouble(),
-      (y1 - y0).toDouble(),
+      viewport.x.toDouble(),
+      viewport.y.toDouble(),
+      viewport.width.toDouble(),
+      viewport.height.toDouble(),
       near < far ? near : far,
       near < far ? far : near,
     );

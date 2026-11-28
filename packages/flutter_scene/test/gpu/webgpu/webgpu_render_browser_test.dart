@@ -305,22 +305,6 @@ void main() {
     expect(await pixel(color, 3, 0), [255, 255, 255, 255]);
   });
 
-  test(
-    'a viewport past the target bounds is clamped instead of rejected',
-    () async {
-      final color = target();
-      final host = gpu.gpuContext.createHostBuffer();
-      final commands = gpu.gpuContext.createCommandBuffer();
-      final pass = commands.createRenderPass(
-        gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: color)),
-      )..setViewport(gpu.Viewport(x: 2, y: 0, width: 10, height: 10));
-      quad(pass, host, color: const [1, 1, 1, 1]);
-      commands.submit();
-      expect(await pixel(color, 0, 0), [0, 0, 0, 0]);
-      expect(await pixel(color, 3, 0), [255, 255, 255, 255]);
-    },
-  );
-
   test('MSAA resolves into the resolve texture', () async {
     final msaa = target(samples: 4);
     final resolve = target();
