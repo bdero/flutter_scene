@@ -13,6 +13,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/scene.dart' show defaultMaxGpuFramesInFlight;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
@@ -312,6 +313,19 @@ void main() {
               as RenderRepaintBoundary;
       Future<void> frames(int count) async {
         for (var i = 0; i < count; i++) {
+          // Holds the frame while the GPU is a full window behind, as pacing
+          // does for a screen view. A render-to-texture view is not paced, so
+          // a slow GPU would let it fall further behind on each window and
+          // grow the pools for every new depth.
+          for (
+            var wait = 0;
+            wait < 250 &&
+                rendererSubmissions.framesInFlight >=
+                    defaultMaxGpuFramesInFlight;
+            wait++
+          ) {
+            await Future<void>.delayed(const Duration(milliseconds: 1));
+          }
           boundary.markNeedsPaint();
           await tester.pump(const Duration(milliseconds: 16));
           // Lets GPU completions arrive, as they would between real frames.
