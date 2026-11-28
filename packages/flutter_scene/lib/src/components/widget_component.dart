@@ -234,8 +234,7 @@ class WidgetComponent extends Component {
 
   /// An aspect-correct quad facing +Z, [_worldHeight] world units tall,
   /// with v = 0 at the top (the glTF convention). Vertex order, winding,
-  /// and UVs mirror the +Z face of the cuboid primitive, so the quad front
-  /// faces the engine's front-face convention.
+  /// and UVs match the +Z face of the cuboid primitive.
   Geometry _quadGeometry() {
     final height = _worldHeight;
     final width = height * (_size.width / _size.height);
@@ -256,8 +255,8 @@ class WidgetComponent extends Component {
         hh,
         0,
       ]),
-      texCoords: Float32List.fromList([0, 1, 1, 1, 1, 0, 0, 0]),
-      indices: [0, 1, 3, 3, 1, 2],
+      texCoords: Float32List.fromList([1, 1, 0, 1, 0, 0, 1, 0]),
+      indices: [0, 3, 1, 3, 2, 1],
     );
   }
 }

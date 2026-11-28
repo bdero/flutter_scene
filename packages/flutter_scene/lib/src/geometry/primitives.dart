@@ -470,10 +470,10 @@ PrimitiveArrays buildCuboidArrays(Vector3 extents, {bool debugColors = false}) {
   // image), matching how image rows are uploaded, so face UVs put v = 1 on
   // the bottom edge of each face.
   const faceUvs = <List<double>>[
-    [0, 1],
     [1, 1],
-    [1, 0],
+    [0, 1],
     [0, 0],
+    [1, 0],
   ];
 
   final positions = Float32List(24 * 3);
@@ -548,18 +548,18 @@ PrimitiveArrays buildWedgeArrays(Vector3 size) {
     final base = positions.length ~/ 3;
     // v = 0 at the top of the image (the glTF convention; see faceUvs in
     // buildCuboidArrays).
-    addVert(a, n, 0, 1);
-    addVert(b, n, 1, 1);
-    addVert(c, n, 1, 0);
-    addVert(d, n, 0, 0);
+    addVert(a, n, 1, 1);
+    addVert(b, n, 0, 1);
+    addVert(c, n, 0, 0);
+    addVert(d, n, 1, 0);
     indices.addAll([base, base + 3, base + 1, base + 3, base + 2, base + 1]);
   }
 
   void addTri(Vector3 a, Vector3 b, Vector3 c, Vector3 n) {
     final base = positions.length ~/ 3;
-    addVert(a, n, 0, 0);
-    addVert(b, n, 1, 0);
-    addVert(c, n, 0, 1);
+    addVert(a, n, 1, 0);
+    addVert(b, n, 0, 0);
+    addVert(c, n, 1, 1);
     indices.addAll([base, base + 1, base + 2]);
   }
 
@@ -668,7 +668,7 @@ PrimitiveArrays buildSphereArrays({
       normals[v * 3] = nx;
       normals[v * 3 + 1] = ny;
       normals[v * 3 + 2] = nz;
-      texCoords[v * 2] = s / segments;
+      texCoords[v * 2] = 1 - s / segments;
       texCoords[v * 2 + 1] = r / rings;
     }
   }
@@ -757,7 +757,7 @@ PrimitiveArrays buildCylinderArrays({
       addVert(
         Vector3(radius * cos, y, radius * sin),
         normal,
-        s / radialSegments,
+        1 - s / radialSegments,
         t,
       );
     }
@@ -793,7 +793,9 @@ PrimitiveArrays buildCylinderArrays({
         Vector3(radius * cos, y, radius * sin),
         Vector3(0, ny, 0),
         0.5 + 0.5 * cos,
-        0.5 + 0.5 * sin,
+        // Seen from outside, the bottom cap's texture would read mirrored
+        // with the top cap's mapping.
+        0.5 + 0.5 * sin * ny,
       );
     }
     for (var s = 0; s < radialSegments; s++) {
@@ -873,7 +875,7 @@ PrimitiveArrays buildCapsuleArrays({
       final sin = math.sin(theta);
       positions.addAll([ring.posR * cos, ring.posY, ring.posR * sin]);
       normals.addAll([ring.normR * cos, ring.normY, ring.normR * sin]);
-      texCoords.addAll([s / radialSegments, r / (rowCount - 1)]);
+      texCoords.addAll([1 - s / radialSegments, r / (rowCount - 1)]);
     }
   }
   final indices = <int>[];
@@ -935,7 +937,7 @@ PrimitiveArrays buildTorusArrays({
         ringRadius * sinU,
       ]);
       normals.addAll([cosV * cosU, sinV, cosV * sinU]);
-      texCoords.addAll([j / tubularSegments, i / radialSegments]);
+      texCoords.addAll([1 - j / tubularSegments, i / radialSegments]);
     }
   }
   final indices = <int>[];
@@ -1028,7 +1030,7 @@ PrimitiveArrays buildRingArrays({
       outerRadius * math.sin(theta),
     ]);
     normals.addAll([0, 1, 0]);
-    texCoords.addAll([s / segments, 1]);
+    texCoords.addAll([1 - s / segments, 1]);
   }
   final innerBase = segments + 1;
   for (var s = 0; s <= segments; s++) {
@@ -1039,7 +1041,7 @@ PrimitiveArrays buildRingArrays({
       innerRadius * math.sin(theta),
     ]);
     normals.addAll([0, 1, 0]);
-    texCoords.addAll([s / segments, 0]);
+    texCoords.addAll([1 - s / segments, 0]);
   }
   final indices = <int>[];
   for (var s = 0; s < segments; s++) {
@@ -1160,7 +1162,7 @@ PrimitiveArrays buildIcosphereArrays({
     normals[i * 3 + 2] = n.z;
     // TODO(icosphere-uv): spherical mapping leaves a seam where longitude
     // wraps and distorts near the poles; emit per-face UVs to remove it.
-    texCoords[i * 2] = 0.5 + math.atan2(n.z, n.x) / (2 * math.pi);
+    texCoords[i * 2] = 0.5 - math.atan2(n.z, n.x) / (2 * math.pi);
     texCoords[i * 2 + 1] = 0.5 - math.asin(n.y) / math.pi;
   }
   final indices = <int>[];
