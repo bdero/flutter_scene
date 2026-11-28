@@ -1,3 +1,7 @@
+## 0.2.3
+
+* Widen the `scene` constraint to `>=0.4.0 <0.6.0`.
+
 ## 0.2.2
 
 * Widen the `flutter_scene` constraint to `^0.24.0` and the `scene` constraint to `^0.4.0`.

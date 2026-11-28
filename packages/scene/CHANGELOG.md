@@ -6,9 +6,6 @@
 - `GeometryResource`, `SkinSpec`, `AnimationSpec`, and convex-hull and triangle-mesh collider shapes carry `legacyLeftHanded` after migration so the realizer reflects their payloads.
 - `EnvironmentResource.environmentMirrorZ` mirrors the environment across the XY plane before `environmentRotationY`. Migrated documents set it so image and procedural skies keep their place relative to the reflected content.
 - `currentFsceneVersion` is 6; older readers refuse format 6 documents.
-
-## 0.4.3
-
 - `AnimationChannelSpec.interpolation` and `AnimationPathChannelSpec.interpolation` (`AnimationInterpolation`, one of `step`, `linear`, or `cubicSpline`) carry how a channel moves between keyframes, delta-serialized, and a change to one sets `SceneDiff.animationsChanged`. A cubic spline keeps its tangents in separate `inTangents` and `outTangents` payloads, so `keyframes` always holds values and an older reader plays the channel as linear.
 - `AnimationPathChannelSpec.step` is deprecated in favor of `interpolation`. Documents that wrote `step` still read as stepped.
 - `NodeSpec.renderOrder` carries a node's render order, delta-serialized, reported by `diffScene` (`NodeChange.renderOrder`), and overridable on prefab instances through the `renderOrder` path. An instance at the default order takes its prefab root's.

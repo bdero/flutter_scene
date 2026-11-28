@@ -1,3 +1,7 @@
+## 0.5.3
+
+* Widen the `scene` constraint to `>=0.4.0 <0.6.0`.
+
 ## 0.5.2
 
 * Widen the `scene` constraint to `^0.4.0`.
