@@ -45,6 +45,7 @@ class SmokeScene {
     this.id,
     this.setup, {
     this.preload,
+    this.supported,
     this.paint,
     this.warmupFrames = 0,
     this.fixedStep,
@@ -58,6 +59,11 @@ class SmokeScene {
   final String id;
   final ({Scene scene, Camera camera}) Function() setup;
   final Future<void> Function()? preload;
+
+  /// Whether this device has the feature the scene tests, read after
+  /// [preload]. A scene for a feature some devices lack renders only where
+  /// it exists, rather than capturing a fallback under the same name.
+  final bool Function()? supported;
 
   /// Draws the frame in place of `scene.render(camera, canvas)`, for a scene
   /// that exercises another render entry point (view groups, render to an
@@ -1086,8 +1092,9 @@ Future<void> loadTracedGi() async {
 }
 
 ({Scene scene, Camera camera}) _irradianceRoom(
-  IrradianceFieldReceiver receiver,
-) {
+  IrradianceFieldReceiver receiver, {
+  IrradianceFeed feed = IrradianceFeed.screenSpace,
+}) {
   final scene = Scene();
   // Nearly no environment light, so the colored term is the field's.
   scene.environmentIntensity = 0.02;
@@ -1100,7 +1107,7 @@ Future<void> loadTracedGi() async {
     ..hysteresis = 0.85
     ..visibility = 0.5
     ..injectionResolution = IrradianceInjectionResolution.quarter
-    ..feed = IrradianceFeed.rayTraced
+    ..feed = feed
     ..receiver = receiver;
   scene.add(
     _directionalLightNode(
@@ -1358,9 +1365,11 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // and a dim key light so the room reads. Every colored texel on the white
   // floor and ceiling arrived through the probe field.
   //
-  // The field is fed by the compute trace, so the wall colors cross the room
-  // and mix. Backends without compute fall back to the screen-space feed,
-  // which only reaches about a cell past each wall.
+  // The room is deliberately small relative to the probe spacing. Screen-space
+  // injection only reaches the eight probes of the cell a surface sits in, so
+  // a wall lights the probes within about a cell of it and spreads outward one
+  // cell per frame through the scene-color feedback. That near-field reach is
+  // what this scene measures; a bake is what fills a large room's interior.
   //
   // The walls are solids thicker than a probe spacing, per the field's content
   // rule.
@@ -1371,7 +1380,6 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     // history to gather from.
     warmupFrames: 45,
     fixedStep: 1.0 / 60.0,
-    preload: loadTracedGi,
   ),
   // The same room read through the cheap spherical-harmonic receiver, which
   // has no visibility test, so light reaches past the occluder.
@@ -1380,7 +1388,19 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     () => _irradianceRoom(IrradianceFieldReceiver.sphericalHarmonics),
     warmupFrames: 45,
     fixedStep: 1.0 / 60.0,
+  ),
+  // The same room fed by the compute trace, so the wall colors cross the
+  // room and mix. Rendered only where the device can trace.
+  SmokeScene(
+    'irradiance_field_traced',
+    () => _irradianceRoom(
+      IrradianceFieldReceiver.full,
+      feed: IrradianceFeed.rayTraced,
+    ),
+    warmupFrames: 45,
+    fixedStep: 1.0 / 60.0,
     preload: loadTracedGi,
+    supported: () => IrradianceFeed.rayTraced.isSupported,
   ),
   SmokeScene(
     'taa',

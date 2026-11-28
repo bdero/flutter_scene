@@ -4,8 +4,8 @@
 // the colour bleed each one measures to build/smoke/.
 //
 // Not part of the smoke matrix. The traced frame needs compute (Flutter 3.53
-// or newer on Metal or Vulkan, or WebGPU) and checks the screen-space
-// fallback without it. Run on macOS:
+// or newer on Metal or Vulkan, or WebGPU), and without it checks that the
+// field stays off rather than switching feeds. Run on macOS:
 //
 //   flutter drive --driver=test_driver/integration_test.dart \
 //     --target=integration_test/traced_gi_test.dart \
@@ -147,9 +147,10 @@ void main() {
     expect(screenSpace['injected'], isTrue);
     expect(screenSpace['prepass'], isTrue);
     final traced = report['traced']! as Map<String, Object?>;
-    if (!gpu.supportsCompute) {
+    if (!IrradianceFeed.rayTraced.isSupported) {
       expect(traced['traced'], isFalse);
-      expect(traced['injected'], isTrue, reason: 'falls back to screen space');
+      expect(traced['injected'], isFalse, reason: 'no screen-space stand-in');
+      expect(traced['bleed'], off['bleed'], reason: 'the field stays off');
       return;
     }
     expect(traced['traced'], isTrue, reason: 'the trace pass ran');
