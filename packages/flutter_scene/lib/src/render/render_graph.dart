@@ -147,6 +147,20 @@ class ObservedTexturePool extends TransientTexturePool {
   int get heldTextureCount => _inner.heldTextureCount;
 }
 
+/// Half of [dimension], floored, at least 1, so half-resolution targets
+/// agree on odd viewports and share pool slots.
+int halfResolutionDimension(int dimension) => math.max(1, dimension ~/ 2);
+
+/// [halfResolutionDimension] of each axis of [dimensions].
+ui.Size halfResolutionSize(ui.Size dimensions) => ui.Size(
+  halfResolutionDimension(dimensions.width.floor()).toDouble(),
+  halfResolutionDimension(dimensions.height.floor()).toDouble(),
+);
+
+/// [dimension] times [scale], floored, at least 1.
+int scaledResolutionDimension(int dimension, double scale) =>
+    math.max(1, (dimension * scale).floor());
+
 /// Description of a transient GPU texture requested from a
 /// [TransientTexturePool].
 ///
@@ -155,25 +169,6 @@ class ObservedTexturePool extends TransientTexturePool {
 /// same frame must distinguish them with [debugName], and a color target
 /// that can be rendered with more than one depth setup must distinguish
 /// them with [attachmentKey].
-/// Floors [dimension] to half resolution with a minimum of 1 texel, so every
-/// half-res pass (SSAO, DoF, SSR, Bloom, planar reflections) agrees on odd
-/// viewport dimensions and can alias transient pool slots.
-int halfResolutionDimension(int dimension) => math.max(1, dimension ~/ 2);
-
-/// Floors [dimensions] to half resolution with a minimum of 1x1.
-ui.Size halfResolutionSize(ui.Size dimensions) => ui.Size(
-  halfResolutionDimension(dimensions.width.floor()).toDouble(),
-  halfResolutionDimension(dimensions.height.floor()).toDouble(),
-);
-
-/// Scales [dimension] by [scale] with a minimum of 1 texel, matching
-/// [halfResolutionDimension] at `scale == 0.5` on odd viewports.
-int scaledResolutionDimension(int dimension, double scale) {
-  if (scale == 1.0) return math.max(1, dimension);
-  if (scale == 0.5) return halfResolutionDimension(dimension);
-  return math.max(1, (dimension * scale).floor());
-}
-
 class TransientTextureDescriptor {
   const TransientTextureDescriptor({
     required this.width,
