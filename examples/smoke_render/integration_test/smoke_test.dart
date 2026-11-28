@@ -102,6 +102,11 @@ void main() {
       // which must be loaded before SmokeSceneView constructs them.
       await Scene.preload(smaa: true);
       await smoke.preload?.call();
+      if (!(smoke.supported?.call() ?? true)) {
+        // ignore: avoid_print
+        print('SMOKE ${smoke.id}: unsupported on this device, skipped');
+        return;
+      }
 
       await tester.pumpWidget(
         MaterialApp(
@@ -310,7 +315,7 @@ void main() {
           reason: 'a farther layer of a masked mesh hid its nearer layer',
         );
       }
-      if (smoke.id == 'irradiance_field' || smoke.id == 'irradiance_field_sh') {
+      if (smoke.id.startsWith('irradiance_field')) {
         // Both colored walls are emissive and nothing else lights the scene,
         // so the floor's color is entirely bounce light carried by the probe
         // field. Each half of the floor must take the tint of the wall beside

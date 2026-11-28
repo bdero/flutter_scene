@@ -9,7 +9,7 @@ A scene passes when its mean absolute channel difference is at most
 --max-mean (0-255 scale) and at most --max-outliers percent of its pixels
 differ by more than 16 in any channel. --allow raises the outlier limit for
 one named scene, for a known difference that has its own TODO. --skip leaves
-out a scene the two sides render with different features by design. Exits
+out a scene only one side can render. Exits
 nonzero when a scene fails or is missing from either side. Needs Pillow and
 NumPy.
 """

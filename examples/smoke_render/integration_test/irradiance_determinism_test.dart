@@ -32,7 +32,11 @@ const _runs = [
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  for (final id in const ['irradiance_field', 'irradiance_field_sh']) {
+  for (final id in const [
+    'irradiance_field',
+    'irradiance_field_sh',
+    'irradiance_field_traced',
+  ]) {
     testWidgets('$id renders identically at any frame cadence', (tester) async {
       await tester.pumpWidget(const SizedBox.expand());
       await tester.pump();
@@ -41,6 +45,10 @@ void main() {
         await Scene.preload(smaa: true);
         await smoke.preload?.call();
       });
+      if (!(smoke.supported?.call() ?? true)) {
+        markTestSkipped('$id is unsupported on this device');
+        return;
+      }
 
       ByteData? first;
       for (var run = 0; run < _runs.length; run++) {
