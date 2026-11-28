@@ -1340,14 +1340,11 @@ class _StressSceneState extends State<_StressScene> {
       // ~2.4× the bounding radius fills a 60-deg FOV without clipping.
       final double distance = max(radius * 2.4, 0.5);
       final double height = lookAt.y + radius * 0.4;
-      // Initial camera: on the -Z side looking toward +Z. After the
-      // importer's scene-root Z-flip, glTF models face -Z, so this puts
-      // the camera in front of the model rather than behind it. Yaw=pi
-      // turns the camera around to look back at the model; pitch tilts
-      // down so it stays centered.
-      _quake.position = vm.Vector3(lookAt.x, height, lookAt.z - distance);
+      // Start on the +Z side looking toward -Z, in front of the model (glTF
+      // models face +Z), pitched down so the model stays centered.
+      _quake.position = vm.Vector3(lookAt.x, height, lookAt.z + distance);
       final dir = (lookAt - _quake.position)..normalize();
-      _quake.yaw = pi;
+      _quake.yaw = 0.0;
       _quake.pitch = asin(
         dir.y,
       ).clamp(-QuakeCamera.pitchLimit, QuakeCamera.pitchLimit);

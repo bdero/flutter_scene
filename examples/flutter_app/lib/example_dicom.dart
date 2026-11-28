@@ -125,8 +125,7 @@ class _ExampleDicomState extends State<ExampleDicom> {
       // Orient the volume anatomically. The three cube axes point along the
       // DICOM patient (LPS) directions of the column, row, and slice axes;
       // _lpsToWorld maps those to flutter_scene world space (Superior up,
-      // Anterior toward the camera) with the odd-parity placement described
-      // there, so the anatomy renders un-mirrored (not the other way around).
+      // Anterior toward the camera), so the anatomy renders un-mirrored.
       final rot = vm.Matrix4.identity()..setRotation(_orientationMatrix(atlas));
       final scaleM = vm.Matrix4.diagonal3(_nodeScale);
       final transform = rot * scaleM;
@@ -218,17 +217,13 @@ class _ExampleDicomState extends State<ExampleDicom> {
 
   // Maps a DICOM patient-space (LPS) direction into flutter_scene world space:
   // Superior -> +Y (up), Anterior -> +Z (toward the default camera), patient
-  // Right -> +X. This is an odd-parity (determinant -1) map, the same reason
-  // the glTF importer places right-handed content with a scale(1,1,-1) flip:
-  // flutter_scene's world is left-handed (right = up x forward), so a
-  // right-handed source needs an odd-parity placement to render un-mirrored.
-  // (A proper det +1 rotation would mirror left/right and face the head away.)
+  // Left -> +X. Both spaces are right-handed, so this is a proper rotation.
   // The world axes then carry fixed anatomical meaning, which the compass
-  // labels: +X=R, -X=L, +Y=S, -Y=I, +Z=A, -Z=P. Viewed face-on this is the
+  // labels: +X=L, -X=R, +Y=S, -Y=I, +Z=A, -Z=P. Viewed face-on this is the
   // "as if facing the patient" convention: patient Left is on the viewer's
   // right.
   static vm.Vector3 _lpsToWorld(List<double> v) =>
-      vm.Vector3(-v[0], v[2], -v[1]);
+      vm.Vector3(v[0], v[2], -v[1]);
 
   // Rotation whose columns send the cube's local x/y/z axes (pointing along the
   // column/row/slice patient directions) to their oriented world directions.
@@ -626,17 +621,17 @@ class _CompassPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 16;
 
-    // Camera basis, matching the engine's left-handed right = up x forward.
-    var right = vm.Vector3(0, 1, 0).cross(forward);
+    // Camera basis, matching the engine's right = forward x up.
+    var right = forward.cross(vm.Vector3(0, 1, 0));
     if (right.length < 1e-4) right = vm.Vector3(1, 0, 0);
     right.normalize();
-    final up = forward.cross(right)..normalize();
+    final up = right.cross(forward)..normalize();
 
     // World axis -> anatomical label + color (per _lpsToWorld's fixed mapping).
     final axes =
         <(vm.Vector3, String, Color)>[
-          (vm.Vector3(1, 0, 0), 'R', const Color(0xFFFF7A7A)),
-          (vm.Vector3(-1, 0, 0), 'L', const Color(0xFFFF7A7A)),
+          (vm.Vector3(1, 0, 0), 'L', const Color(0xFFFF7A7A)),
+          (vm.Vector3(-1, 0, 0), 'R', const Color(0xFFFF7A7A)),
           (vm.Vector3(0, 1, 0), 'S', const Color(0xFF8FE388)),
           (vm.Vector3(0, -1, 0), 'I', const Color(0xFF8FE388)),
           (vm.Vector3(0, 0, 1), 'A', const Color(0xFF7AB8FF)),

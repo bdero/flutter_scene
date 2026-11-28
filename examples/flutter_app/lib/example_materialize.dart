@@ -87,7 +87,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   final vm.Vector3 _center = vm.Vector3.zero();
   double get _range => math.max(_maxH - _minH, 1e-3);
 
-  PerspectiveCamera _camera = PerspectiveCamera(position: vm.Vector3(0, 0, -3));
+  PerspectiveCamera _camera = PerspectiveCamera(position: vm.Vector3(0, 0, 3));
 
   // Timeline owns the frame-driven progress and exposes it to the playback
   // bar without rebuilding the whole scene on every tick.
@@ -187,11 +187,11 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       _spin.add(helmet);
       scene.add(_spin);
 
-      // Frame the model on the -Z side (after the importer's scene-root Z flip
-      // glTF models face -Z), angled slightly up and to the side.
+      // Frame the model from its +Z front, angled slightly up and to the
+      // side.
       _camera = PerspectiveCamera.framing(
         bounds,
-        direction: vm.Vector3(0.4, 0.5, -2.6),
+        direction: vm.Vector3(0.4, 0.5, 2.6),
       );
 
       _applySettings();

@@ -234,10 +234,10 @@ class RaycastVehicle extends Component {
       if (suspensionForce < 0) suspensionForce = 0;
       body.applyForce(up * suspensionForce, atWorldPoint: mountWorld);
 
-      // Tire basis in the contact plane. Right is up x forward; steered
+      // Tire basis in the contact plane. Right is forward x up; steered
       // wheels rotate their basis about the chassis up axis.
       var wheelForward = chassisForward.clone();
-      var wheelRight = up.cross(chassisForward)..normalize();
+      var wheelRight = chassisForward.cross(up)..normalize();
       if (wheel.steered && _steerAngle != 0) {
         final c = math.cos(_steerAngle);
         final s = math.sin(_steerAngle);

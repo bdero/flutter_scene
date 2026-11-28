@@ -38,19 +38,6 @@ class _ExampleAreaLightsState extends State<ExampleAreaLights> {
   Node? _rimRig;
   double _time = 0.0;
 
-  // Aims a node's local +Z (the panel emission axis) at [target].
-  static vm.Matrix4 _aim(vm.Vector3 position, vm.Vector3 target) {
-    final forward = (target - position).normalized();
-    final right = vm.Vector3(0, 1, 0).cross(forward)..normalize();
-    final up = forward.cross(right).normalized();
-    return vm.Matrix4.columns(
-      vm.Vector4(right.x, right.y, right.z, 0),
-      vm.Vector4(up.x, up.y, up.z, 0),
-      vm.Vector4(forward.x, forward.y, forward.z, 0),
-      vm.Vector4(position.x, position.y, position.z, 1),
-    );
-  }
-
   // A panel node pairs the light with a matching unlit quad so the source
   // itself reads in reflections and to the eye.
   Node _panel(RectAreaLight light) {
@@ -99,7 +86,8 @@ class _ExampleAreaLightsState extends State<ExampleAreaLights> {
             vm.Matrix4.rotationY(0.5),
     );
 
-    // Warm key panel, angled down at the subjects from the left.
+    // Warm key panel, angled down at the subjects from the left. Each panel
+    // emits along its node's local -Z, so lookAtTransform aims it.
     final key = _panel(
       RectAreaLight(
         color: vm.Vector3(1.0, 0.72, 0.45),
@@ -108,7 +96,11 @@ class _ExampleAreaLightsState extends State<ExampleAreaLights> {
         height: 1.2,
         range: 20.0,
       ),
-    )..localTransform = _aim(vm.Vector3(-2.0, 1.9, 1.4), vm.Vector3(0, 0.5, 0));
+    );
+    key.localTransform = Node.lookAtTransform(
+      vm.Vector3(-2.0, 1.9, 1.4),
+      vm.Vector3(0, 0.5, 0),
+    );
     scene.add(key);
 
     // Cool rim panel on a slow orbit rig behind the subjects.
@@ -120,7 +112,11 @@ class _ExampleAreaLightsState extends State<ExampleAreaLights> {
         height: 2.2,
         range: 20.0,
       ),
-    )..localTransform = _aim(vm.Vector3(0, 1.3, -2.4), vm.Vector3(0, 0.5, 0));
+    );
+    rim.localTransform = Node.lookAtTransform(
+      vm.Vector3(0, 1.3, -2.4),
+      vm.Vector3(0, 0.5, 0),
+    );
     _rimRig = Node()..add(rim);
     scene.add(_rimRig!);
   }

@@ -145,7 +145,7 @@ class _ExampleToonState extends State<ExampleToon> {
     //   float rim_strength        (offset 52, 4 bytes)
     //   float rim_width           (offset 56, 4 bytes)
     //   float ambient             (offset 60, 4 bytes)
-    final light = vm.Vector3(0.4, 0.8, -0.5).normalized();
+    final light = vm.Vector3(0.4, 0.8, 0.5).normalized();
     material.setUniformBlock(
       'ToonInfo',
       ByteData.sublistView(
@@ -179,7 +179,7 @@ class _ExampleToonState extends State<ExampleToon> {
           child: SceneView(
             scene,
             camera: PerspectiveCamera(
-              position: vm.Vector3(0, 2, -6),
+              position: vm.Vector3(0, 2, 6),
               target: vm.Vector3(0, 1.5, 0),
             ),
             onTick: (elapsed, deltaSeconds) {
