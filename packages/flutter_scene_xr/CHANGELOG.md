@@ -1,3 +1,7 @@
+## 0.1.0-dev.2
+
+* `XrRig.defaultXrToScene` is the identity, since flutter_scene 0.25.0 shares the runtime's right-handed, `-Z` forward convention. Poses, eye cameras, and target rays map straight through.
+
 ## 0.1.0-dev.1
 
 * `XrRuntime`, `XrSession`, `XrFrame`, `XrView` and `XrPose`, a session contract any XR runtime can implement.

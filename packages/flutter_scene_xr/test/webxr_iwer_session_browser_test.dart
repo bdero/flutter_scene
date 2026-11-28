@@ -178,11 +178,8 @@ void main() {
     expect(rig.eyes, hasLength(2));
     expect(rig.eyeCameras, hasLength(2));
     final viewer = frame.viewerPosition!;
-    // The default xrToScene reflects Z.
-    expect(
-      rig.head.globalTransform.getTranslation(),
-      _closeToVector(Vector3(viewer.x, viewer.y, -viewer.z)),
-    );
+    // The default xrToScene keeps the runtime's coordinates.
+    expect(rig.head.globalTransform.getTranslation(), _closeToVector(viewer));
     final leftEye = views![0].camera.position;
     final rightEye = views![1].camera.position;
     expect((rightEye - leftEye).length, closeTo(device.ipd, 1e-5));
