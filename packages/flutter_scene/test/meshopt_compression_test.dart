@@ -803,7 +803,6 @@ List<PackedPrimitive> _packAll(Uint8List glbBytes) {
             accessors: gltf.doc.accessors,
             bufferViews: gltf.doc.bufferViews,
             bufferData: gltf.bufferData,
-            coordinatePolicy: GltfCoordinatePolicy.bakeNative,
             includeSkinning: primitive.attributes.containsKey('JOINTS_0'),
           ),
   ];

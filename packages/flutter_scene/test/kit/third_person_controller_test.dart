@@ -154,7 +154,7 @@ void main() {
       controller.setMoveInput(vm.Vector2(0, 1));
       controller.fixedUpdate(0.1);
 
-      expect(controller.velocity.z, greaterThan(0.0));
+      expect(controller.velocity.z, lessThan(0.0));
 
       controller.setMoveInput(vm.Vector2.zero());
       for (var i = 0; i < 20; i++) {
@@ -310,10 +310,10 @@ void main() {
       );
       player.addComponent(controller);
 
-      // Forward input (+Y) with 90 degree camera heading yaw should steer along +X
+      // Forward input (+Y) with -90 degree camera heading yaw steers along +X
       controller.setMoveInput(
         vm.Vector2(0, 1),
-        cameraHeadingYaw: 3.141592653589793 / 2,
+        cameraHeadingYaw: -3.141592653589793 / 2,
       );
       controller.fixedUpdate(0.1);
 
@@ -321,7 +321,7 @@ void main() {
       expect(controller.velocity.z, closeTo(0.0, 0.1));
     });
 
-    vm.Vector3 forwardOf(Node node) => node.localTransform.getColumn(2).xyz;
+    vm.Vector3 forwardOf(Node node) => node.forward;
 
     test('turns the node to face the movement direction by default', () {
       final player = Node();
@@ -336,7 +336,7 @@ void main() {
         controller.fixedUpdate(0.1);
       }
 
-      expect(controller.yaw, closeTo(math.pi / 2, 0.01));
+      expect(controller.yaw, closeTo(-math.pi / 2, 0.01));
       expect(forwardOf(player).x, closeTo(1.0, 0.01));
     });
 
@@ -356,10 +356,10 @@ void main() {
       }
 
       expect(player.position.x, greaterThan(1.0));
-      expect(forwardOf(player).x, closeTo(math.sin(1.0), 1e-6));
-      expect(forwardOf(player).z, closeTo(math.cos(1.0), 1e-6));
+      expect(forwardOf(player).x, closeTo(-math.sin(1.0), 1e-6));
+      expect(forwardOf(player).z, closeTo(-math.cos(1.0), 1e-6));
       // The heading still tracks movement for callers driving their own facing.
-      expect(controller.yaw, closeTo(math.pi / 2, 0.01));
+      expect(controller.yaw, closeTo(-math.pi / 2, 0.01));
     });
 
     test('seeds yaw from the node rotation instead of snapping to zero', () {
@@ -371,7 +371,7 @@ void main() {
       controller.fixedUpdate(0.1);
 
       expect(controller.yaw, closeTo(1.0, 1e-6));
-      expect(forwardOf(player).x, closeTo(math.sin(1.0), 1e-6));
+      expect(forwardOf(player).x, closeTo(-math.sin(1.0), 1e-6));
     });
 
     test('maintains footOffset height above ground plane', () {

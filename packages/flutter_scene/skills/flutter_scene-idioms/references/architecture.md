@@ -104,12 +104,12 @@ class Game {
     await Scene.initializeStaticResources();
 
     // The camera lives in the scene as a node, not on the widget. A camera
-    // node's transform is its view: the translation is the eye, local +Z is
+    // node's transform is its view: the translation is the eye, local -Z is
     // the look direction, +Y is up. lookAtFrom sets both at once, so there is
     // no view-matrix math to hand-roll.
     final cameraNode = Node()
       ..addComponent(CameraComponent(activateOnMount: true))
-      ..lookAtFrom(vm.Vector3(0, 3, -8), vm.Vector3.zero());
+      ..lookAtFrom(vm.Vector3(0, 3, 8), vm.Vector3.zero());
     scene.add(cameraNode);
     // activateOnMount makes this the scene's primary camera when the node
     // mounts, so SceneView needs no `camera:` argument. (The first mounted
@@ -178,8 +178,9 @@ The scene owns which camera is active, and there are three levers:
 With no camera set at all, the first mounted `CameraComponent` auto-promotes, and a scene with none
 still renders through a default camera. Move or rotate a `CameraComponent`'s node to move the view;
 the `NodeCamera` reads the node's world transform live each frame. Aim it with `node.lookAt(target)`
-(rotate toward a world point) or `node.lookAtFrom(eye, target)` (position and aim in one call); +Z is
-the forward axis, so the same helpers aim lights and imported models. A follow-cam is then a one-line
+(rotate toward a world point) or `node.lookAtFrom(eye, target)` (position and aim in one call); -Z is
+the forward axis, so the same helpers aim lights, and `modelFront: true` turns an imported model's +Z
+front instead. A follow-cam is then a one-line
 component that calls `node.lookAtFrom(...)` in `update` each frame.
 
 ### Camera controllers (interactive cameras)
@@ -295,7 +296,7 @@ game object.
 ```dart
 SceneView(
   game.scene,
-  camera: PerspectiveCamera(position: vm.Vector3(0, 3, -8)),
+  camera: PerspectiveCamera(position: vm.Vector3(0, 3, 8)),
   children: [
     SceneSubtree(
       parent: game.player,

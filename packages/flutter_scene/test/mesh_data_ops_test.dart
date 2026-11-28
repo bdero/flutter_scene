@@ -411,7 +411,7 @@ void main() {
       );
       expect(_windingNormal(data).dot(_firstNormal(data)), greaterThan(0));
 
-      // The handedness flip a glTF model carries at its root.
+      // A mirroring transform.
       final mirrored = data.transformed(Matrix4.diagonal3(Vector3(1, 1, -1)));
       expect(mirrored.indices, [0, 2, 1]);
       expect(

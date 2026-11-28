@@ -841,7 +841,7 @@ class MeshCodec extends ComponentCodec {
 }
 
 /// Codec for [DirectionalLightComponent]. The owning node's rotation aims the
-/// light along native local +Z, or along a serialized `localDirection` for
+/// light along native local -Z, or along a serialized `localDirection` for
 /// components created with [DirectionalLightComponent.aimed].
 class DirectionalLightCodec
     extends DeclarativeComponentCodec<DirectionalLightComponent> {
@@ -855,7 +855,7 @@ class DirectionalLightCodec
     properties: propertySchema,
     gizmo: const GizmoSpec([
       GizmoIcon(color: GizmoColor.bind('color')),
-      // Travel direction; the node's rotation aims the light along local +Z.
+      // Travel direction; the node's rotation aims the light along local -Z.
       // TODO(gizmo-aimed): a code-constructed .aimed light travels along
       // localDirection instead; bind it once optional binds exist.
       GizmoArrow(length: GizmoScalar(1.4)),
@@ -1032,7 +1032,7 @@ class DirectionalLightCodec
         ComponentPropertyKind.vec3,
         doc:
             'Fixed node-local travel direction for aimed lights; absent '
-            'aims along the node\'s local +Z.',
+            'aims along the node\'s local -Z.',
       ),
       read: (c, _) {
         final direction = c.localDirection;
@@ -1964,7 +1964,7 @@ class RectAreaLightCodec
     gizmo: const GizmoSpec([
       GizmoIcon(color: GizmoColor.bind('color')),
       // The emitting panel: width along local X, height along local Y,
-      // radiating along +Z.
+      // radiating along -Z.
       GizmoWireRect(
         width: GizmoScalar.bind('width'),
         height: GizmoScalar.bind('height'),

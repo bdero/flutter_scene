@@ -1,5 +1,5 @@
 // Covers the camera controllers: orbit/fly/follow drive their node's transform
-// with frame-rate-independent smoothing, clamped pitch, and a +Z forward axis
+// with frame-rate-independent smoothing, clamped pitch, and a -Z forward axis
 // aimed via Node.lookAtFrom.
 
 import 'dart:math' as math;
@@ -10,14 +10,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
 Vector3 _pos(Node n) => n.globalTransform.getTranslation();
-Vector3 _forward(Node n) {
-  final s = n.globalTransform.storage;
-  return Vector3(s[8], s[9], s[10]).normalized();
-}
+Vector3 _forward(Node n) => n.forward;
 
 // Recovers (azimuth, polar) of an eye orbiting the origin, matching the
-// controller's own convention (azimuth about +Y, polar elevation).
-double _azimuthOf(Vector3 eye) => math.atan2(-eye.x, -eye.z);
+// controller's own convention (azimuth about +Y from +Z, polar elevation).
+double _azimuthOf(Vector3 eye) => math.atan2(eye.x, eye.z);
 double _polarOf(Vector3 eye) =>
     math.asin((eye.y / eye.length).clamp(-1.0, 1.0));
 
@@ -29,7 +26,7 @@ KeyDownEvent _down(LogicalKeyboardKey key) => KeyDownEvent(
 
 void main() {
   group('OrbitCameraController', () {
-    test('places the eye on the orbit and aims +Z at the target', () {
+    test('places the eye on the orbit and aims -Z at the target', () {
       final node = Node();
       final c = OrbitCameraController(
         distance: 6.0,
@@ -42,10 +39,10 @@ void main() {
       final eye = _pos(node);
       expect(eye.x, closeTo(0.0, 1e-5));
       expect(eye.y, closeTo(0.0, 1e-5));
-      expect(eye.z, closeTo(-6.0, 1e-5));
+      expect(eye.z, closeTo(6.0, 1e-5));
       final f = _forward(node);
       expect(f.x, closeTo(0.0, 1e-5));
-      expect(f.z, closeTo(1.0, 1e-5)); // looks toward the origin
+      expect(f.z, closeTo(-1.0, 1e-5)); // looks toward the origin
     });
 
     test('orbitBy rotates and clamps polar inside the poles', () {

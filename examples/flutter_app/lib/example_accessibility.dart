@@ -389,9 +389,10 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
     if (!_draggingCamera) return;
     final delta = event.localPosition - _lastDragPosition;
     _lastDragPosition = event.localPosition;
-    // Gentle sensitivity; elevation clamped away from the poles. The view
-    // rebuilds from these each frame (no setState needed).
-    _azimuth += delta.dx * 0.005;
+    // Gentle sensitivity, turning the car with the drag; elevation clamped
+    // away from the poles. The view rebuilds from these each frame (no
+    // setState needed).
+    _azimuth -= delta.dx * 0.005;
     _elevation = (_elevation + delta.dy * 0.005).clamp(0.05, 1.35);
   }
 

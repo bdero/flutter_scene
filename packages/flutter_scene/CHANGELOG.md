@@ -1,5 +1,14 @@
 ## 0.25.0
 
+* BREAKING: World space is right-handed (`+X` right, `+Y` up, `+Z` toward the viewer, `-Z` forward), matching glTF and `vector_math`. A camera on `+Z` looking at the origin now puts world `+X` on the right of the screen, and `Camera.right` and `Camera.horizontalRight` follow `forward.cross(up)`.
+* Cameras, `Node.forward`, `Node.lookAt`, directional, spot, and rect area lights, and audio listeners aim along local `-Z`. The default camera sits at `(0, 0, 5)`.
+* `Node.lookAt`, `lookAtFrom`, and `lookAtTransform` take `modelFront`, which aims local `+Z` (the side glTF assets face) at the target instead of `-Z`, so an imported character turns to face it.
+* glTF imports with no coordinate conversion: no mirrored root node, no baked Z reflection, no index swap. Imported models face `+Z` and keep their authored node transforms.
+* `OrbitCameraController`, `FollowCameraController`, and `FlyCameraController` use standard spherical coordinates, with azimuth 0 on the `+Z` side.
+* `.fscene` format 6. Documents from formats 2 through 5 migrate on load, reflecting transforms, bounds, light, physics, particle, and prefab-override vectors across Z, converting geometry, skin, animation, and collider payloads, mirroring environments through `environmentMirrorZ`, and remapping the editor camera azimuth. Older engines refuse format 6 documents.
+* `Scene.environmentTransform` may carry a mirror as well as a rotation; a document's `environmentMirrorZ` (also a switch in the editor's stage inspector) sets one.
+* BREAKING: Code scenes written for 0.24 render as their horizontal mirror until authored Z coordinates are negated (quaternions negate X and Y); `lookAt`-aimed nodes need no change.
+* Every primitive geometry and `WidgetComponent` surface shows its texture unmirrored from the front. `PlaneGeometry` and `DiscGeometry` read mirrored before, and the rest now keep their reading in the right-handed world.
 * glTF animations play `STEP` and `CUBICSPLINE` samplers as authored instead of as linear, whether imported at runtime or preprocessed into a `.fscene` document, so steps hold each keyframe and cubic splines follow their tangents. Baked skinned pose bounds follow those curves too, so a cubic overshoot is no longer culled.
 * `PhysicallyBasedMaterial.parallaxScale` adds parallax occlusion mapping, marching a height field carried in `normalTexture`'s alpha. `parallaxMaxSteps` caps the march, `parallaxShadowStrength` lets the relief shadow itself from the sun, and `parallaxSilhouette` (`ParallaxSilhouette`) cuts the outline, depth prepass, and shadows along the relief. Its shaders load the first time a material uses it, so other materials pay nothing.
 * `Scene.preload(parallaxOcclusion: true)` loads the parallax shaders up front, and `material_features: {parallax_occlusion: false}` under the hook user-defines leaves them out of the build.

@@ -878,7 +878,7 @@ GizmoPrimitive? _gizmoPrimitiveFromExpression(Expression expression) {
       );
     case 'GizmoArrow':
       return GizmoArrow(
-        axis: numbers('axis') ?? const [0, 0, 1],
+        axis: numbers('axis') ?? const [0, 0, -1],
         axisBind: _stringLit(parsed.named['axisBind']),
         length: scalar('length') ?? const GizmoScalar(1),
         visibility: visibility,
@@ -928,7 +928,7 @@ GizmoPrimitive? _gizmoPrimitiveFromExpression(Expression expression) {
       return GizmoWireRect(
         width: width,
         height: height,
-        axis: numbers('axis') ?? const [0, 0, 1],
+        axis: numbers('axis') ?? const [0, 0, -1],
         visibility: visibility,
         color: color,
         xray: xray,
@@ -939,7 +939,7 @@ GizmoPrimitive? _gizmoPrimitiveFromExpression(Expression expression) {
       if (radius == null) return null;
       return GizmoWireCircle(
         radius: radius,
-        axis: numbers('axis') ?? const [0, 0, 1],
+        axis: numbers('axis') ?? const [0, 0, -1],
         visibility: visibility,
         color: color,
         xray: xray,
@@ -952,7 +952,7 @@ GizmoPrimitive? _gizmoPrimitiveFromExpression(Expression expression) {
       return GizmoWireCone(
         angle: angle,
         range: range,
-        axis: numbers('axis') ?? const [0, 0, 1],
+        axis: numbers('axis') ?? const [0, 0, -1],
         axisBind: _stringLit(parsed.named['axisBind']),
         visibility: visibility,
         color: color,

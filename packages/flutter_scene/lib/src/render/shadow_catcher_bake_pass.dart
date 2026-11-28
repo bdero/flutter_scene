@@ -266,6 +266,17 @@ class ShadowCatcherBakePass extends RenderGraphPass {
             slot: geometry.vertexStreamCount,
           );
         }
+        // The top-down projection maps local XZ straight onto NDC XY, a
+        // mirror, so an upward-facing triangle winds clockwise on screen.
+        // Unculled it still draws, but its facing flips GetWorldNormal and
+        // would bake the plane as facing away from the light. The projection
+        // folds out the world transform, so only the geometry's own winding
+        // counts.
+        pass.setWindingOrder(
+          geometry.sourceWindingFlipped
+              ? gpu.WindingOrder.counterClockwise
+              : gpu.WindingOrder.clockwise,
+        );
         geometry.draw(pass);
       } finally {
         material.finishBakeBind();

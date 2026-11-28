@@ -369,7 +369,8 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
     _input.lookDelta.setZero();
     final manualYaw =
         drag.x * _dragYawPerPixel + _input.lookRate.x * _keyYawRate * dt;
-    _camera.yaw += manualYaw;
+    // Yaw turns the view left, so subtract it to turn right with the input.
+    _camera.yaw -= manualYaw;
 
     scene.update(dt);
 

@@ -130,7 +130,7 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
   }
 
   void _refreshParameters(PreprocessedMaterial material) {
-    final light = vm.Vector3(0.4, 0.8, -0.5).normalized();
+    final light = vm.Vector3(0.4, 0.8, 0.5).normalized();
     // Set each parameter by its declared name. No std140 offsets, no padding:
     // the runtime resolves offsets from shader reflection and the setters
     // throw on a type mismatch. base_color/rim_color are written with setVec4
@@ -169,7 +169,7 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
           child: SceneView(
             scene,
             camera: PerspectiveCamera(
-              position: vm.Vector3(0, 2, -6),
+              position: vm.Vector3(0, 2, 6),
               target: vm.Vector3(0, 1.5, 0),
             ),
             onTick: (elapsed, deltaSeconds) {

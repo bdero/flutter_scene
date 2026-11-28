@@ -61,16 +61,14 @@ void main() {
       final views = rig.applyFrame(frame);
       final expected = frame.views[0].pose.forward;
       expect(expected, _closeToVector(Vector3(-1, 0, 0)));
-      // The default mapping reflects z, so the scene sees the mirrored
-      // direction while the pose's own handedness is kept intact.
-      final mapped = rig.xrToScene.transform3(expected.clone());
-      expect(views[0].camera.forward, _closeToVector(mapped));
-      expect(rig.gaze.direction, _closeToVector(mapped));
+      // The scene shares the runtime's convention, so the direction is kept.
+      expect(views[0].camera.forward, _closeToVector(expected));
+      expect(rig.gaze.direction, _closeToVector(expected));
       expect(rig.gaze.origin, _closeToVector(Vector3(0, 1.6, 0)));
     });
 
-    test('an identity xrToScene copies poses straight through', () {
-      final rig = XrRig(xrToScene: Matrix4.identity());
+    test('the default xrToScene copies poses straight through', () {
+      final rig = XrRig();
       final frame = stereoFrame(head: Vector3(1, 2, 3), yaw: 0.3);
       rig.applyFrame(frame);
       final expected = frame.viewerPose!.toMatrix();
@@ -144,7 +142,7 @@ void main() {
         controller.globalTransform.getTranslation(),
         _closeToVector(rig.xrToScene.transform3(ray.position.clone())),
       );
-      // A ray pitched 90 degrees down points along -y, in either convention.
+      // A ray pitched 90 degrees down points along -y.
       expect(
         rig.targetRay(XrHandedness.right).forward,
         _closeToVector(Vector3(0, -1, 0)),

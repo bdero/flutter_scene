@@ -17,7 +17,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math.dart';
 
 import 'accessor.dart';
-import 'coordinate_policy.dart';
+import 'keyframe_values.dart';
 import 'draco/gltf_draco.dart';
 import 'types.dart';
 

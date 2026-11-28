@@ -283,10 +283,12 @@ void main() {
       ..addComponent(
         SemanticsComponent(label: 'Front', boundsOverride: _unitBounds()),
       );
+    // The default camera sits at z = +5 looking down -Z, so z = +10 is
+    // behind it.
     final behind =
         Node(
           name: 'behind',
-          localTransform: Matrix4.translation(Vector3(0, 0, -10)),
+          localTransform: Matrix4.translation(Vector3(0, 0, 10)),
         )..addComponent(
           SemanticsComponent(label: 'Behind', boundsOverride: _unitBounds()),
         );
@@ -370,8 +372,8 @@ void main() {
       return;
     }
     final handle = tester.ensureSemantics();
-    // The default camera looks down -Z from z = -5, so a box at z = -1 is
-    // nearer than one at z = +1. Both sit on the view axis, so their
+    // The default camera looks down -Z from z = +5, so a box at z = +1 is
+    // nearer than one at z = -1. Both sit on the view axis, so their
     // projected rects overlap at screen center. The nearer part is
     // registered first, so only depth ordering (not registration order)
     // can put it last in the child list, where the reversed hit test
@@ -379,15 +381,17 @@ void main() {
     final near =
         Node(
           name: 'near',
-          localTransform: Matrix4.translation(Vector3(0, 0, -1)),
+          localTransform: Matrix4.translation(Vector3(0, 0, 1)),
         )..addComponent(
           SemanticsComponent(label: 'near', boundsOverride: _unitBounds()),
         );
     final far =
-        Node(name: 'far', localTransform: Matrix4.translation(Vector3(0, 0, 1)))
-          ..addComponent(
-            SemanticsComponent(label: 'far', boundsOverride: _unitBounds()),
-          );
+        Node(
+          name: 'far',
+          localTransform: Matrix4.translation(Vector3(0, 0, -1)),
+        )..addComponent(
+          SemanticsComponent(label: 'far', boundsOverride: _unitBounds()),
+        );
     scene.add(near);
     scene.add(far);
 

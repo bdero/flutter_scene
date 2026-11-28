@@ -3,6 +3,11 @@
 // transforms, layers, light/camera components, and the component
 // codec registry); mesh/resource realization is a separate, GPU-bound step.
 
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter_scene/src/animation.dart'
+    show RotationTimelineResolver, TranslationTimelineResolver;
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
@@ -100,6 +105,211 @@ void main() {
       );
       final root = realizeScene(doc);
       expect(root.children.single.getComponents<Component>(), isEmpty);
+    });
+
+    test(
+      'migrated v5 document conjugates legacy skin IBMs and reflects animations',
+      () {
+        final source = SceneDocument();
+        final ibmId = source.newId();
+        final timesId = source.newId();
+        final transId = source.newId();
+        final rotId = source.newId();
+        source.addPayload(
+          PayloadSpec(ibmId, encoding: PayloadEncoding.matrices),
+        );
+        source.addPayload(
+          PayloadSpec(timesId, encoding: PayloadEncoding.floats),
+        );
+        source.addPayload(
+          PayloadSpec(transId, encoding: PayloadEncoding.floats),
+        );
+        source.addPayload(PayloadSpec(rotId, encoding: PayloadEncoding.floats));
+
+        final joint = source.createNode(name: 'jointNode');
+        final skin = SkinSpec(
+          source.newId(),
+          joints: [joint.id],
+          inverseBindMatrices: ibmId,
+        );
+        source.addSkin(skin);
+        final meshNode = source.addNode(
+          NodeSpec(
+            id: source.newId(),
+            name: 'meshNode',
+            skin: skin.id,
+            children: [joint.id],
+          ),
+          root: true,
+        );
+        final anim = AnimationSpec(
+          source.newId(),
+          name: 'move',
+          channels: [
+            AnimationChannelSpec(
+              target: joint.id,
+              property: AnimationProperty.translation,
+              timeline: timesId,
+              keyframes: transId,
+            ),
+            AnimationChannelSpec(
+              target: joint.id,
+              property: AnimationProperty.rotation,
+              timeline: timesId,
+              keyframes: rotId,
+            ),
+          ],
+        );
+        source.addAnimation(anim);
+
+        final json = jsonDecode(writeFscene(source)) as Map<String, dynamic>;
+        json['fscene'] = 5;
+        final doc = readFscene(jsonEncode(json));
+
+        final ibmFloats = Float32List.fromList([
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          2,
+          3,
+          1,
+        ]);
+        final timesFloats = Float32List.fromList([0.0]);
+        final transFloats = Float32List.fromList([4.0, 5.0, 6.0]);
+        final rotFloats = Float32List.fromList([0.1, 0.2, 0.3, 0.9]);
+        doc.payload(ibmId)!.bytes = Uint8List.sublistView(ibmFloats);
+        doc.payload(timesId)!.bytes = Uint8List.sublistView(timesFloats);
+        doc.payload(transId)!.bytes = Uint8List.sublistView(transFloats);
+        doc.payload(rotId)!.bytes = Uint8List.sublistView(rotFloats);
+
+        final root = realizeScene(doc);
+        final realizedMesh = root.getChildByName(meshNode.name)!;
+        final ibm = realizedMesh.skin!.inverseBindMatrices.single;
+        expect(ibm.getTranslation().x, closeTo(1.0, 1e-6));
+        expect(ibm.getTranslation().y, closeTo(2.0, 1e-6));
+        expect(ibm.getTranslation().z, closeTo(-3.0, 1e-6));
+
+        final realizedAnim = root.findAnimationByName('move')!;
+        final transValue =
+            (realizedAnim.channels[0].resolver as TranslationTimelineResolver)
+                .values
+                .single;
+        final rotValue =
+            (realizedAnim.channels[1].resolver as RotationTimelineResolver)
+                .values
+                .single;
+        expect(transValue.x, closeTo(4.0, 1e-6));
+        expect(transValue.y, closeTo(5.0, 1e-6));
+        expect(transValue.z, closeTo(-6.0, 1e-6));
+        expect(rotValue.x, closeTo(-0.1, 1e-6));
+        expect(rotValue.y, closeTo(-0.2, 1e-6));
+        expect(rotValue.z, closeTo(0.3, 1e-6));
+        expect(rotValue.w, closeTo(0.9, 1e-6));
+      },
+    );
+
+    test('migrated v5 document reflects cubic spline tangents', () {
+      final source = SceneDocument();
+      LocalId floats() {
+        final id = source.newId();
+        source.addPayload(PayloadSpec(id, encoding: PayloadEncoding.floats));
+        return id;
+      }
+
+      final timesId = floats();
+      final valuesId = floats();
+      final inId = floats();
+      final outId = floats();
+      final rotValuesId = floats();
+      final rotInId = floats();
+      final rotOutId = floats();
+      final joint = source.createNode(name: 'joint', root: true);
+      source.addAnimation(
+        AnimationSpec(
+          source.newId(),
+          name: 'curve',
+          channels: [
+            AnimationChannelSpec(
+              target: joint.id,
+              property: AnimationProperty.translation,
+              timeline: timesId,
+              keyframes: valuesId,
+              interpolation: AnimationInterpolation.cubicSpline,
+              inTangents: inId,
+              outTangents: outId,
+            ),
+            AnimationChannelSpec(
+              target: joint.id,
+              property: AnimationProperty.rotation,
+              timeline: timesId,
+              keyframes: rotValuesId,
+              interpolation: AnimationInterpolation.cubicSpline,
+              inTangents: rotInId,
+              outTangents: rotOutId,
+            ),
+          ],
+        ),
+      );
+
+      final json = jsonDecode(writeFscene(source)) as Map<String, dynamic>;
+      json['fscene'] = 5;
+      final doc = readFscene(jsonEncode(json));
+      void put(LocalId id, List<double> values) => doc.payload(id)!.bytes =
+          Uint8List.sublistView(Float32List.fromList(values));
+      put(timesId, [0.0]);
+      put(valuesId, [1, 2, 3]);
+      put(inId, [0.1, 0.2, 0.3]);
+      put(outId, [0.4, 0.5, 0.6]);
+      put(rotValuesId, [0, 0, 0, 1]);
+      put(rotInId, [0.1, 0.2, 0.3, 0.4]);
+      put(rotOutId, [0.5, 0.6, 0.7, 0.8]);
+
+      final animation = realizeScene(doc).findAnimationByName('curve')!;
+      final translation =
+          animation.channels[0].resolver as TranslationTimelineResolver;
+      expect(translation.values.single.z, closeTo(-3, 1e-6));
+      expect(translation.inTangents!.single.storage, [
+        closeTo(0.1, 1e-6),
+        closeTo(0.2, 1e-6),
+        closeTo(-0.3, 1e-6),
+      ]);
+      expect(translation.outTangents!.single.storage, [
+        closeTo(0.4, 1e-6),
+        closeTo(0.5, 1e-6),
+        closeTo(-0.6, 1e-6),
+      ]);
+      final rotation =
+          animation.channels[1].resolver as RotationTimelineResolver;
+      final inTangent = rotation.inTangents!.single;
+      expect(
+        [inTangent.x, inTangent.y, inTangent.z, inTangent.w],
+        [
+          closeTo(-0.1, 1e-6),
+          closeTo(-0.2, 1e-6),
+          closeTo(0.3, 1e-6),
+          closeTo(0.4, 1e-6),
+        ],
+      );
+      final outTangent = rotation.outTangents!.single;
+      expect(
+        [outTangent.x, outTangent.y, outTangent.z, outTangent.w],
+        [
+          closeTo(-0.5, 1e-6),
+          closeTo(-0.6, 1e-6),
+          closeTo(0.7, 1e-6),
+          closeTo(0.8, 1e-6),
+        ],
+      );
     });
   });
 

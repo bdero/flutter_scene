@@ -1,7 +1,7 @@
 // Covers scene raycasting: hit math (distance, point, normal, barycentrics,
 // interpolated UV), filtering (visibility, layers, raycastable, predicate,
 // maxDistance), occlusion ordering, and transforms (including non-uniform
-// scale and the importer's scene-root handedness flip). GPU-gated: geometry
+// scale and a mirroring root). GPU-gated: geometry
 // upload needs a device, so the whole suite skips without one (the hit math
 // itself is deterministic CPU code).
 
@@ -423,7 +423,7 @@ void main() {
       expect(hit.uv!.x, closeTo(1.2 / 3.0 + 0.5, 1e-4));
     });
 
-    test('a mirroring root transform (handedness flip) still hits', () {
+    test('a mirroring root transform still hits', () {
       final root = Node(localTransform: Matrix4.diagonal3(Vector3(1, 1, -1)))
         ..add(_quadNode());
       final hit = raycastNode(

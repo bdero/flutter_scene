@@ -31,16 +31,10 @@ class XrRig {
   /// The mapping from the runtime's pose convention into the scene's that
   /// [xrToScene] starts with.
   ///
-  /// A node's forward axis is its local `+Z` and a camera on a node looks
-  /// down it, while a runtime's viewer looks down `-Z`, so the default
-  /// reflects `Z`. Applied as a change of basis (`M * pose * M⁻¹`) the
-  /// reflection turns every pose into a proper rotation again, so cameras,
-  /// controllers and hands all land with their forward on `+Z` and their
-  /// right still on `+X`.
-  // TODO(xr-handedness): the pending right-handed world migration
-  // (flutter_scene PR #499) makes the node forward axis -Z, which turns this
-  // default into the identity; flip it when that lands and drop this note.
-  static Matrix4 defaultXrToScene() => Matrix4.diagonal3Values(1.0, 1.0, -1.0);
+  /// The scene shares the runtime's convention (right-handed, `+Y` up, a
+  /// camera looking down its local `-Z`), so the default is the identity.
+  /// Replace it to rebase or scale a runtime's space.
+  static Matrix4 defaultXrToScene() => Matrix4.identity();
 
   /// The near clip distance eye cameras start with.
   final double near;

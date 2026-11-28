@@ -171,7 +171,7 @@ class _CubeViewState extends State<CubeView> {
     if (!ready) return const SizedBox.expand();
     return SceneView(
       scene,
-      camera: PerspectiveCamera(position: vm.Vector3(2, 2, -4)),
+      camera: PerspectiveCamera(position: vm.Vector3(2, 2, 4)),
     );
   }
 }

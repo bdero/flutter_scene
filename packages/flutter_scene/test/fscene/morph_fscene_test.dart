@@ -68,7 +68,6 @@ void main() {
         accessors: doc.accessors,
         bufferViews: doc.bufferViews,
         bufferData: bin,
-        coordinatePolicy: GltfCoordinatePolicy.bakeNative,
       );
       expect(
         document.payload(morph.deltas)!.bytes,

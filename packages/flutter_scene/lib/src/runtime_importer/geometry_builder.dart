@@ -67,7 +67,6 @@ Geometry geometryFromPacked(
     ),
     indexType: packed.indices32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16,
   );
-  geometry.sourceWindingFlipped = packed.sourceWindingFlipped;
   return geometry;
 }
 

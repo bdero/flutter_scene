@@ -116,10 +116,10 @@ class QuakeCamera {
   }
 
   /// Rotates the view by a drag delta (logical pixels). Horizontal drags
-  /// turn the camera (drag right turns left, the drag-the-world
-  /// convention); vertical drags pitch (drag down looks down).
+  /// turn the camera (drag right turns right); vertical drags pitch (drag
+  /// down looks down).
   void look(Offset delta) {
-    _targetYaw += delta.dx * lookSensitivity;
+    _targetYaw -= delta.dx * lookSensitivity;
     _targetPitch = (_targetPitch - delta.dy * lookSensitivity).clamp(
       -pitchLimit,
       pitchLimit,
@@ -155,10 +155,10 @@ class QuakeCamera {
     // D moves the camera to its own right (toward what's on the right side
     // of the screen). A moves left.
     if (enabled && keys.contains(LogicalKeyboardKey.keyD)) {
-      targetVelocity.sub(_right);
+      targetVelocity.add(_right);
     }
     if (enabled && keys.contains(LogicalKeyboardKey.keyA)) {
-      targetVelocity.add(_right);
+      targetVelocity.sub(_right);
     }
     if (enabled && keys.contains(LogicalKeyboardKey.keyE)) {
       targetVelocity.add(vm.Vector3(0, 1, 0));

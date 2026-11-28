@@ -200,7 +200,7 @@ void main() {
     test('picking rays are parallel and start on the near plane', () {
       final camera = OrthographicCamera(
         position: Vector3(0, 0, 0),
-        target: Vector3(0, 0, 1),
+        target: Vector3(0, 0, -1),
         projection: OrthographicProjection(
           size: const OrthographicSize.height(4),
           near: -10,
@@ -210,10 +210,10 @@ void main() {
       const view = ui.Size(200, 100);
       final center = camera.screenPointToRay(const ui.Offset(100, 50), view);
       final corner = camera.screenPointToRay(const ui.Offset(0, 0), view);
-      expect(center.direction.normalized().z, closeTo(1, 1e-5));
-      expect(corner.direction.normalized().z, closeTo(1, 1e-5));
-      expect(center.origin.z, closeTo(-10, 1e-5));
-      // Screen right is up x forward, world +x for a camera looking down +z.
+      expect(center.direction.normalized().z, closeTo(-1, 1e-5));
+      expect(corner.direction.normalized().z, closeTo(-1, 1e-5));
+      expect(center.origin.z, closeTo(10, 1e-5));
+      // Screen right is forward x up, world +x for a camera looking down -z.
       expect(corner.origin.x, closeTo(-4, 1e-5));
       expect(corner.origin.y, closeTo(2, 1e-5));
     });
@@ -221,11 +221,11 @@ void main() {
     test('worldToScreen projects points behind the eye', () {
       final camera = OrthographicCamera(
         position: Vector3.zero(),
-        target: Vector3(0, 0, 1),
+        target: Vector3(0, 0, -1),
         projection: OrthographicProjection(near: -10),
       );
       final offset = camera.worldToScreen(
-        Vector3(0, 0, -5),
+        Vector3(0, 0, 5),
         const ui.Size(100, 100),
       );
       expect(offset, isNotNull);
@@ -267,7 +267,7 @@ void main() {
     test('rendering resolves against the logical view size', () {
       final camera = OrthographicCamera(
         position: Vector3.zero(),
-        target: Vector3(0, 0, 1),
+        target: Vector3(0, 0, -1),
         projection: OrthographicProjection(
           size: const OrthographicSize.pixelsPerUnit(20),
           near: -10,
@@ -297,7 +297,7 @@ void main() {
   group('orthographic cascades', () {
     test('split uniformly from the near plane and cover the view box', () {
       final camera = OrthographicCamera(
-        position: Vector3(10, 10, -10),
+        position: Vector3(10, 10, 10),
         target: Vector3.zero(),
         projection: OrthographicProjection(
           size: const OrthographicSize.height(12),
@@ -319,8 +319,8 @@ void main() {
 
       // Every corner of each slice lies inside its cascade sphere.
       final forward = camera.forward;
-      final right = camera.up.cross(forward)..normalize();
-      final up = forward.cross(right)..normalize();
+      final right = forward.cross(camera.up)..normalize();
+      final up = right.cross(forward)..normalize();
       final extent =
           camera.projection.visibleSize(const ui.Size(aspect, 1)) * 0.5;
       var sliceNear = -30.0;

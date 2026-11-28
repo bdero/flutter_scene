@@ -479,7 +479,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     Lighting lighting,
   ) {
     pass.setCullMode(renderCullMode);
-    pass.setWindingOrder(gpu.WindingOrder.clockwise);
+    pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
     final shader = fragmentShaderForLighting(lighting);
 
     if (shadingModel == FmatShadingModel.shadowCatcher) {

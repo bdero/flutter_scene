@@ -488,6 +488,7 @@ class GeometryResource extends ResourceSpec {
     this.topology = 'triangle',
     this.morphTargets,
     this.legacyWinding = false,
+    this.legacyLeftHanded = false,
     super.unknown,
   }) : assert(
          (vertices == null) != (procedural == null),
@@ -522,6 +523,10 @@ class GeometryResource extends ResourceSpec {
   /// Whether this geometry was migrated from an older document version (< 5)
   /// that stored indices with clockwise winding.
   final bool legacyWinding;
+
+  /// Whether this geometry was migrated from an older document version (< 6)
+  /// that stored vertex payloads in left-handed space (+Z forward).
+  final bool legacyLeftHanded;
 }
 
 /// Morph target data on a [GeometryResource]: the delta payload plus target
@@ -698,6 +703,7 @@ class EnvironmentResource extends ResourceSpec {
     this.agxWhite = 16.29,
     this.agxContrast = 1.25,
     this.environmentRotationY = 0.0,
+    this.environmentMirrorZ = false,
     this.radianceCubeSize,
     this.skybox,
     this.skyEnvironment,
@@ -729,6 +735,13 @@ class EnvironmentResource extends ResourceSpec {
 
   /// Rotation around the world Y axis applied when sampling the environment.
   double environmentRotationY;
+
+  /// Whether the environment is mirrored across the XY plane before
+  /// [environmentRotationY] applies, so a world direction `(x, y, z)` samples
+  /// it at `(x, y, -z)`. Reverses an equirect's longitude. Documents written
+  /// before format version 6 migrate with this set, since their content is
+  /// reflected across Z and the environment image is not.
+  bool environmentMirrorZ;
 
   /// The reflection/ambient cubemap size, or null for the engine default.
   int? radianceCubeSize;
@@ -1205,6 +1218,7 @@ class SkinSpec {
     List<LocalId>? joints,
     required this.inverseBindMatrices,
     this.skeleton,
+    this.legacyLeftHanded = false,
     this.unknown = const {},
   }) : joints = joints ?? [];
 
@@ -1224,6 +1238,10 @@ class SkinSpec {
 
   /// The skeleton root joint node, when known.
   final LocalId? skeleton;
+
+  /// Whether this skin was migrated from an older document version (< 6)
+  /// that stored inverse-bind matrices in left-handed space (+Z forward).
+  final bool legacyLeftHanded;
 }
 
 /// The node property an animation channel drives on its target node.
@@ -1388,6 +1406,7 @@ class AnimationSpec {
     this.name = '',
     List<AnimationChannelSpec>? channels,
     List<AnimationPathChannelSpec>? pathChannels,
+    this.legacyLeftHanded = false,
     this.unknown = const {},
   }) : channels = channels ?? [],
        pathChannels = pathChannels ?? [];
@@ -1408,6 +1427,10 @@ class AnimationSpec {
 
   /// The channels driving other node properties by path.
   final List<AnimationPathChannelSpec> pathChannels;
+
+  /// Whether this animation was migrated from an older document version (< 6)
+  /// that stored keyframe payloads in left-handed space (+Z forward).
+  final bool legacyLeftHanded;
 }
 
 /// How a binary payload chunk's bytes are interpreted.
@@ -1926,8 +1949,8 @@ class RenderViewSpec {
 
 /// Scene-wide, non-spatial render settings.
 ///
-/// Every document uses the native left-handed coordinate system with +Y up,
-/// +Z forward, and meters as world units. Lights and cameras are per-node
+/// Every document uses the native right-handed coordinate system with +Y up,
+/// -Z forward, and meters as world units. Lights and cameras are per-node
 /// components.
 /// {@category Documents}
 class StageMetadata {

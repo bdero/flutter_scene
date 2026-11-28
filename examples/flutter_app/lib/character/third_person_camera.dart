@@ -55,7 +55,7 @@ class ThirdPersonCamera {
   Vector3 get forward => Vector3(math.sin(yaw), 0.0, math.cos(yaw));
 
   /// Unit horizontal direction to the camera's right.
-  Vector3 get right => Vector3(0.0, 1.0, 0.0).cross(forward)..normalize();
+  Vector3 get right => forward.cross(Vector3(0.0, 1.0, 0.0))..normalize();
 
   /// Rotates the camera around its target.
   void orbit(double deltaYaw, double deltaPitch) {

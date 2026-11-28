@@ -966,8 +966,8 @@ UnskinnedGeometry _packedBox(double half, int palette) {
 /// The two eyes of a headset-like pair around [head], as camera nodes the way
 /// an XR rig places them: 64 mm apart along the head's right axis, each lens
 /// wider away from the nose (50 degrees out, 40 degrees in, 64 degrees up and
-/// down). The head node's transform is the inverse of the head camera's view
-/// matrix, so the eyes inherit its orientation exactly.
+/// down). The head node's transform inverts the head camera's view matrix,
+/// so the eyes inherit its orientation exactly.
 ({Camera left, Camera right}) _stereoEyes(Camera head) {
   const ipd = 0.064;
   const outer = 50 * vm.degrees2Radians;
@@ -975,7 +975,10 @@ UnskinnedGeometry _packedBox(double half, int palette) {
   // Tall enough that a half-width capture shows the lens unsquashed: the
   // frustum's width over its height is one half, like the viewport's.
   const vertical = 63.8 * vm.degrees2Radians;
-  final headTransform = vm.Matrix4.inverted(head.getViewMatrix());
+  // View space looks down +Z and a camera node down its local -Z, so the
+  // node's Z axis is the inverted view's reflected.
+  final headTransform = vm.Matrix4.inverted(head.getViewMatrix())
+    ..scaleByVector3(vm.Vector3(1, 1, -1));
   Camera eye(double x, double left, double right) {
     final node = Node()
       ..localTransform =
@@ -1522,19 +1525,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   SmokeScene('area_light', () {
     final scene = Scene();
     scene.environmentIntensity = 0.05;
-    // Aims a node's local +Z (the panel emission axis) at [target].
-    vm.Matrix4 aim(vm.Vector3 position, vm.Vector3 target) {
-      final forward = (target - position).normalized();
-      final right = vm.Vector3(0, 1, 0).cross(forward)..normalize();
-      final up = forward.cross(right).normalized();
-      return vm.Matrix4.columns(
-        vm.Vector4(right.x, right.y, right.z, 0),
-        vm.Vector4(up.x, up.y, up.z, 0),
-        vm.Vector4(forward.x, forward.y, forward.z, 0),
-        vm.Vector4(position.x, position.y, position.z, 1),
-      );
-    }
-
+    // Each panel emits along its node's local -Z, so lookAtFrom aims it.
     final floor = PhysicallyBasedMaterial()
       ..baseColorFactor = vm.Vector4(0.08, 0.08, 0.09, 1.0)
       ..metallicFactor = 0.3
@@ -1562,10 +1553,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
             ),
           ),
         )
-        ..localTransform = aim(
-          vm.Vector3(-1.4, 1.3, 1.0),
-          vm.Vector3(0, 0.45, 0),
-        ),
+        ..lookAtFrom(vm.Vector3(-1.4, 1.3, 1.0), vm.Vector3(0, 0.45, 0)),
     );
     scene.add(
       Node()
@@ -1579,10 +1567,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
             ),
           ),
         )
-        ..localTransform = aim(
-          vm.Vector3(1.5, 1.1, -0.6),
-          vm.Vector3(0, 0.45, 0),
-        ),
+        ..lookAtFrom(vm.Vector3(1.5, 1.1, -0.6), vm.Vector3(0, 0.45, 0)),
     );
     return (
       scene: scene,
@@ -2437,30 +2422,24 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     final scene = Scene();
     scene.add(_basisuQuads!);
     // Below them, a texture the build hook cooked to ETC1S, drawn through
-    // loadTexture. The rotation turns the plane to face the camera at -z, and
-    // the transform flips v so the frame reads like the source image.
+    // loadTexture. The rotation stands the plane up facing the camera at +z
+    // with v running down, so the frame reads like the source image.
     scene.add(
       Node(
           mesh: Mesh(
             PlaneGeometry(width: 0.5, depth: 0.5),
-            UnlitMaterial()
-              ..baseColorTexture = _etc1sCooked!
-              ..baseColorTextureTransform = TextureTransform(
-                offset: vm.Vector2(0, 1),
-                scale: vm.Vector2(1, -1),
-              ),
+            UnlitMaterial()..baseColorTexture = _etc1sCooked!,
           ),
         )
         ..localTransform =
             vm.Matrix4.translationValues(0, -0.95, 0) *
-            vm.Matrix4.rotationX(-math.pi / 2),
+            vm.Matrix4.rotationX(math.pi / 2),
     );
     return (
       scene: scene,
-      // Square on to the quads' front, which the root handedness flip puts on
-      // the -z side, so the texels land unmirrored.
+      // Square on to the quads' glTF front, which faces +z.
       camera: PerspectiveCamera(
-        position: vm.Vector3(0, 0, -3.1),
+        position: vm.Vector3(0, 0, 3.1),
         target: vm.Vector3.zero(),
       ),
     );
@@ -2783,10 +2762,9 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(placed(_morphUnskinnedModel!, 2.4));
     return (
       scene: scene,
-      // Imported glTF sits behind the root handedness flip, so the model's
-      // front faces -z; the camera views it from there.
+      // Square on to the model's glTF front, which faces +z.
       camera: PerspectiveCamera(
-        position: vm.Vector3(0.6, 2.0, -7.4),
+        position: vm.Vector3(0.6, 2.0, 7.4),
         target: vm.Vector3(0.6, 1.0, 0),
       ),
     );
@@ -3347,14 +3325,13 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     )..localTransform = vm.Matrix4.translation(vm.Vector3(x, y, 0));
     // A tinted metal for the roughness sweep, so the neutral mirror stays
-    // distinguishable from the smoothest of the three. World x runs right to
-    // left on screen from a camera on +z, so the sweep is authored mirrored
-    // and reads 0.0, 0.4, 0.9, mirror in the frame.
+    // distinguishable from the smoothest of the three. Reads 0.0, 0.4, 0.9,
+    // mirror in the frame.
     final gold = vm.Vector4(0.95, 0.80, 0.45, 1.0);
-    scene.add(sphere(0.75, 0.75, gold, 0.0));
-    scene.add(sphere(-0.75, 0.75, gold, 0.4));
-    scene.add(sphere(0.75, -0.75, gold, 0.9));
-    scene.add(sphere(-0.75, -0.75, vm.Vector4(0.97, 0.97, 0.97, 1.0), 0.0));
+    scene.add(sphere(-0.75, 0.75, gold, 0.0));
+    scene.add(sphere(0.75, 0.75, gold, 0.4));
+    scene.add(sphere(-0.75, -0.75, gold, 0.9));
+    scene.add(sphere(0.75, -0.75, vm.Vector4(0.97, 0.97, 0.97, 1.0), 0.0));
     return (
       scene: scene,
       camera: PerspectiveCamera(
@@ -3389,18 +3366,17 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       );
     }
 
-    // World x runs right to left on screen from a camera on +z, so the row is
-    // authored mirrored and reads control, bake, RGBM bake in the frame.
-    quad(1.35, 1.05, base());
+    // Reads control, bake, RGBM bake in the frame.
+    quad(-1.35, 1.05, base());
     quad(
-      0.05,
+      -0.05,
       1.05,
       base()
         ..lightmapTexture = _gradientLightmap()
         ..lightmapIntensity = 1.9,
     );
     quad(
-      -1.35,
+      1.35,
       0.75,
       base()
         ..lightmapTexture = _rgbmLightmap()

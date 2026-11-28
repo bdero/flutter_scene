@@ -113,8 +113,8 @@ routes a symptom to the right one.
    indices wind CCW around the outward face normal, or omit normals and let the constructor derive
    them. NEVER fix orientation with a per-triangle winding flip on an imported model; that leaves
    normals and IBL wrong. Traps #14 and #18.
-3. For an imported model rendered mirrored, check you did not overwrite the runtime importer's
-   `scale(1, 1, -1)` handedness root. Trap #6.
+3. For an imported model that looks mirrored, check the camera is not seeing its back. A glTF
+   front faces `+Z`. Trap #6.
 
 ### Missing or popping geometry
 

@@ -49,7 +49,7 @@ void main() {
     left.move(0.1);
     right.move(0.1);
 
-    expect(left.position.x, closeTo(0.5, 1e-9));
-    expect(right.position.x, closeTo(-0.5, 1e-9));
+    expect(left.position.x, closeTo(-0.5, 1e-9));
+    expect(right.position.x, closeTo(0.5, 1e-9));
   });
 }

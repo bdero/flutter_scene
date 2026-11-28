@@ -885,7 +885,6 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       // floating above it by the capsule's skin gap.
       modelHeightOffset: -0.05,
       modelScale: 1.0,
-      modelYawOffset: math.pi,
     );
     node.addComponent(_character);
     _characterNode = node;
@@ -966,10 +965,11 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     final dt = deltaSeconds.clamp(0.0, 0.05);
 
     // Orbit the camera from a drag (pixels) and held arrow keys (rate).
+    // Yaw turns the view left, so negate it to turn right with the input.
     final drag = _input.lookDelta.clone();
     _input.lookDelta.setZero();
     _camera.orbit(
-      drag.x * _dragYawPerPixel + _input.lookRate.x * _keyYawRate * dt,
+      -(drag.x * _dragYawPerPixel + _input.lookRate.x * _keyYawRate * dt),
       drag.y * _dragPitchPerPixel - _input.lookRate.y * _keyPitchRate * dt,
     );
 

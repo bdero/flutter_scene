@@ -177,7 +177,6 @@ _PackedDocument _packPrimitivesIsolate(
       accessors: doc.accessors,
       bufferViews: doc.bufferViews,
       bufferData: input.bufferData,
-      coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       includeSkinning: includeSkinning,
     );
     final carriesSkinning =
@@ -265,7 +264,6 @@ Future<Node> _buildScene(
         bufferViews: doc.bufferViews,
         bufferData: bufferData,
         engineNodes: engineNodes,
-        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       ),
   ];
   for (int i = 0; i < doc.nodes.length; i++) {
@@ -277,13 +275,7 @@ Future<Node> _buildScene(
 
   // Pick the default scene (or the first one, or empty).
   final sceneIndex = doc.scene ?? (doc.scenes.isNotEmpty ? 0 : null);
-  // Keep source data untouched and convert once at the imported boundary.
-  // Packed geometry carries its source winding so the renderer can combine
-  // it with this mirror without rewriting indices or vertex data.
-  final root = Node(
-    name: 'root',
-    localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
-  )..isImportRoot = true;
+  final root = Node(name: 'root')..isImportRoot = true;
   if (doc.materialsVariants.isNotEmpty) {
     root.addComponent(
       MaterialsVariantsComponent.internal(
@@ -320,7 +312,6 @@ Future<Node> _buildScene(
         bufferData: bufferData,
         engineNodes: engineNodes,
         lights: doc.lights,
-        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       ),
     );
   }
@@ -348,22 +339,17 @@ void _populateNode({
 }) {
   engineNode.name = resolveGltfNodeName(gltfNode.name, index);
   engineNode.visible = gltfNode.visible;
-  const coordinatePolicy = GltfCoordinatePolicy.runtimeBoundary;
   final matrix = gltfNode.matrix;
   if (matrix != null) {
-    engineNode.localTransform = coordinatePolicy.convertTransform(matrix);
+    engineNode.localTransform = matrix.clone();
   } else {
     // Keep the authored TRS. Recovering it from the composed matrix puts
     // a mirrored bone's negative scale on the wrong axis, which breaks
     // animation blending.
     engineNode.setLocalTransformTrs(
       DecomposedTransform(
-        translation: coordinatePolicy.convertPosition(
-          gltfNode.translation ?? Vector3.zero(),
-        ),
-        rotation: coordinatePolicy.convertRotation(
-          gltfNode.rotation ?? Quaternion.identity(),
-        ),
+        translation: (gltfNode.translation ?? Vector3.zero()).clone(),
+        rotation: (gltfNode.rotation ?? Quaternion.identity()).clone(),
         scale: gltfNode.scale?.clone() ?? Vector3(1.0, 1.0, 1.0),
       ),
     );

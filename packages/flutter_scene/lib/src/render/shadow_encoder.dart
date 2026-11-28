@@ -87,7 +87,7 @@ class ShadowEncoder {
     };
     _renderPass.setCullMode(_casterCullMode);
     _currentCullMode = _casterCullMode;
-    _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+    _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
 
   final gpu.RenderPass _renderPass;
@@ -382,8 +382,8 @@ class ShadowEncoder {
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
             flip
-                ? gpu.WindingOrder.counterClockwise
-                : gpu.WindingOrder.clockwise,
+                ? gpu.WindingOrder.clockwise
+                : gpu.WindingOrder.counterClockwise,
           );
           drawOrRejectPipeline(_renderPass, geometry, _boundPipeline);
         }
@@ -406,8 +406,8 @@ class ShadowEncoder {
         if (flipped != null) {
           _renderPass.setWindingOrder(
             flipped
-                ? gpu.WindingOrder.counterClockwise
-                : gpu.WindingOrder.clockwise,
+                ? gpu.WindingOrder.clockwise
+                : gpu.WindingOrder.counterClockwise,
           );
           drawOrRejectPipeline(
             _renderPass,
@@ -487,8 +487,8 @@ class ShadowEncoder {
     // that are visible also cast shadows.
     _renderPass.setWindingOrder(
       item.windingFlipped
-          ? gpu.WindingOrder.counterClockwise
-          : gpu.WindingOrder.clockwise,
+          ? gpu.WindingOrder.clockwise
+          : gpu.WindingOrder.counterClockwise,
     );
     drawOrRejectPipeline(_renderPass, geometry, _boundPipeline);
   }
@@ -592,7 +592,7 @@ class ShadowEncoder {
       } else {
         bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
       }
-      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
       drawOrRejectPipeline(
         _renderPass,
         geometry,
@@ -606,7 +606,7 @@ class ShadowEncoder {
       } else {
         bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
       }
-      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
       drawOrRejectPipeline(
         _renderPass,
         geometry,

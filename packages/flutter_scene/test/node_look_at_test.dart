@@ -1,5 +1,5 @@
-// Covers Node.lookAt / lookAtFrom / lookAtTransform: orienting a node's +Z
-// forward axis at a world-space target, matching the inverse of an equivalent
+// Covers Node.lookAt / lookAtFrom / lookAtTransform: orienting a node's -Z
+// forward axis at a world-space target, matching an equivalent
 // PerspectiveCamera view.
 
 import 'dart:ui' show Size;
@@ -13,32 +13,41 @@ Vector3 _column(Matrix4 m, int c) =>
 
 void main() {
   group('Node.lookAtTransform', () {
-    test('matches the inverse of the equivalent PerspectiveCamera view', () {
-      final eye = Vector3(3.0, 4.0, 5.0);
-      final target = Vector3(-1.0, 0.5, 2.0);
-      final up = Vector3(0.0, 1.0, 0.0);
+    test(
+      'matches the equivalent PerspectiveCamera view when inverted with Z negated',
+      () {
+        final eye = Vector3(3.0, 4.0, 5.0);
+        final target = Vector3(-1.0, 0.5, 2.0);
+        final up = Vector3(0.0, 1.0, 0.0);
 
-      final expected = Matrix4.identity()
-        ..copyInverse(
-          PerspectiveCamera(
-            position: eye,
-            target: target,
-            up: up,
-          ).getViewMatrix(),
-        );
-      final actual = Node.lookAtTransform(eye, target, up: up);
+        final expected = Matrix4.identity()
+          ..copyInverse(
+            PerspectiveCamera(
+              position: eye,
+              target: target,
+              up: up,
+            ).getViewMatrix(),
+          );
+        // PerspectiveCamera's view matrix maps world -Z (forward) to view +Z
+        // for [0, 1] depth, so negating column 2 of its inverse yields the
+        // right-handed node world transform (local -Z = forward).
+        expected.storage[8] = -expected.storage[8];
+        expected.storage[9] = -expected.storage[9];
+        expected.storage[10] = -expected.storage[10];
+        final actual = Node.lookAtTransform(eye, target, up: up);
 
-      for (var i = 0; i < 16; i++) {
-        expect(
-          actual.storage[i],
-          closeTo(expected.storage[i], 1e-5),
-          reason: 'element $i',
-        );
-      }
-    });
+        for (var i = 0; i < 16; i++) {
+          expect(
+            actual.storage[i],
+            closeTo(expected.storage[i], 1e-5),
+            reason: 'element $i',
+          );
+        }
+      },
+    );
 
     test('a CameraComponent on the node renders the equivalent view', () {
-      final eye = Vector3(2.0, 1.0, -6.0);
+      final eye = Vector3(2.0, 1.0, 6.0);
       final target = Vector3(0.0, 0.0, 0.0);
       final reference = PerspectiveCamera(position: eye, target: target);
 
@@ -58,8 +67,8 @@ void main() {
   });
 
   group('Node.lookAtFrom', () {
-    test('positions at eye and aims +Z at the target', () {
-      final eye = Vector3(0.0, 3.0, -8.0);
+    test('positions at eye and aims -Z at the target', () {
+      final eye = Vector3(0.0, 3.0, 8.0);
       final target = Vector3(0.0, 0.0, 0.0);
       final node = Node()..lookAtFrom(eye, target);
 
@@ -68,7 +77,7 @@ void main() {
       expect(world.getTranslation().y, closeTo(eye.y, 1e-6));
       expect(world.getTranslation().z, closeTo(eye.z, 1e-6));
 
-      final forward = _column(world, 2).normalized();
+      final forward = -_column(world, 2).normalized();
       final want = (target - eye).normalized();
       expect(forward.x, closeTo(want.x, 1e-5));
       expect(forward.y, closeTo(want.y, 1e-5));
@@ -91,7 +100,7 @@ void main() {
       expect(world.getTranslation().x, closeTo(eye.x, 1e-5));
       expect(world.getTranslation().y, closeTo(eye.y, 1e-5));
       expect(world.getTranslation().z, closeTo(eye.z, 1e-5));
-      final forward = _column(world, 2).normalized();
+      final forward = -_column(world, 2).normalized();
       final want = (target - eye).normalized();
       expect(forward.x, closeTo(want.x, 1e-5));
       expect(forward.y, closeTo(want.y, 1e-5));
@@ -116,7 +125,7 @@ void main() {
       expect(_column(world, 1).length, closeTo(3.0, 1e-5));
       expect(_column(world, 2).length, closeTo(4.0, 1e-5));
 
-      final forward = _column(world, 2).normalized();
+      final forward = -_column(world, 2).normalized();
       final want = (Vector3.zero() - node.position).normalized();
       expect(forward.x, closeTo(want.x, 1e-5));
       expect(forward.y, closeTo(want.y, 1e-5));
@@ -128,41 +137,87 @@ void main() {
       );
       expect((node.up - _column(world, 1).normalized()).length, lessThan(1e-5));
     });
+
+    test('modelFront aims local +Z at the target with a proper rotation', () {
+      final node = Node()..position = Vector3(2.0, 0.0, 5.0);
+      final target = Vector3(-1.0, 0.0, -4.0);
+      node.lookAt(target, modelFront: true);
+
+      final world = node.globalTransform;
+      final want = (target - node.position).normalized();
+      final front = _column(world, 2).normalized();
+      expect((front - want).length, lessThan(1e-5));
+      // No mirror: the basis is a rotation, and the asset's right-hand side
+      // (local -X, as glTF defines it) sits to the right of its facing.
+      expect(world.determinant(), closeTo(1.0, 1e-5));
+      final rightHand = -_column(world, 0).normalized();
+      final wantRight = want.cross(Vector3(0.0, 1.0, 0.0)).normalized();
+      expect((rightHand - wantRight).length, lessThan(1e-5));
+      expect((node.up - Vector3(0.0, 1.0, 0.0)).length, lessThan(1e-5));
+      // The engine's forward axis now points away from the target.
+      expect((node.forward + want).length, lessThan(1e-5));
+    });
+
+    test(
+      'modelFront agrees across lookAt, lookAtFrom, and lookAtTransform',
+      () {
+        final eye = Vector3(1.0, 2.0, 3.0);
+        final target = Vector3(-2.0, 0.5, -1.0);
+        final viaLookAt = Node()..position = eye;
+        viaLookAt.lookAt(target, modelFront: true);
+        final viaFrom = Node()..lookAtFrom(eye, target, modelFront: true);
+        final viaTransform = Node.lookAtTransform(
+          eye,
+          target,
+          modelFront: true,
+        );
+        for (var i = 0; i < 16; i++) {
+          expect(
+            viaFrom.globalTransform.storage[i],
+            closeTo(viaLookAt.globalTransform.storage[i], 1e-5),
+          );
+          expect(
+            viaTransform.storage[i],
+            closeTo(viaFrom.globalTransform.storage[i], 1e-5),
+          );
+        }
+      },
+    );
   });
 
   group('Camera and Node basis getters', () {
     test(
-      'Camera.right and horizontalRight point to screen-right from both -Z and +Z',
+      'Camera.right and horizontalRight point to screen-right from both +Z and -Z',
       () {
         const viewport = Size(800, 600);
 
-        // Default camera on -Z looking along +Z.
-        final fromNegZ = PerspectiveCamera(
-          position: Vector3(0.0, 2.0, -6.0),
-          target: Vector3.zero(),
-        );
-        expect(fromNegZ.right.x, closeTo(1.0, 1e-5));
-        expect(fromNegZ.horizontalRight.x, closeTo(1.0, 1e-5));
-        expect(fromNegZ.horizontalForward.z, closeTo(1.0, 1e-5));
-        final uvNegZ = fromNegZ.projectToScreenUv(
-          fromNegZ.target + fromNegZ.right,
-          viewport,
-        )!;
-        expect(uvNegZ.x, greaterThan(0.5));
-
-        // Camera on +Z looking back along -Z.
+        // Default camera on +Z looking along -Z.
         final fromPosZ = PerspectiveCamera(
           position: Vector3(0.0, 4.0, 8.0),
           target: Vector3.zero(),
         );
-        expect(fromPosZ.right.x, closeTo(-1.0, 1e-5));
-        expect(fromPosZ.horizontalRight.x, closeTo(-1.0, 1e-5));
+        expect(fromPosZ.right.x, closeTo(1.0, 1e-5));
+        expect(fromPosZ.horizontalRight.x, closeTo(1.0, 1e-5));
         expect(fromPosZ.horizontalForward.z, closeTo(-1.0, 1e-5));
         final uvPosZ = fromPosZ.projectToScreenUv(
           fromPosZ.target + fromPosZ.right,
           viewport,
         )!;
         expect(uvPosZ.x, greaterThan(0.5));
+
+        // Camera on -Z looking back along +Z.
+        final fromNegZ = PerspectiveCamera(
+          position: Vector3(0.0, 2.0, -6.0),
+          target: Vector3.zero(),
+        );
+        expect(fromNegZ.right.x, closeTo(-1.0, 1e-5));
+        expect(fromNegZ.horizontalRight.x, closeTo(-1.0, 1e-5));
+        expect(fromNegZ.horizontalForward.z, closeTo(1.0, 1e-5));
+        final uvNegZ = fromNegZ.projectToScreenUv(
+          fromNegZ.target + fromNegZ.right,
+          viewport,
+        )!;
+        expect(uvNegZ.x, greaterThan(0.5));
 
         // NodeCamera agrees with PerspectiveCamera on forward, right, and up.
         final node = Node()..lookAtFrom(fromPosZ.position, fromPosZ.target);
@@ -182,10 +237,10 @@ void main() {
       final topDown = PerspectiveCamera(
         position: Vector3(0.0, 10.0, 0.0),
         target: Vector3.zero(),
-        up: Vector3(0.0, 0.0, 1.0),
+        up: Vector3(0.0, 0.0, -1.0),
       );
       expect(topDown.right.x, closeTo(1.0, 1e-5));
-      expect(topDown.horizontalForward.z, closeTo(1.0, 1e-5));
+      expect(topDown.horizontalForward.z, closeTo(-1.0, 1e-5));
       expect(topDown.horizontalRight.x, closeTo(1.0, 1e-5));
     });
   });

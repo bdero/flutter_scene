@@ -14,6 +14,8 @@ import 'quake_camera.dart';
 const double _carHeadingOffset = -pi / 2;
 
 const double _roadWidth = 5.0;
+// The car's lane, a quarter road width to the right of its travel.
+const double _laneOffset = -_roadWidth / 4;
 const double _markingHeight = 0.05;
 
 /// An infotainment-style navigation scene: a long looping road track
@@ -41,23 +43,23 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   // car's heading does not kink as it loops.
   static final List<vm.Vector3> _loopWaypoints = [
     vm.Vector3(0, 0.05, 16), // join
-    vm.Vector3(4, 0.05, 16),
-    vm.Vector3(10, 0.05, 17),
-    vm.Vector3(16, 0.05, 14),
-    vm.Vector3(20, 0.05, 8),
-    vm.Vector3(21, 0.05, 0),
-    vm.Vector3(19, 0.05, -8),
-    vm.Vector3(14, 0.05, -13),
-    vm.Vector3(7, 0.05, -14),
-    vm.Vector3(0, 0.05, -12),
-    vm.Vector3(-7, 0.05, -14),
-    vm.Vector3(-14, 0.05, -13),
-    vm.Vector3(-19, 0.05, -8),
-    vm.Vector3(-21, 0.05, 0),
-    vm.Vector3(-20, 0.05, 8),
-    vm.Vector3(-16, 0.05, 14),
+    vm.Vector3(-4, 0.05, 16),
     vm.Vector3(-10, 0.05, 17),
-    vm.Vector3(-4, 0.05, 16), // collinear with the join and its neighbor
+    vm.Vector3(-16, 0.05, 14),
+    vm.Vector3(-20, 0.05, 8),
+    vm.Vector3(-21, 0.05, 0),
+    vm.Vector3(-19, 0.05, -8),
+    vm.Vector3(-14, 0.05, -13),
+    vm.Vector3(-7, 0.05, -14),
+    vm.Vector3(0, 0.05, -12),
+    vm.Vector3(7, 0.05, -14),
+    vm.Vector3(14, 0.05, -13),
+    vm.Vector3(19, 0.05, -8),
+    vm.Vector3(21, 0.05, 0),
+    vm.Vector3(20, 0.05, 8),
+    vm.Vector3(16, 0.05, 14),
+    vm.Vector3(10, 0.05, 17),
+    vm.Vector3(4, 0.05, 16), // collinear with the join and its neighbor
   ];
 
   // The looping track the car drives, closed back to the join.
@@ -402,7 +404,7 @@ MeshGeometry _buildNavLine(
     final d = (carDistance - ahead) % road.length;
     final frame = road.frameAtDistance(d);
     final lateral = _lateral(frame.tangent);
-    final center = frame.position + lateral * (_roadWidth / 4);
+    final center = frame.position + lateral * _laneOffset;
     final y = center.y + lift;
     final left = center - lateral * halfWidth;
     final right = center + lateral * halfWidth;
@@ -474,13 +476,12 @@ class _NavRouteFrame {
 
   PerspectiveCamera update() {
     // The car's pose on the loop. Distance runs backward along the path
-    // so the car travels counterclockwise, and its lane is the
-    // centerline shifted to the opposite side. Querying the smooth
-    // curve directly keeps the heading continuous.
+    // so the car travels counterclockwise, in the lane right of the
+    // centerline. Querying the smooth curve directly keeps the heading
+    // continuous.
     final distance = (-elapsedSeconds * 4.0) % road.length;
     final frame = road.frameAtDistance(distance);
-    final carPosition =
-        frame.position + _lateral(frame.tangent) * (_roadWidth / 4);
+    final carPosition = frame.position + _lateral(frame.tangent) * _laneOffset;
     // The car travels against the path tangent.
     final travelDirection = -frame.tangent;
 

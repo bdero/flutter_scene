@@ -338,8 +338,8 @@ class RenderPassContext {
     // The same view basis the depth prepass encodes against (eye at origin
     // looking down +forward), so a reconstructed view point maps to world.
     final forward = camera.forward.normalized();
-    final right = camera.up.cross(forward)..normalize();
-    final up = forward.cross(right)..normalize();
+    final right = forward.cross(camera.up)..normalize();
+    final up = right.cross(forward)..normalize();
     f[4] = right.x;
     f[5] = right.y;
     f[6] = right.z;

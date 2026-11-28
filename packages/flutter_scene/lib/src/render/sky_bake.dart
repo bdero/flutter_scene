@@ -30,7 +30,7 @@ final gpu.BufferView _quadView = gpu.BufferView(
   lengthInBytes: 6 * 2 * 4,
 );
 
-// The six cube faces as (forward, up). The right vector is up x forward (the
+// The six cube faces as (forward, up). The right vector is forward x up (the
 // look-at convention), and the assembly fragment samples with the same bases.
 // Order matters: it maps to face_px, face_nx, face_py, face_ny, face_pz,
 // face_nz in flutter_scene_cube_to_equirect.frag.
@@ -76,8 +76,8 @@ double _faceOverscan(int n) => (n - 1) / n;
 // 90-degree FOV; slightly below 1.0 widens it by half a texel). The near/far
 // range is irrelevant since only the reconstructed direction is used.
 Matrix4 _faceInverseViewProjection(Vector3 forward, Vector3 up, double s) {
-  final right = up.cross(forward)..normalize();
-  final u = forward.cross(right)..normalize();
+  final right = forward.cross(up)..normalize();
+  final u = right.cross(forward)..normalize();
   final view = Matrix4(
     right.x,
     u.x,

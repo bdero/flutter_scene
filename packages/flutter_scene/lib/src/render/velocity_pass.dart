@@ -276,6 +276,11 @@ class VelocityPass extends RenderGraphPass {
         bindSingleInstanceData(renderPass, item.worldTransform, slot: 1);
       }
 
+      renderPass.setWindingOrder(
+        item.windingFlipped
+            ? gpu.WindingOrder.clockwise
+            : gpu.WindingOrder.counterClockwise,
+      );
       item.geometry.draw(renderPass);
     }
 

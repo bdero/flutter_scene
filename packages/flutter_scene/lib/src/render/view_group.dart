@@ -103,8 +103,8 @@ Camera? combinedViewCamera(List<Camera> cameras, List<ui.Size> sizes) {
   if (cameras.length == 1) return cameras[0];
   final first = cameras[0];
   final forward = first.forward.normalized();
-  final right = first.up.cross(forward)..normalize();
-  final up = forward.cross(right)..normalize();
+  final right = forward.cross(first.up)..normalize();
+  final up = right.cross(forward)..normalize();
   final origin = first.position;
 
   var tanLeft = double.infinity;

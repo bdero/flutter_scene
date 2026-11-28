@@ -55,16 +55,13 @@ class _ExampleSplitScreenState extends State<ExampleSplitScreen> {
       )..layers = _leftOnlyLayer,
     );
 
-    // The right view's camera lives on a node: place the node by inverting
-    // the view matrix of an equivalent eye/target/up placement (a static
-    // side view), then drive the view from the node via the component.
-    final placement = PerspectiveCamera(
-      position: vm.Vector3(6, 2, 0),
-      target: vm.Vector3(0, 0, 0),
-    );
+    // The right view's camera lives on a node (a static side view), driven
+    // through the component.
     final cameraNode = Node(
-      localTransform: vm.Matrix4.identity()
-        ..copyInverse(placement.getViewMatrix()),
+      localTransform: Node.lookAtTransform(
+        vm.Vector3(6, 2, 0),
+        vm.Vector3(0, 0, 0),
+      ),
     );
     _rightCamera = CameraComponent();
     cameraNode.addComponent(_rightCamera);

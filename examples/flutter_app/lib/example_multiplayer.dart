@@ -581,9 +581,8 @@ class _PlayerController implements PredictedPhysicsController {
   @override
   Uint8List sampleInput() {
     _syncProxies();
-    // Screen-right is world -X under the fixed overhead camera, so negate the
-    // strafe axis to keep A left and D right.
-    final strafe = -_axis(
+    // Screen-right is world +X under the fixed overhead camera.
+    final strafe = _axis(
       LogicalKeyboardKey.keyA,
       LogicalKeyboardKey.keyD,
       LogicalKeyboardKey.arrowLeft,

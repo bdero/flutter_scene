@@ -139,7 +139,7 @@ class SpringArmComponent extends Component {
   ) {
     final horizontal = math.cos(pAngle) * dist;
     return pivot +
-        vm.Vector3(-math.sin(yAngle), 0.0, -math.cos(yAngle)) * horizontal +
+        vm.Vector3(math.sin(yAngle), 0.0, math.cos(yAngle)) * horizontal +
         vm.Vector3(0.0, math.sin(pAngle) * dist, 0.0);
   }
 
@@ -179,7 +179,7 @@ class SpringArmComponent extends Component {
       currentLength,
     );
     final lookDir = (_smoothedPivotWorld - eye).normalized();
-    final right = vm.Vector3(0, 1, 0).cross(lookDir).normalized();
+    final right = lookDir.cross(vm.Vector3(0, 1, 0)).normalized();
     final offsetEye =
         eye + right * socketOffset.x + vm.Vector3(0, 1, 0) * socketOffset.y;
     final offsetTarget =
